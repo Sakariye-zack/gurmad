@@ -511,6 +511,31 @@ app.put('/api/tasks/:id/status', async (req, res) => {
   }
 });
 
+app.get('/api/tasks/:id/history', async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT lat, lng, created_at FROM truck_location_history WHERE task_id = $1 ORDER BY created_at ASC',
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tasks/:id/ping', async (req, res) => {
+  const { lat, lng } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO truck_location_history (task_id, lat, lng) VALUES ($1, $2, $3) RETURNING *',
+      [req.params.id, lat, lng]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;

@@ -7,6 +7,9 @@ const pool = new Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
   database: process.env.DB_NAME,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 async function simulateMovement() {
@@ -23,29 +26,55 @@ async function simulateMovement() {
     }
 
     for (const task of tasks) {
-      // 2. Get the latest position
+      // 2. Get the latest two positions to determine direction
       const lastPosRes = await pool.query(
-        "SELECT lat, lng FROM truck_location_history WHERE task_id = $1 ORDER BY created_at DESC LIMIT 1",
+        "SELECT lat, lng FROM truck_location_history WHERE task_id = $1 ORDER BY created_at DESC LIMIT 2",
         [task.id]
       );
       
-      let lat, lng;
+      let lat, lng, prevLat, prevLng;
       
       if (lastPosRes.rows.length === 0) {
-        // Start near Burao center if no history
-        lat = 9.524;
-        lng = 45.535;
+        lat = 9.524; lng = 45.535;
+        prevLat = lat; prevLng = lng;
       } else {
         lat = parseFloat(lastPosRes.rows[0].lat);
         lng = parseFloat(lastPosRes.rows[0].lng);
+        prevLat = lastPosRes.rows[1] ? parseFloat(lastPosRes.rows[1].lat) : lat;
+        prevLng = lastPosRes.rows[1] ? parseFloat(lastPosRes.rows[1].lng) : lng;
       }
 
-      // 3. Move slightly (random walk)
-      const deltaLat = (Math.random() - 0.5) * 0.0008;
-      const deltaLng = (Math.random() - 0.5) * 0.0008;
+      // 3. Determine direction and continue it, with slight random deviation
+      let dLat = lat - prevLat;
+      let dLng = lng - prevLng;
       
-      const newLat = lat + deltaLat;
-      const newLng = lng + deltaLng;
+      // If no movement yet, pick a random starting direction
+      if (dLat === 0 && dLng === 0) {
+        const angle = Math.random() * Math.PI * 2;
+        dLat = Math.cos(angle) * 0.0003;
+        dLng = Math.sin(angle) * 0.0003;
+      }
+
+      // 10% chance to change direction significantly
+      if (Math.random() < 0.1) {
+        const angle = Math.random() * Math.PI * 2;
+        dLat = Math.cos(angle) * 0.0004;
+        dLng = Math.sin(angle) * 0.0004;
+      } else {
+        // Add tiny jitter to simulate road curves
+        dLat += (Math.random() - 0.5) * 0.0001;
+        dLng += (Math.random() - 0.5) * 0.0001;
+      }
+
+      // Normalize speed (keep it around 0.0004 units per tick)
+      const speed = Math.sqrt(dLat*dLat + dLng*dLng);
+      if (speed > 0) {
+        dLat = (dLat / speed) * 0.0004;
+        dLng = (dLng / speed) * 0.0004;
+      }
+      
+      const newLat = lat + dLat;
+      const newLng = lng + dLng;
 
       // 4. Save new position
       await pool.query(

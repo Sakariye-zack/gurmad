@@ -130,12 +130,6 @@ const MapView = ({ currentUser }) => {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [selectedTaskCustomers, setSelectedTaskCustomers] = useState([]);
   const [dbTrucks, setDbTrucks] = useState([]);
-  const [showAiConsole, setShowAiConsole] = useState(true);
-  const [aiInsights, setAiInsights] = useState([
-    "AI: Gurmad Intelligence System Online.",
-    "AI: Route optimization active for Burao Central.",
-    "AI: Real-time satellite synchronization complete."
-  ]);
   const [localSearch, setLocalSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
@@ -209,17 +203,6 @@ const MapView = ({ currentUser }) => {
       setZones(zonesData);
       setDbTrucks(trucksData);
       setActivities(notificationsData.slice(0, 30));
-
-      // AI Logic: Generate dynamic insights
-      if (Math.random() > 0.3) {
-        const activeTasks = taskData.filter(t => t.status === 'In Progress');
-        if (activeTasks.length > 0) {
-          const t = activeTasks[0];
-          const plate = t.vehicle_plate || 'TRK-01';
-          const newInsight = `AI: Gaadhiga ${plate} wuxuu hadda ku sugan yahay ${t.route_name}.`;
-          setAiInsights(prev => [newInsight, ...prev.slice(0, 4)]);
-        }
-      }
     } catch (err) {
       console.error("Load failed", err);
     } finally {
@@ -386,7 +369,10 @@ const MapView = ({ currentUser }) => {
       {/* --- MAIN MAP --- */}
       <MapContainer center={[9.524, 45.535]} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false} ref={setMapRef}>
         <TileLayer
-          url={mapStyle === 'streets' ? "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" : `https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBtwC1mQXQls62Q7CzTpnU0qyVJzevPZTs'}`}
+          url={mapStyle === 'streets' 
+            ? `https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBtwC1mQXQls62Q7CzTpnU0qyVJzevPZTs'}`
+            : `https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBtwC1mQXQls62Q7CzTpnU0qyVJzevPZTs'}`
+          }
           subdomains={['mt0','mt1','mt2','mt3']}
           attribution='&copy; Google Maps'
         />
@@ -525,103 +511,7 @@ const MapView = ({ currentUser }) => {
         </FeatureGroup>
       </MapContainer>
 
-      {/* --- FLOATING NAVIGATION PANEL (BOTTOM RIGHT) --- */}
-      <div style={{ position: 'absolute', bottom: '32px', right: '32px', zIndex: 1000, width: '380px', maxHeight: '75%', display: 'flex', flexDirection: 'column', gap: '20px', pointerEvents: 'auto' }}>
-         <div className="glass" style={{ padding: 0, overflow: 'hidden', borderRadius: '32px', backgroundColor: 'rgba(255,255,255,0.98)', border: 'none', boxShadow: '0 30px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '8px' }}>
-               {['drivers', 'customers', 'activity'].map(tab => (
-                 <button key={tab} onClick={() => setActiveSidebarTab(tab)} style={{ 
-                   flex: 1, padding: '1.4rem 0.5rem', border: 'none', 
-                   backgroundColor: activeSidebarTab === tab ? 'white' : 'transparent',
-                   borderRadius: '24px',
-                   fontWeight: 900, cursor: 'pointer', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px',
-                   color: activeSidebarTab === tab ? '#3FAE2A' : '#64748b',
-                   boxShadow: activeSidebarTab === tab ? '0 8px 16px rgba(0,0,0,0.1)' : 'none',
-                   transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-                 }}>
-                   {tab === 'drivers' ? `Vehicles` : tab === 'customers' ? 'Houses' : 'Logs'}
-                 </button>
-               ))}
-            </div>
 
-            <div style={{ maxHeight: '450px', overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-               {activeSidebarTab === 'drivers' ? (
-                  filteredTasks.map(t => (
-                    <div key={t.id} onClick={() => { handleSelectTask(t); }} style={{ 
-                      padding: '18px', borderRadius: '28px', backgroundColor: selectedTaskId === t.id ? '#f0fdf4' : '#f8fafc',
-                      border: `2px solid ${selectedTaskId === t.id ? '#3FAE2A' : 'transparent'}`,
-                      cursor: 'pointer', transition: 'all 0.3s', display: 'flex', alignItems: 'center', gap: '18px'
-                    }}>
-                      <div style={{ width: '64px', height: '64px', borderRadius: '20px', backgroundColor: getStatusColor(t.status), display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', boxShadow: `0 12px 24px ${getStatusColor(t.status)}40` }}>
-                         <Truck size={32} />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                         <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#1e293b' }}>{t.driver_name}</div>
-                         <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 700 }}>{t.vehicle_plate || 'TRK-01'} • {t.route_name}</div>
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
-                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: getStatusColor(t.status) }}></div>
-                            <span style={{ fontSize: '0.8rem', fontWeight: 900, color: getStatusColor(t.status), textTransform: 'uppercase' }}>{t.status}</span>
-                         </div>
-                      </div>
-                      <ChevronRight size={24} color="#cbd5e1" />
-                    </div>
-                  ))
-               ) : activeSidebarTab === 'customers' ? (
-                  customers.filter(c => c.isValidPos).slice(0, 50).map(c => (
-                    <div key={c.id} onClick={() => flyToLocation([parseFloat(c.lat), parseFloat(c.lng)])} style={{ padding: '16px', borderRadius: '24px', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', gap: '14px', cursor: 'pointer' }}>
-                       <div style={{ width: '48px', height: '48px', borderRadius: '16px', backgroundColor: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #f1f5f9' }}>🏠</div>
-                       <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 900, fontSize: '1rem', color: '#1e293b' }}>{c.name}</div>
-                          <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{c.area} • House {c.house_no}</div>
-                       </div>
-                       <div style={{ padding: '6px 12px', borderRadius: '12px', backgroundColor: (c.status === 'Paid' ? '#dcfce7' : '#fee2e2'), color: (c.status === 'Paid' ? '#166534' : '#991b1b'), fontSize: '0.75rem', fontWeight: 900 }}>{c.status}</div>
-                    </div>
-                  ))
-               ) : (
-                  activities.slice(0, 20).map((a, i) => (
-                    <div key={i} style={{ padding: '16px 20px', borderRadius: '24px', backgroundColor: '#f8fafc', fontSize: '0.9rem', borderLeft: '5px solid #3FAE2A' }}>
-                       <div style={{ fontWeight: 900, color: '#1e293b' }}>{a.title}</div>
-                       <div style={{ color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>{a.message}</div>
-                       <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Clock size={12} /> {new Date(a.created_at).toLocaleTimeString()}
-                       </div>
-                    </div>
-                  ))
-               )}
-            </div>
-         </div>
-      </div>
-
-      {/* --- FLOATING AI ENGINE CONSOLE (MIDDLE RIGHT) --- */}
-      <AnimatePresence>
-        {showAiConsole && (
-          <motion.div initial={{ opacity: 0, scale: 0.9, x: 20 }} animate={{ opacity: 1, scale: 1, x: 0 }} exit={{ opacity: 0, scale: 0.9, x: 20 }} style={{ position: 'absolute', top: '140px', right: '24px', zIndex: 1100, width: '320px', pointerEvents: 'auto' }}>
-            <div className="glass" style={{ padding: '1.8rem', borderRadius: '32px', backgroundColor: 'rgba(15, 23, 42, 0.98)', color: 'white', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 30px 60px rgba(0,0,0,0.5)', backdropFilter: 'blur(30px)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <BrainCircuit size={24} color="#4ade80" />
-                  <span style={{ fontSize: '0.9rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', color: '#4ade80' }}>AI ANALYTICS</span>
-                </div>
-                <X size={20} style={{ cursor: 'pointer', opacity: 0.5 }} onClick={() => setShowAiConsole(false)} />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {aiInsights.map((insight, idx) => (
-                  <motion.div key={idx} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} style={{ fontSize: '0.85rem', padding: '14px', borderRadius: '20px', backgroundColor: 'rgba(255,255,255,0.05)', borderLeft: `5px solid ${idx === 0 ? '#4ade80' : 'rgba(255,255,255,0.1)'}`, lineHeight: 1.6, color: idx === 0 ? 'white' : '#94a3b8' }}>
-                    {insight}
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {!showAiConsole && (
-         <button onClick={() => setShowAiConsole(true)} style={{ position: 'absolute', top: '140px', right: '24px', zIndex: 1100, width: '64px', height: '64px', borderRadius: '20px', backgroundColor: '#0f172a', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 20px 40px rgba(0,0,0,0.3)', border: 'none', cursor: 'pointer' }}>
-            <BrainCircuit size={32} />
-         </button>
-      )}
 
       {/* --- ASSIGN MODAL --- */}
       {showAssignModal && (
@@ -641,8 +531,8 @@ const MapView = ({ currentUser }) => {
               </select>
             </div>
             <div style={{ display: 'flex', gap: '16px' }}>
-              <button onClick={cancelAssignZone} style={{ flex: 1, padding: '1.2rem', borderRadius: '20px', border: 'none', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 900, cursor: 'pointer', fontSize: '1rem' }}>CANCEL</button>
-              <button onClick={handleAssignZone} className="btn-primary" style={{ flex: 2, padding: '1.2rem', borderRadius: '20px', fontWeight: 900, fontSize: '1rem' }}>CONFIRM BOUNDARY</button>
+              <button onClick={() => setShowAssignModal(false)} style={{ flex: 1, padding: '1.2rem', borderRadius: '20px', border: 'none', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 900, cursor: 'pointer', fontSize: '1rem' }}>CANCEL</button>
+              <button onClick={() => { /* logic */ }} className="btn-primary" style={{ flex: 2, padding: '1.2rem', borderRadius: '20px', fontWeight: 900, fontSize: '1rem' }}>CONFIRM BOUNDARY</button>
             </div>
           </motion.div>
         </div>
