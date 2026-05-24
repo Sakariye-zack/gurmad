@@ -269,3 +269,61 @@ a {
   100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
+/* Dark Mode support */
+[data-theme='dark'] {
+  --bg-primary: #0f172a;
+  --bg-secondary: #020617;
+  --bg-sidebar: #0f172a;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --border-color: #1e293b;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-main: 0 4px 6px -1px rgb(0 0 0 / 0.5);
+}
+
+[data-theme='dark'] body {
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+}
+
+[data-theme='dark'] .card {
+  background: #1e293b;
+  border-color: #334155;
+  color: white;
+}
+
+[data-theme='dark'] .glass {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='dark'] .search-dropdown {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+[data-theme='dark'] input, 
+[data-theme='dark'] select, 
+[data-theme='dark'] textarea {
+  background-color: #1e293b !important;
+  color: white !important;
+  border-color: #334155 !important;
+}
+
+[data-theme='dark'] .sidebar-header span {
+  color: white !important;
+}
+
+[data-theme='dark'] .sidebar-group-btn {
+  color: #94a3b8 !important;
+}
+
+[data-theme='dark'] .sidebar-sub-item {
+  color: #94a3b8 !important;
+}
+
+[data-theme='dark'] .sidebar-sub-item[style*="background-color: rgb(240, 253, 244)"] {
+  background-color: rgba(63, 174, 42, 0.1) !important;
+  color: var(--gurmad-green) !important;
+}
+

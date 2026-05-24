@@ -22,6 +22,8 @@ export const translations = {
     archive: "Archive (Keydka)",
     system_settings: "System Settings",
     logout: "Logout",
+    complaints: "Customer Complaints",
+    export_excel: "Export Excel",
 
     // Header & Global
     welcome: "Welcome",
@@ -111,6 +113,8 @@ export const translations = {
     archive: "Keydka (Archive)",
     system_settings: "Habaynta System-ka",
     logout: "Ka Bax",
+    complaints: "Cabashooyinka",
+    export_excel: "Soo saar Excel",
 
     // Header & Global
     welcome: "Kusoo dhawaada",

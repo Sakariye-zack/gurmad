@@ -1,4 +1,13 @@
-const API_BASE_URL = '/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+const getAuthHeaders = () => {
+  const user = JSON.parse(localStorage.getItem('gurmadUser') || '{}');
+  const headers = {};
+  if (user.role) {
+    headers['x-user-role'] = user.role;
+  }
+  return headers;
+};
 
 const handleResponse = async (res) => {
   const data = await res.json().catch(() => ({}));
@@ -25,15 +34,15 @@ export const api = {
   
   pingTaskLocation: (id, data) => fetch(`${API_BASE_URL}/tasks/${id}/ping`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
 
-  getTaskHistory: (id) => fetch(`${API_BASE_URL}/tasks/${id}/history`).then(handleResponse),
+  getTaskHistory: (id) => fetch(`${API_BASE_URL}/tasks/${id}/history`, { headers: getAuthHeaders() }).then(handleResponse),
 
   updateCustomerLocation: (id, data) => fetch(`${API_BASE_URL}/customers/${id}/location`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
 
@@ -45,230 +54,328 @@ export const api = {
 
   setup2FA: (userId) => fetch(`${API_BASE_URL}/auth/2fa/setup`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ userId })
   }).then(handleResponse),
 
   enable2FA: (data) => fetch(`${API_BASE_URL}/auth/2fa/verify`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
 
   disable2FA: (userId) => fetch(`${API_BASE_URL}/auth/2fa/disable`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ userId })
   }).then(handleResponse),
   
   updateProfile: (formData) => fetch(`${API_BASE_URL}/auth/update_profile`, {
     method: 'POST',
-    body: formData // Note: no headers sent so browser can set boundary for multipart
+    headers: getAuthHeaders(),
+    body: formData 
   }).then(handleResponse),
 
   generalUpload: (formData) => fetch(`${API_BASE_URL}/upload`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData
   }).then(handleResponse),
 
   getHealth: () => fetch(`${API_BASE_URL}/health`).then(handleResponse),
   
   // Stats
-  getStats: () => fetch(`${API_BASE_URL}/stats`).then(handleResponse),
-  getStatsHistory: () => fetch(`${API_BASE_URL}/stats/history`).then(handleResponse),
-  getCollectorReports: () => fetch(`${API_BASE_URL}/reports/collectors`).then(handleResponse),
+  getStats: () => fetch(`${API_BASE_URL}/stats`, { headers: getAuthHeaders() }).then(handleResponse),
+  getStatsHistory: () => fetch(`${API_BASE_URL}/stats/history`, { headers: getAuthHeaders() }).then(handleResponse),
+  getCollectorReports: () => fetch(`${API_BASE_URL}/reports/collectors`, { headers: getAuthHeaders() }).then(handleResponse),
 
   // Trucks & Zones
-  getTrucks: () => fetch(`${API_BASE_URL}/trucks`).then(handleResponse),
+  getTrucks: () => fetch(`${API_BASE_URL}/trucks`, { headers: getAuthHeaders() }).then(handleResponse),
   addTruck: (data) => fetch(`${API_BASE_URL}/trucks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   updateTruck: (id, data) => fetch(`${API_BASE_URL}/trucks/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  deleteTruck: (id) => fetch(`${API_BASE_URL}/trucks/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteTruck: (id) => fetch(`${API_BASE_URL}/trucks/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
   
-  getZones: () => fetch(`${API_BASE_URL}/zones`).then(handleResponse),
+  getZones: () => fetch(`${API_BASE_URL}/zones`, { headers: getAuthHeaders() }).then(handleResponse),
   addZone: (data) => fetch(`${API_BASE_URL}/zones`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   updateZone: (id, data) => fetch(`${API_BASE_URL}/zones/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   updateZoneCoordinates: (id, coordinates) => fetch(`${API_BASE_URL}/zones/${id}/coordinates`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ coordinates })
   }).then(handleResponse),
-  deleteZone: (id) => fetch(`${API_BASE_URL}/zones/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteZone: (id) => fetch(`${API_BASE_URL}/zones/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
   
   // Customers
-  getCustomers: () => fetch(`${API_BASE_URL}/customers`).then(handleResponse),
+  getCustomers: () => fetch(`${API_BASE_URL}/customers`, { headers: getAuthHeaders() }).then(handleResponse),
   addCustomer: (data) => fetch(`${API_BASE_URL}/customers`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   updateCustomer: (id, data) => fetch(`${API_BASE_URL}/customers/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  deleteCustomer: (id) => fetch(`${API_BASE_URL}/customers/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteCustomer: (id) => fetch(`${API_BASE_URL}/customers/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
   
   // Invoices
-  getInvoices: () => fetch(`${API_BASE_URL}/invoices`).then(handleResponse),
-  getInvoiceStats: () => fetch(`${API_BASE_URL}/invoices/stats`).then(handleResponse),
+  getInvoices: () => fetch(`${API_BASE_URL}/invoices`, { headers: getAuthHeaders() }).then(handleResponse),
+  getInvoiceStats: () => fetch(`${API_BASE_URL}/invoices/stats`, { headers: getAuthHeaders() }).then(handleResponse),
   addInvoice: (data) => fetch(`${API_BASE_URL}/invoices`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   
   // Expenses
-  getExpenses: () => fetch(`${API_BASE_URL}/expenses`).then(handleResponse),
+  getExpenses: () => fetch(`${API_BASE_URL}/expenses`, { headers: getAuthHeaders() }).then(handleResponse),
   addExpense: (data) => fetch(`${API_BASE_URL}/expenses`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   
   // HRM / Employees
-  getEmployees: () => fetch(`${API_BASE_URL}/employees`).then(handleResponse),
+  getEmployees: () => fetch(`${API_BASE_URL}/employees`, { headers: getAuthHeaders() }).then(handleResponse),
   addEmployee: (formData) => fetch(`${API_BASE_URL}/employees`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData
   }).then(handleResponse),
   updateEmployee: (id, data) => fetch(`${API_BASE_URL}/employees/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  deleteEmployee: (id) => fetch(`${API_BASE_URL}/employees/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteEmployee: (id) => fetch(`${API_BASE_URL}/employees/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+  
+  // Leave Management
+  getLeaveRequests: () => fetch(`${API_BASE_URL}/leave-requests`, { headers: getAuthHeaders() }).then(handleResponse),
+  addLeaveRequest: (data) => fetch(`${API_BASE_URL}/leave-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateLeaveStatus: (id, status) => fetch(`${API_BASE_URL}/leave-requests/${id}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ status })
+  }).then(handleResponse),
   
   // Attendance
-  getAttendance: () => fetch(`${API_BASE_URL}/attendance`).then(handleResponse),
-  getAttendanceToday: () => fetch(`${API_BASE_URL}/attendance/today`).then(handleResponse),
+  getAttendance: () => fetch(`${API_BASE_URL}/attendance`, { headers: getAuthHeaders() }).then(handleResponse),
+  getAttendanceToday: () => fetch(`${API_BASE_URL}/attendance/today`, { headers: getAuthHeaders() }).then(handleResponse),
   clockIn: (formData) => fetch(`${API_BASE_URL}/attendance/clock-in`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData
   }).then(handleResponse),
   clockOut: (formData) => fetch(`${API_BASE_URL}/attendance/clock-out`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData
   }).then(handleResponse),
 
+  // Payroll
+  getPayroll: (month) => fetch(`${API_BASE_URL}/payroll${month ? `?month=${month}` : ''}`, { headers: getAuthHeaders() }).then(handleResponse),
+  generatePayroll: (month) => fetch(`${API_BASE_URL}/payroll/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ month })
+  }).then(handleResponse),
+  updatePayroll: (id, data) => fetch(`${API_BASE_URL}/payroll/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+
   // Tasks
-  getTasks: () => fetch(`${API_BASE_URL}/tasks`).then(handleResponse),
+  getTasks: () => fetch(`${API_BASE_URL}/tasks`, { headers: getAuthHeaders() }).then(handleResponse),
   addTask: (data) => fetch(`${API_BASE_URL}/tasks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   updateTaskStatus: (id, status) => fetch(`${API_BASE_URL}/tasks/${id}/status`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ status })
   }).then(handleResponse),
-  getTaskCustomers: (id) => fetch(`${API_BASE_URL}/tasks/${id}/customers`).then(handleResponse),
+  getTaskCustomers: (id) => fetch(`${API_BASE_URL}/tasks/${id}/customers`, { headers: getAuthHeaders() }).then(handleResponse),
   markCustomerCollected: (taskId, customerId, collected) => fetch(`${API_BASE_URL}/tasks/${taskId}/customers/${customerId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ collected })
   }).then(handleResponse),
-  deleteTask: (id) => fetch(`${API_BASE_URL}/tasks/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteTask: (id) => fetch(`${API_BASE_URL}/tasks/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
 
   // Inventory
-  getInventory: () => fetch(`${API_BASE_URL}/inventory`).then(handleResponse),
+  getInventory: () => fetch(`${API_BASE_URL}/inventory`, { headers: getAuthHeaders() }).then(handleResponse),
   addInventory: (data) => fetch(`${API_BASE_URL}/inventory`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   updateInventory: (id, data) => fetch(`${API_BASE_URL}/inventory/${id}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  deleteInventory: (id) => fetch(`${API_BASE_URL}/inventory/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteInventory: (id) => fetch(`${API_BASE_URL}/inventory/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
 
   // Debts
-  getDebts: () => fetch(`${API_BASE_URL}/debts`).then(handleResponse),
+  getDebts: () => fetch(`${API_BASE_URL}/debts`, { headers: getAuthHeaders() }).then(handleResponse),
   addDebt: (data) => fetch(`${API_BASE_URL}/debts`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  updateDebtStatus: (id, status) => fetch(`${API_BASE_URL}/debts/${id}/status`, {
+  updateDebtStatus: (id, status, method) => fetch(`${API_BASE_URL}/debts/${id}/status`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status })
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ status, payment_method: method })
   }).then(handleResponse),
-  deleteDebt: (id) => fetch(`${API_BASE_URL}/debts/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteDebt: (id) => fetch(`${API_BASE_URL}/debts/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
 
   // User Management
-  getUsers: () => fetch(`${API_BASE_URL}/users`).then(handleResponse),
+  getUsers: () => fetch(`${API_BASE_URL}/users`, { headers: getAuthHeaders() }).then(handleResponse),
   createUser: (data) => fetch(`${API_BASE_URL}/users`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
   resetUserPassword: (id, newPassword) => fetch(`${API_BASE_URL}/users/${id}/reset-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ newPassword })
   }).then(handleResponse),
   resetUser2FA: (id) => fetch(`${API_BASE_URL}/users/${id}/reset-2fa`, {
-    method: 'POST'
+    method: 'POST',
+    headers: getAuthHeaders()
   }).then(handleResponse),
   fullUserReset: (id, newPassword) => fetch(`${API_BASE_URL}/users/${id}/full-reset`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ newPassword })
   }).then(handleResponse),
   
   // Settings
-  getSettings: () => fetch(`${API_BASE_URL}/settings`).then(handleResponse),
+  getSettings: () => fetch(`${API_BASE_URL}/settings`, { headers: getAuthHeaders() }).then(handleResponse),
   updateSettings: (data) => fetch(`${API_BASE_URL}/settings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
 
   // Notifications
-  getNotifications: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications`).then(handleResponse),
-  markNotificationRead: (id) => fetch(`${API_BASE_URL}/notifications/${id}/read`, { method: 'PUT' }).then(handleResponse),
-  markAllNotificationsRead: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications/read-all`, { method: 'PUT' }).then(handleResponse),
+  getNotifications: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications`, { headers: getAuthHeaders() }).then(handleResponse),
+  markNotificationRead: (id) => fetch(`${API_BASE_URL}/notifications/${id}/read`, { 
+    method: 'PUT',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+  markAllNotificationsRead: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications/read-all`, { 
+    method: 'PUT',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
   
   // Archive
-  getArchives: () => fetch(`${API_BASE_URL}/archives`).then(handleResponse),
+  getArchives: () => fetch(`${API_BASE_URL}/archives`, { headers: getAuthHeaders() }).then(handleResponse),
   uploadArchive: (formData) => fetch(`${API_BASE_URL}/archives`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData
   }).then(handleResponse),
-  deleteArchive: (id) => fetch(`${API_BASE_URL}/archives/${id}`, { method: 'DELETE' }).then(handleResponse),
+  deleteArchive: (id) => fetch(`${API_BASE_URL}/archives/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
   
-  globalSearch: (q) => fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(q)}`).then(handleResponse),
+  globalSearch: (q) => fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(q)}`, { headers: getAuthHeaders() }).then(handleResponse),
 
   // Chat
-  getMessages: (userId) => fetch(`${API_BASE_URL}/messages?userId=${userId}`).then(handleResponse),
+  getMessages: (userId) => fetch(`${API_BASE_URL}/messages?userId=${userId}`, { headers: getAuthHeaders() }).then(handleResponse),
   sendMessage: (data) => fetch(`${API_BASE_URL}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
 
   sendWhatsAppNotification: (data) => fetch(`${API_BASE_URL}/whatsapp/notify`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
+  }).then(handleResponse),
+
+  // Fleet Hardening
+  getFuelLogs: () => fetch(`${API_BASE_URL}/fleet/fuel`, { headers: getAuthHeaders() }).then(handleResponse),
+  addFuelLog: (data) => fetch(`${API_BASE_URL}/fleet/fuel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  getMaintenanceLogs: () => fetch(`${API_BASE_URL}/fleet/maintenance`, { headers: getAuthHeaders() }).then(handleResponse),
+  addMaintenanceLog: (data) => fetch(`${API_BASE_URL}/fleet/maintenance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  
+  // Admin & Audit
+  getAuditLogs: () => fetch(`${API_BASE_URL}/admin/audit-logs`, {
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+  generateBackup: () => fetch(`${API_BASE_URL}/admin/backup`, {
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+
+  // Complaints
+  getComplaints: () => fetch(`${API_BASE_URL}/complaints`, { headers: getAuthHeaders() }).then(handleResponse),
+  addComplaint: (data) => fetch(`${API_BASE_URL}/complaints`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateComplaintStatus: (id, status) => fetch(`${API_BASE_URL}/complaints/${id}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ status })
   }).then(handleResponse),
 };

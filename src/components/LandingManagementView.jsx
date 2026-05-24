@@ -50,7 +50,9 @@ const LandingManagementView = () => {
     landing_services: '[]',
     landing_navbar_links: '[]',
     landing_social_links: '[]',
-    landing_news: '[]'
+    landing_news: '[]',
+    landing_footer_text: '',
+    landing_footer_bottom_text: ''
   });
 
   // Parsed JSON States
@@ -326,6 +328,7 @@ const LandingManagementView = () => {
           { id: 'news', label: 'News', icon: FileText },
           { id: 'nav', label: 'Links', icon: Link },
           { id: 'social', label: 'Social', icon: Share2 },
+          { id: 'footer', label: 'Footer', icon: Layout },
         ].map((tab) => (
           <button 
             key={tab.id}
@@ -736,6 +739,44 @@ const LandingManagementView = () => {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* --- FOOTER CONTENT --- */}
+        {activeTab === 'footer' && (
+          <div className="card animate-fade-in">
+             <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Layout color="var(--gurmad-green)" /> Footer Information
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>FOOTER DESCRIPTION TEXT</label>
+                <textarea 
+                  rows={4}
+                  value={content.landing_footer_text}
+                  onChange={e => setContent({...content, landing_footer_text: e.target.value})}
+                  className="card" style={{ width: '100%', padding: '0.85rem', border: '1px solid var(--border-color)', resize: 'vertical' }}
+                  placeholder="Providing world-class urban sanitation..."
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>BOTTOM RIGHT TEXT</label>
+                <input 
+                  type="text" 
+                  value={content.landing_footer_bottom_text}
+                  onChange={e => setContent({...content, landing_footer_bottom_text: e.target.value})}
+                  className="card" style={{ width: '100%', padding: '0.85rem', border: '1px solid var(--border-color)' }}
+                  placeholder="Crafted with passion for a cleaner city ♥"
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => handleSave()} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Save size={18} /> Update Footer
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

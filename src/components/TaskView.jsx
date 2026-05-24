@@ -12,6 +12,7 @@ const TaskView = ({ searchQuery = '' }) => {
   const [taskCustomers, setTaskCustomers] = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
   const [systemUsers, setSystemUsers] = useState([]);
+  const [trucks, setTrucks] = useState([]);
   const [modalCustomers, setModalCustomers] = useState([]);
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -28,12 +29,13 @@ const TaskView = ({ searchQuery = '' }) => {
 
   const loadData = async () => {
     try {
-      const [t, e, z, c, u] = await Promise.all([api.getTasks(), api.getEmployees(), api.getZones(), api.getCustomers(), api.getUsers()]);
+      const [t, e, z, c, u, tr] = await Promise.all([api.getTasks(), api.getEmployees(), api.getZones(), api.getCustomers(), api.getUsers(), api.getTrucks()]);
       setTasks(t);
       setEmployees(e);
       setDbZones(z);
       setAllCustomers(c);
       setSystemUsers(u);
+      setTrucks(tr);
     } catch (err) {
       console.error(err);
     } finally {
@@ -348,12 +350,16 @@ const TaskView = ({ searchQuery = '' }) => {
                  </div>
                  <div>
                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Vehicle Plate (Optional)</label>
-                   <input
-                     placeholder="e.g. SL-1025"
+                   <select
                      value={newTask.vehicle_plate}
                      onChange={e => setNewTask({...newTask, vehicle_plate: e.target.value})}
-                     style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none' }}
-                   />
+                     style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', backgroundColor: '#fff' }}
+                   >
+                     <option value="">— Select Vehicle —</option>
+                     {trucks.map(truck => (
+                       <option key={truck.id} value={truck.plate_number}>{truck.plate_number} ({truck.model})</option>
+                     ))}
+                   </select>
                   </div>
                </div>
                {modalCustomers.length > 0 && (

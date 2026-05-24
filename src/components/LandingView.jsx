@@ -19,7 +19,8 @@ import {
   Share2,
   Play,
   Layout,
-  ExternalLink
+  ExternalLink,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -819,44 +820,57 @@ const LandingView = ({ onLoginClick }) => {
           </div>
         </section>
 
-        {/* --- DEEP GREEN FOOTER --- */}
+        {/* --- PREMIUM DEEP GREEN FOOTER --- */}
         <footer id="contact" style={{ 
-          padding: '140px 8% 80px', 
-          backgroundColor: '#051101', // Extremely Deep Green / Black
+          padding: '120px 8% 60px', 
+          background: 'linear-gradient(180deg, #051101 0%, #0a1f03 100%)',
           color: 'white',
-          position: 'relative'
+          position: 'relative',
+          overflow: 'hidden',
+          borderTop: '1px solid rgba(63, 174, 42, 0.2)'
         }}>
-          <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '100px', marginBottom: '120px' }}>
+          {/* Decorative Glowing Orbs */}
+          <div style={{ position: 'absolute', top: '-100px', left: '-100px', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(63,174,42,0.15) 0%, transparent 70%)', borderRadius: '50%', pointerEvents: 'none' }}></div>
+          <div style={{ position: 'absolute', bottom: '-150px', right: '-150px', width: '500px', height: '500px', background: 'radial-gradient(circle, rgba(63,174,42,0.1) 0%, transparent 70%)', borderRadius: '50%', pointerEvents: 'none' }}></div>
+
+          <div style={{ maxWidth: '1400px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: isMobile ? '1fr' : '2fr 1.5fr 1.5fr', 
+              gap: '80px', 
+              marginBottom: '80px' 
+            }}>
+              {/* Brand Section */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '18px', marginBottom: '40px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '30px' }}>
                   <div style={{ 
-                    backgroundColor: '#3FAE2A', width: '60px', height: '60px', borderRadius: '18px', 
+                    backgroundColor: '#3FAE2A', width: '56px', height: '56px', borderRadius: '16px', 
                     color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 10px 20px rgba(63, 174, 42, 0.3)', overflow: 'hidden'
+                    boxShadow: '0 10px 25px rgba(63, 174, 42, 0.4)', overflow: 'hidden'
                   }}>
                     {settings.system_logo ? (
                       <img src={`/uploads/${settings.system_logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                     ) : (
-                      <Truck size={32} />
+                      <Truck size={30} />
                     )}
                   </div>
-                  <span style={{ fontWeight: 950, fontSize: '2.4rem', letterSpacing: '-2px' }}>
-                    {(settings.company_name || 'GURMAD').toUpperCase()}
+                  <span style={{ fontWeight: 950, fontSize: '1.8rem', letterSpacing: '-1px', lineHeight: 1.1 }}>
+                    {(settings.company_name || 'GURMAD WASTE MANAGEMENT').toUpperCase().replace(' WASTE MANAGEMENT', '')} <br/>
+                    <span style={{ color: '#3FAE2A', fontSize: '1.2rem', letterSpacing: '2px' }}>WASTE MANAGEMENT</span>
                   </span>
                 </div>
-                <p style={{ color: '#94a3b8', lineHeight: 2, marginBottom: '45px', fontSize: '1.2rem' }}>
-                  Providing world-class urban sanitation and waste logistics in Somaliland. Our goal is a cleaner, greener tomorrow.
+                <p style={{ color: '#94a3b8', lineHeight: 1.8, marginBottom: '35px', fontSize: '1.1rem', maxWidth: '400px' }}>
+                  {settings.landing_footer_text || 'Providing world-class urban sanitation and waste logistics in Somaliland. Empowering communities with a cleaner, greener tomorrow.'}
                 </p>
-                <div style={{ display: 'flex', gap: '20px' }}>
+                <div style={{ display: 'flex', gap: '16px' }}>
                   {socialLinks.map((link, idx) => (
                     <motion.a 
                       key={idx} href={link.url} target="_blank" rel="noopener noreferrer"
-                      whileHover={{ scale: 1.2, backgroundColor: '#3FAE2A', borderColor: '#3FAE2A' }}
+                      whileHover={{ scale: 1.15, backgroundColor: '#3FAE2A', borderColor: '#3FAE2A', color: 'white' }}
                       style={{ 
-                        width: '56px', height: '56px', borderRadius: '18px', backgroundColor: 'rgba(255,255,255,0.05)', 
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1',
-                        transition: '0.3s', border: '1px solid rgba(255,255,255,0.1)'
+                        width: '48px', height: '48px', borderRadius: '14px', backgroundColor: 'rgba(255,255,255,0.03)', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8',
+                        transition: 'all 0.3s ease', border: '1px solid rgba(255,255,255,0.08)'
                       }}
                     >
                       {getSocialIcon(link.icon)}
@@ -865,42 +879,84 @@ const LandingView = ({ onLoginClick }) => {
                 </div>
               </div>
 
+              {/* Contact Info */}
               <div>
-                <h4 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '45px', color: '#3FAE2A' }}>Contact Info</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', color: '#cbd5e1' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: 'rgba(63,174,42,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                       <Phone size={24} style={{ color: '#3FAE2A' }} />
+                <h4 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '35px', color: 'white', letterSpacing: '1px' }}>Contact Info</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', color: '#cbd5e1' }}>
+                  <motion.div whileHover={{ x: 5 }} style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: 'rgba(63,174,42,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(63,174,42,0.3)' }}>
+                       <Phone size={20} style={{ color: '#3FAE2A' }} />
                     </div>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{settings.landing_contact_phone || '063-4444444'}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                       <Mail size={24} style={{ color: '#3b82f6' }} />
+                    <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{settings.landing_contact_phone || '063-4444444'}</span>
+                  </motion.div>
+                  <motion.div whileHover={{ x: 5 }} style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(59,130,246,0.3)' }}>
+                       <Mail size={20} style={{ color: '#60a5fa' }} />
                     </div>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{settings.landing_contact_email || 'info@gurmad.so'}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: 'rgba(245,158,11,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                       <MapPin size={24} style={{ color: '#f59e0b' }} />
+                    <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{settings.landing_contact_email || 'info@gurmad.so'}</span>
+                  </motion.div>
+                  <motion.div whileHover={{ x: 5 }} style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(245,158,11,0.3)' }}>
+                       <MapPin size={20} style={{ color: '#fbbf24' }} />
                     </div>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>{settings.landing_contact_address || 'Main St, Burao'}</span>
-                  </div>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{settings.landing_contact_address || 'Main St, Burao, Somaliland'}</span>
+                  </motion.div>
                 </div>
               </div>
 
+              {/* Navigation Links */}
               <div>
-                <h4 style={{ fontSize: '1.6rem', fontWeight: 900, marginBottom: '45px', color: '#3FAE2A' }}>Navigation</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px', fontSize: '1.15rem' }}>
-                   {['Home', 'Services', 'News', 'About', 'Contact', 'Privacy', 'Terms', 'Support'].map((l, i) => (
-                     <span key={i} style={{ color: '#94a3b8', cursor: 'pointer', transition: '0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = '#3FAE2A'}>{l}</span>
+                <h4 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '35px', color: 'white', letterSpacing: '1px' }}>Quick Links</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', fontSize: '1.1rem' }}>
+                   {[
+                     { label: 'Home', id: 'home' }, 
+                     { label: 'Services', id: 'services' }, 
+                     { label: 'News', id: 'news' }, 
+                     { label: 'About Us', id: 'about' }
+                   ].map((link, i) => (
+                     <motion.div 
+                       key={i} 
+                       onClick={() => scrollToSection(link.id)}
+                       whileHover={{ x: 5, color: '#3FAE2A' }}
+                       style={{ color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'color 0.2s' }}
+                     >
+                       <ChevronRight size={14} style={{ opacity: 0.5 }} /> {link.label}
+                     </motion.div>
+                   ))}
+                   {['Privacy Policy', 'Terms of Use', 'Support Ticket'].map((label, i) => (
+                     <motion.div 
+                       key={`ext-${i}`}
+                       whileHover={{ x: 5, color: '#3FAE2A' }}
+                       style={{ color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'color 0.2s' }}
+                     >
+                       <ChevronRight size={14} style={{ opacity: 0.5 }} /> {label}
+                     </motion.div>
                    ))}
                 </div>
               </div>
             </div>
 
-            <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '60px', textAlign: 'center', color: '#64748b', fontSize: '1rem', fontWeight: 500 }}>
-              © {new Date().getFullYear()} {settings.company_name || 'GURMAD'} Waste Management. Crafted with passion for a cleaner city.
+            {/* Copyright & Bottom Bar */}
+            <div style={{ 
+              borderTop: '1px solid rgba(255,255,255,0.08)', 
+              paddingTop: '40px', 
+              display: 'flex', 
+              flexDirection: isMobile ? 'column' : 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '20px',
+              color: '#64748b', 
+              fontSize: '0.95rem', 
+              fontWeight: 500 
+            }}>
+              <div>
+                © {new Date().getFullYear()} {settings.company_name ? settings.company_name.replace(' Waste Management', '') : 'GURMAD'} Waste Management. All rights reserved.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {settings.landing_footer_bottom_text || (
+                  <>Crafted with passion for a cleaner city <span style={{ color: '#3FAE2A' }}>♥</span></>
+                )}
+              </div>
             </div>
           </div>
         </footer>

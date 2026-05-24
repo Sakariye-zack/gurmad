@@ -13,7 +13,12 @@ import {
   Lock,
   Users,
   Globe,
-  Truck
+  Truck,
+  MessageCircle,
+  Monitor,
+  Clock,
+  Palette,
+  CloudLightning
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { api } from '../api';
@@ -29,9 +34,12 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
     emailAlerts: true,
     inventoryAlerts: true,
     debtReminders: false,
-    ussdConfirm: true,
-    smsNotify: false,
-    autoInvoice: true
+    maintenanceMode: false,
+    whatsappNotify: true,
+    timezone: 'UTC+3 (EAT)',
+    dateFormat: 'DD/MM/YYYY',
+    primaryColor: '#3FAE2A',
+    dashboardLayout: 'Standard'
   });
   const [generalSettings, setGeneralSettings] = useState({
     companyName: 'Gurmad Waste Management',
@@ -103,7 +111,13 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
             autoInvoice: data.autoInvoice === 'true',
             ussdConfirm: data.ussdConfirm === 'true',
             smsNotify: data.smsNotify === 'true',
-            gpsTracking: data.gpsTracking === 'true'
+            gpsTracking: data.gpsTracking === 'true',
+            maintenanceMode: data.maintenanceMode === 'true',
+            whatsappNotify: data.whatsappNotify === 'true',
+            timezone: data.timezone || 'UTC+3 (EAT)',
+            dateFormat: data.dateFormat || 'DD/MM/YYYY',
+            primaryColor: data.primaryColor || '#3FAE2A',
+            dashboardLayout: data.dashboardLayout || 'Standard'
           });
         }
         if (data.company_name || data.system_logo) {
@@ -130,20 +144,29 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
 
   const handleSave = async () => {
     setIsUpdating(true);
+    const payload = {
+      exchange_rate: exchangeRate,
+      autoInvoice: preferences.autoInvoice,
+      ussdConfirm: preferences.ussdConfirm,
+      smsNotify: preferences.smsNotify,
+      gpsTracking: preferences.gpsTracking,
+      maintenanceMode: preferences.maintenanceMode,
+      whatsappNotify: preferences.whatsappNotify,
+      timezone: preferences.timezone,
+      dateFormat: preferences.dateFormat,
+      primaryColor: preferences.primaryColor,
+      dashboardLayout: preferences.dashboardLayout,
+      company_name: generalSettings.companyName,
+      system_logo: generalSettings.systemLogo,
+      system_title: generalSettings.systemTitle,
+      support_email: generalSettings.supportEmail,
+      contact_phone: generalSettings.contactPhone
+    };
     try {
       await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          exchange_rate: exchangeRate,
-          ...preferences,
-          ...landingContent,
-          company_name: generalSettings.companyName,
-          system_title: generalSettings.systemTitle,
-          support_email: generalSettings.supportEmail,
-          contact_phone: generalSettings.contactPhone,
-          system_logo: generalSettings.systemLogo
-        })
+        body: JSON.stringify(payload)
       });
       toast.success('All settings saved to database!');
     } catch (error) {
@@ -338,6 +361,8 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
   const sideMenu = [
     { id: 'gen', label: 'General Settings', icon: Settings },
     { id: 'cur', label: 'Currency & Exchange', icon: DollarSign },
+    { id: 'app', label: 'Appearance', icon: Palette },
+    { id: 'aut', label: 'Automation & API', icon: CloudLightning },
     { id: 'pro', label: 'User Profile', icon: User },
     { id: 'not', label: 'Notifications', icon: Bell },
     { id: 'sec', label: 'Security & Access', icon: ShieldCheck },
@@ -481,7 +506,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
 
         {/* --- CURRENCY & EXCHANGE TAB --- */}
         {activeTab === 'cur' && (
-          <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <div>
@@ -558,7 +583,179 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                 {isUpdating ? 'Saving...' : 'Save Exchange Settings'}
               </button>
             </div>
-          </>
+          </div>
+        )}
+
+        {/* --- APPEARANCE TAB --- */}
+        {activeTab === 'app' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className="card">
+              <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Palette color="var(--gurmad-green)" /> Branding & Appearance
+              </h3>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>PRIMARY COLOR THEME</label>
+                  <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                    {['#3FAE2A', '#2563eb', '#7c3aed', '#db2777', '#ea580c', '#0f172a'].map(color => (
+                      <div 
+                        key={color}
+                        onClick={() => setPreferences({...preferences, primaryColor: color})}
+                        style={{ 
+                          width: '40px', height: '40px', borderRadius: '10px', backgroundColor: color, 
+                          cursor: 'pointer', border: preferences.primaryColor === color ? '3px solid #cbd5e1' : 'none',
+                          boxShadow: preferences.primaryColor === color ? '0 0 0 2px ' + color : 'var(--shadow-sm)',
+                          transition: 'all 0.2s'
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>DASHBOARD LAYOUT</label>
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <div 
+                      onClick={() => setPreferences({...preferences, dashboardLayout: 'Standard'})}
+                      style={{ 
+                        flex: 1, padding: '1rem', borderRadius: '12px', textAlign: 'center', cursor: 'pointer',
+                        border: preferences.dashboardLayout === 'Standard' ? '2px solid var(--gurmad-green)' : '1px solid var(--border-color)',
+                        backgroundColor: preferences.dashboardLayout === 'Standard' ? '#f0fdf4' : 'transparent',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <Monitor size={24} style={{ marginBottom: '8px', color: preferences.dashboardLayout === 'Standard' ? 'var(--gurmad-green)' : 'var(--text-muted)' }} />
+                      <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>Standard</div>
+                    </div>
+                    <div 
+                      onClick={() => setPreferences({...preferences, dashboardLayout: 'Compact'})}
+                      style={{ 
+                        flex: 1, padding: '1rem', borderRadius: '12px', textAlign: 'center', cursor: 'pointer',
+                        border: preferences.dashboardLayout === 'Compact' ? '2px solid var(--gurmad-green)' : '1px solid var(--border-color)',
+                        backgroundColor: preferences.dashboardLayout === 'Compact' ? '#f0fdf4' : 'transparent',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <Monitor size={24} style={{ marginBottom: '8px', color: preferences.dashboardLayout === 'Compact' ? 'var(--gurmad-green)' : 'var(--text-muted)' }} />
+                      <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Compact</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 style={{ fontWeight: 700, marginBottom: '1.5rem' }}>Regional Settings</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>TIMEZONE</label>
+                  <select 
+                    value={preferences.timezone}
+                    onChange={e => setPreferences({...preferences, timezone: e.target.value})}
+                    className="card" style={{ width: '100%', padding: '0.85rem', border: '1px solid var(--border-color)' }}
+                  >
+                    <option>UTC+3 (EAT) - Hargeisa/Burao</option>
+                    <option>UTC+0 (GMT)</option>
+                    <option>UTC+1 (CET)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>DATE FORMAT</label>
+                  <select 
+                    value={preferences.dateFormat}
+                    onChange={e => setPreferences({...preferences, dateFormat: e.target.value})}
+                    className="card" style={{ width: '100%', padding: '0.85rem', border: '1px solid var(--border-color)' }}
+                  >
+                    <option>DD/MM/YYYY</option>
+                    <option>MM/DD/YYYY</option>
+                    <option>YYYY-MM-DD</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
+              <button 
+                onClick={handleSave}
+                disabled={isUpdating}
+                className="btn-primary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: isUpdating ? 0.7 : 1 }}
+              >
+                {isUpdating ? <RefreshCcw size={18} className="spin" /> : <Save size={18} />}
+                {isUpdating ? 'Saving...' : 'Save Appearance Settings'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* --- AUTOMATION & API TAB --- */}
+        {activeTab === 'aut' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className="card">
+              <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CloudLightning color="var(--gurmad-green)" /> Automation Engines
+              </h3>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', backgroundColor: '#f0fdf4', borderRadius: '16px', border: '1px solid #dcfce7' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <div style={{ backgroundColor: '#25D366', padding: '10px', borderRadius: '12px', color: 'white' }}><MessageCircle size={24} /></div>
+                      <div>
+                        <div style={{ fontWeight: 800 }}>WhatsApp Automation</div>
+                        <div style={{ fontSize: '0.85rem', color: '#166534' }}>Send automatic receipts and collection reminders via WhatsApp.</div>
+                      </div>
+                   </div>
+                   <div 
+                    onClick={() => handleToggle('whatsappNotify')}
+                    style={{ 
+                      width: '50px', height: '28px', 
+                      backgroundColor: preferences.whatsappNotify ? '#25D366' : '#cbd5e1',
+                      borderRadius: '15px', padding: '3px', cursor: 'pointer', transition: '0.2s'
+                    }}>
+                    <div style={{ 
+                      width: '22px', height: '22px', backgroundColor: 'white', borderRadius: '50%',
+                      transform: preferences.whatsappNotify ? 'translateX(22px)' : 'translateX(0)',
+                      transition: '0.2s'
+                    }}></div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', backgroundColor: '#fff7ed', borderRadius: '16px', border: '1px solid #ffedd5' }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                      <div style={{ backgroundColor: '#ea580c', padding: '10px', borderRadius: '12px', color: 'white' }}><AlertCircle size={24} /></div>
+                      <div>
+                        <div style={{ fontWeight: 800 }}>System Maintenance Mode</div>
+                        <div style={{ fontSize: '0.85rem', color: '#9a3412' }}>Restrict system access to Administrators only during updates.</div>
+                      </div>
+                   </div>
+                   <div 
+                    onClick={() => handleToggle('maintenanceMode')}
+                    style={{ 
+                      width: '50px', height: '28px', 
+                      backgroundColor: preferences.maintenanceMode ? '#ea580c' : '#cbd5e1',
+                      borderRadius: '15px', padding: '3px', cursor: 'pointer', transition: '0.2s'
+                    }}>
+                    <div style={{ 
+                      width: '22px', height: '22px', backgroundColor: 'white', borderRadius: '50%',
+                      transform: preferences.maintenanceMode ? 'translateX(22px)' : 'translateX(0)',
+                      transition: '0.2s'
+                    }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3 style={{ fontWeight: 700, marginBottom: '1.5rem' }}>API Gateway (Developer)</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>Connect external mobile apps or third-party accounting systems.</p>
+              <div style={{ backgroundColor: '#1e293b', padding: '1.5rem', borderRadius: '16px', position: 'relative' }}>
+                 <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 800, marginBottom: '8px' }}>X-GURMAD-API-KEY</div>
+                 <div style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 700, fontSize: '1.1rem' }}>gur_live_7x8k2p9m1n0v5r4w3q</div>
+                 <button style={{ position: 'absolute', right: '1.5rem', top: '1.5rem', color: 'white', backgroundColor: 'rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 700 }}>REGENERATE</button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* --- USER PROFILE TAB --- */}
@@ -981,61 +1178,68 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
         )}
 
 
-        {/* --- DATA BACKUP TAB --- */}
+        {/* --- BACKUP TAB --- */}
         {activeTab === 'bac' && (
-          <div className="card">
-            <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Database color="var(--gurmad-green)" /> Data Management & Backup
-            </h3>
-            <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#f0fdf4', borderRadius: '16px', border: '2px dashed var(--gurmad-green)' }}>
-              <div style={{ width: '64px', height: '64px', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem', color: 'var(--gurmad-green)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-                <Database size={32} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className="card" style={{ borderLeft: '6px solid var(--gurmad-green)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Database size={20} color="var(--gurmad-green)" /> Database Cloud Backup
+                  </h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>Export all your system data to a secure JSON file.</p>
+                </div>
+                <button 
+                  onClick={async () => {
+                    setIsUpdating(true);
+                    try {
+                      const res = await api.generateBackup(currentUser.role);
+                      if (res.url) {
+                        window.open(res.url, '_blank');
+                        toast.success('Backup generated successfully!');
+                      }
+                    } catch (err) {
+                      toast.error('Backup failed: Admin access required');
+                    } finally {
+                      setIsUpdating(false);
+                    }
+                  }} 
+                  className="btn-primary" 
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.8rem 1.5rem' }}
+                >
+                  {isUpdating ? <RefreshCcw size={18} className="spin" /> : <Database size={18} />} 
+                  {isUpdating ? 'Generating...' : 'Generate Full Backup'}
+                </button>
               </div>
-              <h4 style={{ fontWeight: 700, margin: '0 0 0.5rem 0' }}>Export System Data</h4>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '400px', margin: '0 auto 1.5rem' }}>
-                Download a complete copy of your database including customers, financial records, and fleet data in JSON format.
-              </p>
-              <button 
-                onClick={async () => {
-                  try {
-                    const customers = await api.getCustomers();
-                    const fleet = await api.getTrucks();
-                    const zones = await api.getZones();
-                    const stats = await fetch('http://localhost:5000/api/stats').then(res => res.json());
-                    
-                    const backupData = {
-                      timestamp: new Date().toISOString(),
-                      system: 'Gurmad Waste Management',
-                      data: { customers, fleet, zones, stats }
-                    };
-                    
-                    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `gurmad_backup_${new Date().toISOString().split('T')[0]}.json`;
-                    link.click();
-                    toast.success('Backup file generated successfully!');
-                  } catch (error) {
-                    console.error(error);
-                    toast.error('Failed to generate backup');
-                  }
-                }}
-                className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 2rem' }}
-              >
-                <RefreshCcw size={18} /> Generate Backup Now
-              </button>
             </div>
-            
-            <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', gap: '1rem', color: '#64748b', fontSize: '0.85rem' }}>
-              <AlertCircle size={18} />
-              <span>Backups are stored locally on your device. Ensure you store them in a secure location.</span>
+
+            <div className="card">
+              <h3 style={{ fontWeight: 700, marginBottom: '1.5rem' }}>Backup Settings</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Automatic Daily Backup</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>The system will automatically create a backup every 24 hours.</div>
+                  </div>
+                  <div style={{ width: '44px', height: '24px', backgroundColor: 'var(--gurmad-green)', borderRadius: '12px', padding: '2px' }}>
+                    <div style={{ width: '20px', height: '20px', backgroundColor: 'white', borderRadius: '50%', transform: 'translateX(20px)' }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="card" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca' }}>
+               <h3 style={{ fontWeight: 700, color: '#991b1b', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                 <AlertCircle size={20} /> Danger Zone
+               </h3>
+               <p style={{ fontSize: '0.85rem', color: '#991b1b', marginBottom: '1.5rem' }}>Restoring a backup will overwrite all current system data. This action is irreversible.</p>
+               <button className="btn-secondary" style={{ backgroundColor: 'white', color: '#991b1b', borderColor: '#fecaca', fontWeight: 700 }}>Restore from File...</button>
             </div>
           </div>
         )}
 
         {/* --- PLACEHOLDER FOR NO-MATCH TAB (Fallthrough) --- */}
-        {(activeTab !== 'gen' && activeTab !== 'cur' && activeTab !== 'pro' && activeTab !== 'not' && activeTab !== 'sec' && activeTab !== 'bac' && activeTab !== 'usr') && (
+        {(activeTab !== 'gen' && activeTab !== 'cur' && activeTab !== 'app' && activeTab !== 'aut' && activeTab !== 'pro' && activeTab !== 'not' && activeTab !== 'sec' && activeTab !== 'bac' && activeTab !== 'usr') && (
            <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
               <AlertCircle size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
               <h3 style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>

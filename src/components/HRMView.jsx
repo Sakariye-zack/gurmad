@@ -20,13 +20,48 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
   const [idDocFile, setIdDocFile] = useState(null);
   const [idDocPreview, setIdDocPreview] = useState(null);
 
-  useEffect(() => { fetchEmployees(); }, []);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [newLeave, setNewLeave] = useState({ employee_id: '', leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
+
+  useEffect(() => { 
+    fetchEmployees(); 
+    fetchLeaveRequests();
+  }, []);
 
   const fetchEmployees = () => {
     api.getEmployees().then(data => {
       setEmployees(data);
       setLoading(false);
     }).catch(() => setLoading(false));
+  };
+
+  const fetchLeaveRequests = () => {
+    api.getLeaveRequests().then(data => {
+      setLeaveRequests(data);
+    }).catch(err => console.error(err));
+  };
+
+  const handleLeaveSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.addLeaveRequest(newLeave);
+      toast.success('Leave request submitted!');
+      setIsLeaveModalOpen(false);
+      fetchLeaveRequests();
+    } catch (err) {
+      toast.error('Failed to submit leave request');
+    }
+  };
+
+  const handleUpdateLeaveStatus = async (id, status) => {
+    try {
+      await api.updateLeaveStatus(id, status);
+      toast.success(`Leave request ${status.toLowerCase()}`);
+      fetchLeaveRequests();
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
   };
 
   const handleAddEmployee = async (e) => {
@@ -168,7 +203,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         {/* Role Tabs */}
         <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
-          {['All', 'Management', 'Drivers', 'Collectors'].map(tab => (
+          {['All', 'Management', 'Drivers', 'Collectors', 'Leave Requests'].map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -227,7 +262,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                   display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', fontSize: '1.5rem', fontWeight: 700
                 }}>
                   {selectedEmployee.photo 
-                    ? <img src={`http://localhost:5000/uploads/${selectedEmployee.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ? <img src={`/uploads/${selectedEmployee.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     : selectedEmployee.name[0].toUpperCase()
                   }
                </div>
@@ -276,7 +311,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                      <FileText size={14} /> ID Card / Passport
                    </div>
                    <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color)', maxHeight: '180px' }}>
-                     <img src={`http://localhost:5000/uploads/${selectedEmployee.id_document}`} alt="ID Document" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                     <img src={`/uploads/${selectedEmployee.id_document}`} alt="ID Document" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                    </div>
                  </div>
                )}
@@ -433,93 +468,215 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
         </div>
       )}
 
-      {/* ====== Directory Table ====== */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead>
-            <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-              <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>EMPLOYEE</th>
-              <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>ROLE</th>
-              <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>CONTACT</th>
-              <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>SALARY</th>
-              <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>GUARANTOR</th>
-              <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>STATUS</th>
-              <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', textAlign: 'center' }}>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredEmployees.length === 0 ? (
-                <tr>
-                    <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No employees found matching your criteria.
-                    </td>
+      {/* ====== Leave Requests View ====== */}
+      {activeTab === 'Leave Requests' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="card" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: 0, fontWeight: 800 }}>Employee Leave Requests</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>Manage sick leaves, vacations, and emergency time-off</p>
+            </div>
+            <button onClick={() => setIsLeaveModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Plus size={18} /> New Request
+            </button>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>EMPLOYEE</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>LEAVE TYPE</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>DATES</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>REASON</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>STATUS</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>ACTIONS</th>
                 </tr>
-            ) : filteredEmployees.map((e) => (
-              <tr key={e.id} 
-                  onClick={() => setSelectedEmployee(e)}
-                  style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s', cursor: 'pointer' }}
-                  onMouseEnter={(ev) => ev.currentTarget.style.backgroundColor = '#f8fafc'}
-                  onMouseLeave={(ev) => ev.currentTarget.style.backgroundColor = 'transparent'}
-              >
-                <td style={{ padding: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ 
-                      width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#eff6ff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, color: '#3b82f6',
-                      overflow: 'hidden'
-                    }}>
-                      {e.photo 
-                        ? <img src={`http://localhost:5000/uploads/${e.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : (e.name ? e.name[0].toUpperCase() : 'E')
-                      }
+              </thead>
+              <tbody>
+                {leaveRequests.length === 0 ? (
+                  <tr><td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>No leave requests found.</td></tr>
+                ) : (
+                  leaveRequests.map(lr => (
+                    <tr key={lr.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{ fontWeight: 700 }}>{lr.employee_name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{lr.employee_role}</div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <span style={{ 
+                          padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700,
+                          backgroundColor: lr.leave_type === 'Sick' ? '#fee2e2' : lr.leave_type === 'Vacation' ? '#dcfce7' : '#fef3c7',
+                          color: lr.leave_type === 'Sick' ? '#ef4444' : lr.leave_type === 'Vacation' ? '#10b981' : '#f59e0b'
+                        }}>
+                          {lr.leave_type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '1rem', fontSize: '0.85rem' }}>
+                        <div>{new Date(lr.start_date).toLocaleDateString()}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>to {new Date(lr.end_date).toLocaleDateString()}</div>
+                      </td>
+                      <td style={{ padding: '1rem', fontSize: '0.85rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {lr.reason}
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <span style={{ 
+                          padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 800,
+                          backgroundColor: lr.status === 'Approved' ? '#ecfdf5' : lr.status === 'Rejected' ? '#fef2f2' : '#fffbeb',
+                          color: lr.status === 'Approved' ? '#10b981' : lr.status === 'Rejected' ? '#ef4444' : '#f59e0b'
+                        }}>
+                          {lr.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ padding: '1rem', textAlign: 'right' }}>
+                        {lr.status === 'Pending' && (
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button onClick={() => handleUpdateLeaveStatus(lr.id, 'Approved')} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Approve</button>
+                            <button onClick={() => handleUpdateLeaveStatus(lr.id, 'Rejected')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Reject</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Leave Request Modal */}
+          {isLeaveModalOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+              <div className="card glass" style={{ width: '450px', borderTop: '4px solid var(--gurmad-green)' }}>
+                <h3 style={{ marginBottom: '1.5rem', fontWeight: 800 }}>Submit Leave Request</h3>
+                <form onSubmit={handleLeaveSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Select Employee</label>
+                    <select required value={newLeave.employee_id} onChange={e => setNewLeave({...newLeave, employee_id: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <option value="">-- Choose Employee --</option>
+                      {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Leave Type</label>
+                    <select required value={newLeave.leave_type} onChange={e => setNewLeave({...newLeave, leave_type: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <option>Sick</option>
+                      <option>Vacation</option>
+                      <option>Personal</option>
+                      <option>Emergency</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Start Date</label>
+                      <input type="date" required value={newLeave.start_date} onChange={e => setNewLeave({...newLeave, start_date: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{e.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ID: #EMP-{e.id}</div>
+                      <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>End Date</label>
+                      <input type="date" required value={newLeave.end_date} onChange={e => setNewLeave({...newLeave, end_date: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
                     </div>
                   </div>
-                </td>
-                <td style={{ padding: '1rem', fontWeight: 500 }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                     <Briefcase size={14} style={{ color: 'var(--text-muted)' }} /> {e.role}
-                   </div>
-                </td>
-                <td style={{ padding: '1rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', fontWeight: 500 }}>
-                    <Phone size={14} style={{ color: 'var(--text-muted)' }} /> {e.phone}
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Reason / Explanation</label>
+                    <textarea placeholder="Briefly explain the reason for leave..." value={newLeave.reason} onChange={e => setNewLeave({...newLeave, reason: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '80px', resize: 'vertical' }}></textarea>
                   </div>
-                </td>
-                <td style={{ padding: '1rem', fontWeight: 600 }}>
-                  ${parseFloat(e.salary || 0).toLocaleString()}
-                </td>
-                <td style={{ padding: '1rem' }}>
-                  {e.guarantor_name ? (
-                    <div>
-                      <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{e.guarantor_name}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{e.guarantor_phone}</div>
-                    </div>
-                  ) : (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
-                  )}
-                </td>
-                <td style={{ padding: '1rem' }}>
-                  <span className={`badge badge-${e.status?.toLowerCase() === 'active' ? 'paid' : 'unpaid'}`}>
-                    {e.status || 'Active'}
-                  </span>
-                </td>
-                <td style={{ padding: '1rem', textAlign: 'center' }}>
-                  <button 
-                    onClick={(ev) => { ev.stopPropagation(); setSelectedEmployee(e); }}
-                    style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }} 
-                  >
-                      <MoreHorizontal size={20} />
-                  </button>
-                </td>
+                  <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                    <button type="button" onClick={() => setIsLeaveModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                    <button type="submit" className="btn-primary">Submit Request</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ====== Directory Table ====== */
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>EMPLOYEE</th>
+                <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>ROLE</th>
+                <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>CONTACT</th>
+                <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>SALARY</th>
+                <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>GUARANTOR</th>
+                <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>STATUS</th>
+                <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', textAlign: 'center' }}>ACTIONS</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {filteredEmployees.length === 0 ? (
+                  <tr>
+                      <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                          No employees found matching your criteria.
+                      </td>
+                  </tr>
+              ) : filteredEmployees.map((e) => (
+                <tr key={e.id} 
+                    onClick={() => setSelectedEmployee(e)}
+                    style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s', cursor: 'pointer' }}
+                    onMouseEnter={(ev) => ev.currentTarget.style.backgroundColor = '#f8fafc'}
+                    onMouseLeave={(ev) => ev.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <td style={{ padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ 
+                        width: '36px', height: '36px', borderRadius: '50%', backgroundColor: '#eff6ff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, color: '#3b82f6',
+                        overflow: 'hidden'
+                      }}>
+                        {e.photo 
+                          ? <img src={`/uploads/${e.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : (e.name ? e.name[0].toUpperCase() : 'E')
+                        }
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{e.name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ID: #EMP-{e.id}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '1rem', fontWeight: 500 }}>
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                       <Briefcase size={14} style={{ color: 'var(--text-muted)' }} /> {e.role}
+                     </div>
+                  </td>
+                  <td style={{ padding: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', fontWeight: 500 }}>
+                      <Phone size={14} style={{ color: 'var(--text-muted)' }} /> {e.phone}
+                    </div>
+                  </td>
+                  <td style={{ padding: '1rem', fontWeight: 600 }}>
+                    ${parseFloat(e.salary || 0).toLocaleString()}
+                  </td>
+                  <td style={{ padding: '1rem' }}>
+                    {e.guarantor_name ? (
+                      <div>
+                        <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{e.guarantor_name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{e.guarantor_phone}</div>
+                      </div>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>—</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '1rem' }}>
+                    <span className={`badge badge-${e.status?.toLowerCase() === 'active' ? 'paid' : 'unpaid'}`}>
+                      {e.status || 'Active'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '1rem', textAlign: 'center' }}>
+                    <button 
+                      onClick={(ev) => { ev.stopPropagation(); setSelectedEmployee(e); }}
+                      style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }} 
+                    >
+                        <MoreHorizontal size={20} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

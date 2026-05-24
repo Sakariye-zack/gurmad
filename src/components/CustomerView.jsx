@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api';
-import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard } from 'lucide-react';
+import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { exportToCSV } from '../utils/exportUtils';
+import { useLanguage } from '../contexts/LanguageContext';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -168,6 +170,7 @@ const MonthlyCalendar = ({ collectionDaysString, collectionTime }) => {
 
 
 const CustomerView = ({ searchQuery = '' }) => {
+  const { t } = useLanguage();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -895,6 +898,17 @@ const CustomerView = ({ searchQuery = '' }) => {
           }}>
             <Filter size={18} />
             Filter
+          </button>
+          <button 
+            onClick={() => exportToCSV(filteredCustomers, 'Gurmad_Customers')}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 1.25rem',
+              backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0',
+              borderRadius: 'var(--radius-md)', fontWeight: 600, cursor: 'pointer'
+            }}
+          >
+            <FileSpreadsheet size={18} />
+            {t('export_excel')}
           </button>
           <button 
             onClick={openAddModal}

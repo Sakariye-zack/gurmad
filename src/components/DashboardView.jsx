@@ -205,67 +205,79 @@ const DashboardView = ({ currentUser }) => {
               <h3 style={{ fontWeight: 700 }}>{t('revenue_vs_expenses')} ({currency})</h3>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--gurmad-green)' }}></span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Revenue</span>
+                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--gurmad-green)' }}></span>
+                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Revenue</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--gurmad-orange)' }}></span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Expenses</span>
+                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--gurmad-orange)' }}></span>
+                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Expenses</span>
                 </div>
               </div>
             </div>
-            <div style={{ height: 350, width: '100%', minWidth: '300px' }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={350}>
-                <AreaChart data={processedChartData}>
-                  <defs>
-                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--gurmad-green)" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="var(--gurmad-green)" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--gurmad-orange)" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="var(--gurmad-orange)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: 'var(--shadow-main)' }}
-                  />
-                  <Area type="monotone" dataKey="revenue" stroke="var(--gurmad-green)" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
-                  <Area type="monotone" dataKey="expenses" stroke="var(--gurmad-orange)" strokeWidth={3} fillOpacity={1} fill="url(#colorExp)" />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div style={{ height: 350, width: '100%', position: 'relative' }}>
+              {processedChartData.length > 0 ? (
+                <ResponsiveContainer width="99%" height="100%">
+                  <AreaChart data={processedChartData}>
+                    <defs>
+                      <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--gurmad-green)" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="var(--gurmad-green)" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="idExp" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--gurmad-orange)" stopOpacity={0.1}/>
+                        <stop offset="95%" stopColor="var(--gurmad-orange)" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: 'var(--shadow-main)' }}
+                    />
+                    <Area type="monotone" dataKey="revenue" stroke="var(--gurmad-green)" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+                    <Area type="monotone" dataKey="expenses" stroke="var(--gurmad-orange)" strokeWidth={3} fillOpacity={1} fill="url(#idExp)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                  Loading chart data...
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="card">
-            <h3 style={{ marginBottom: '1.5rem', fontWeight: 700 }}>{t('task_efficiency')}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              {[
-                { label: 'Route Optimized', progress: 85, color: 'var(--gurmad-green)' },
-                { label: 'Customer Timely', progress: 92, color: 'var(--gurmad-orange)' },
-                { label: 'Fuel Usage', progress: 74, color: '#3b82f6' },
-              ].map((item, i) => (
-                <div key={i}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{item.label}</span>
-                    <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{item.progress}%</span>
+          <div className="card" style={{ padding: '1.5rem' }}>
+             <h3 style={{ marginBottom: '1.5rem', fontWeight: 700 }}>Monthly Growth</h3>
+             <div style={{ height: 280, width: '100%' }}>
+                {processedChartData.length > 0 ? (
+                  <ResponsiveContainer width="99%" height="100%">
+                    <BarChart data={processedChartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
+                        <YAxis axisLine={false} tickLine={false} hide />
+                        <Tooltip 
+                          cursor={{fill: '#f8fafc'}}
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: 'var(--shadow-main)' }}
+                        />
+                        <Bar dataKey="revenue" fill="var(--gurmad-green)" radius={[4, 4, 0, 0]} barSize={20} />
+                        <Bar dataKey="expenses" fill="#e2e8f0" radius={[4, 4, 0, 0]} barSize={20} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+                    Loading data...
                   </div>
-                  <div style={{ width: '100%', height: '8px', backgroundColor: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div style={{ width: `${item.progress}%`, height: '100%', backgroundColor: item.color, borderRadius: '4px' }}></div>
-                  </div>
+                )}
+             </div>
+             <div style={{ marginTop: '1.5rem', padding: '1.25rem', backgroundColor: '#f0fdf4', borderRadius: '16px', border: '1px solid #dcfce7' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#166534' }}>MONTHLY PROFIT</div>
+                   <div style={{ padding: '4px 8px', backgroundColor: '#166534', color: '#fff', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800 }}>+18.4%</div>
                 </div>
-              ))}
-            </div>
-
-            <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-color)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Activity size={20} color="var(--gurmad-green)" />
-                <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{t('system_health')}: {t('optimal')}</div>
-              </div>
-            </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#166534', marginTop: '4px' }}>
+                   {formatValue(dbStats.revenue - dbStats.totalExpenses)}
+                </div>
+             </div>
           </div>
         </div>
       ) : (

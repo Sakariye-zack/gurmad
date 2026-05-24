@@ -14,6 +14,71 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Auto-migrate System Tables
+const runMigrations = async () => {
+  try {
+    // Leave System
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS leave_requests (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+        leave_type VARCHAR(50) NOT NULL,
+        start_date DATE NOT NULL,
+        end_date DATE NOT NULL,
+        reason TEXT,
+        status VARCHAR(20) DEFAULT 'Pending',
+        approved_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Inventory System
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS inventory (
+        id SERIAL PRIMARY KEY,
+        item_name VARCHAR(255) NOT NULL,
+        quantity INTEGER DEFAULT 0,
+        unit VARCHAR(50) DEFAULT 'Pcs',
+        price_per_unit DECIMAL(10, 2) DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'In Stock',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Complaints System
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS complaints (
+        id SERIAL PRIMARY KEY,
+        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+        title VARCHAR(255),
+        description TEXT,
+        status VARCHAR(50) DEFAULT 'Pending', -- Pending, In Progress, Resolved
+        priority VARCHAR(20) DEFAULT 'Medium',
+        assigned_to INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Notifications System
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        title VARCHAR(255),
+        message TEXT,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('Database migrations completed successfully');
+  } catch (err) {
+    console.error('Migration failed:', err);
+  }
+};
+
+runMigrations();
+
 // Setup multer storage for images
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -33,6 +98,26 @@ const upload = multer({ storage: storage });
 
 // Expose uploads directory to frontend
 app.use('/uploads', express.static(uploadDir));
+
+// --- Middleware & Utilities ---
+const logAudit = async (userId, action, entityType, entityId, oldValues = null, newValues = null) => {
+  try {
+    await db.query(
+      'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values) VALUES ($1, $2, $3, $4, $5, $6)',
+      [userId, action, entityType, entityId, oldValues, newValues]
+    );
+  } catch (err) {
+    console.error('Audit Log Error:', err.message);
+  }
+};
+
+const checkRole = (roles) => (req, res, next) => {
+  const userRole = req.headers['x-user-role']; // Simple role check via header for now (should be JWT in production)
+  if (!userRole || !roles.includes(userRole.toLowerCase())) {
+    return res.status(403).json({ error: 'Access denied: Insufficient permissions' });
+  }
+  next();
+};
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
@@ -675,7 +760,7 @@ app.delete('/api/zones/:id', async (req, res) => {
 });
 
 // --- Employees (HRM) ---
-app.get('/api/employees', async (req, res) => {
+app.get('/api/employees', checkRole(['admin', 'cashier']), async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM employees ORDER BY id DESC');
     res.json(result.rows);
@@ -697,7 +782,7 @@ app.put('/api/employees/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/employees/:id', async (req, res) => {
+app.delete('/api/employees/:id', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('DELETE FROM employees WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
@@ -706,7 +791,7 @@ app.delete('/api/employees/:id', async (req, res) => {
   }
 });
 
-app.post('/api/employees', upload.fields([
+app.post('/api/employees', checkRole(['admin']), upload.fields([
   { name: 'photo', maxCount: 1 },
   { name: 'id_document', maxCount: 1 }
 ]), async (req, res) => {
@@ -717,6 +802,47 @@ app.post('/api/employees', upload.fields([
     const result = await db.query(
       'INSERT INTO employees (name, role, phone, salary, photo, id_document, guarantor_name, guarantor_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
       [name, role, phone, salary, photo, id_document, guarantor_name || null, guarantor_phone || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Leave Management ---
+app.get('/api/leave-requests', checkRole(['admin', 'cashier']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT lr.*, e.name as employee_name, e.role as employee_role
+      FROM leave_requests lr
+      JOIN employees e ON lr.employee_id = e.id
+      ORDER BY lr.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/leave-requests', async (req, res) => {
+  const { employee_id, leave_type, start_date, end_date, reason } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, reason) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [employee_id, leave_type, start_date, end_date, reason]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/leave-requests/:id/status', checkRole(['admin']), async (req, res) => {
+  const { status } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE leave_requests SET status = $1 WHERE id = $2 RETURNING *',
+      [status, req.params.id]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -787,6 +913,105 @@ app.post('/api/attendance/clock-out', upload.single('clock_out_photo'), async (r
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'No active clock-in found for today' });
     }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Payroll ---
+app.get('/api/payroll', async (req, res) => {
+  const { month } = req.query; // YYYY-MM
+  try {
+    let query = `
+      SELECT p.*, e.name as employee_name, e.role as employee_role, e.phone as employee_phone
+      FROM payroll p
+      JOIN employees e ON p.employee_id = e.id
+    `;
+    let params = [];
+    if (month) {
+      query += ' WHERE p.month = $1';
+      params.push(month);
+    }
+    query += ' ORDER BY e.name ASC';
+    
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/payroll/generate', async (req, res) => {
+  const { month } = req.body; // YYYY-MM
+  if (!month) return res.status(400).json({ error: 'Month is required' });
+
+  try {
+    // 1. Get all employees
+    const employees = await db.query("SELECT id, name, salary FROM employees WHERE status = 'Active'");
+    
+    const results = [];
+    for (const emp of employees.rows) {
+      // 2. Count attendance for this month
+      const attendance = await db.query(
+        "SELECT COUNT(*) FROM attendance WHERE employee_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2",
+        [emp.id, month]
+      );
+      const daysPresent = parseInt(attendance.rows[0].count);
+      
+      // 3. Insert or update payroll
+      // Net salary is now simply the base salary
+      const baseSalary = emp.salary || 0;
+      const netSalary = baseSalary;
+
+      const payrollResult = await db.query(`
+        INSERT INTO payroll (employee_id, month, base_salary, total_days_present, net_salary)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (employee_id, month) 
+        DO UPDATE SET 
+          base_salary = EXCLUDED.base_salary,
+          total_days_present = EXCLUDED.total_days_present,
+          net_salary = EXCLUDED.net_salary
+        RETURNING *
+      `, [emp.id, month, baseSalary, daysPresent, netSalary]);
+      
+      results.push(payrollResult.rows[0]);
+    }
+    
+    res.json({ success: true, count: results.length, data: results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/payroll/:id', async (req, res) => {
+  const { id } = req.params;
+  const { bonuses, deductions, status, notes, payment_method } = req.body;
+  try {
+    // Get existing payroll to recalculate net_salary
+    const existing = await db.query('SELECT base_salary, total_days_present FROM payroll WHERE id = $1', [id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Payroll record not found' });
+    
+    const base = parseFloat(existing.rows[0].base_salary);
+    const b = parseFloat(bonuses || 0);
+    const d = parseFloat(deductions || 0);
+    
+    const calculatedNet = base + b - d;
+    
+    const paymentDate = status === 'Paid' ? 'CURRENT_TIMESTAMP' : 'NULL';
+    
+    const result = await db.query(`
+      UPDATE payroll SET 
+        bonuses = $1, 
+        deductions = $2, 
+        net_salary = $3, 
+        status = $4, 
+        notes = $5,
+        payment_method = $6,
+        payment_date = ${paymentDate}
+      WHERE id = $7 RETURNING *
+    `, [b, d, calculatedNet, status, notes, payment_method || null, id]);
+    
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -955,17 +1180,33 @@ app.delete('/api/inventory/:id', async (req, res) => {
 app.get('/api/debts', async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT d.*, 
+      SELECT d.id::text as id, d.customer_id, 
              COALESCE(d.debtor_name, c.name) as debtor_name,
              COALESCE(d.phone, c.phone) as phone,
              COALESCE(d.zone, c.zone) as zone,
              COALESCE(d.house_no, c.house_no) as house_no,
              c.street,
              c.neighborhood,
-             c.name as customer_name
+             c.name as customer_name,
+             d.amount, d.currency, d.description, d.status, d.created_at,
+             'manual' as type
       FROM debts d 
       LEFT JOIN customers c ON d.customer_id = c.id 
-      ORDER BY d.created_at DESC
+      UNION ALL
+      SELECT ('INV-' || i.id) as id, i.customer_id,
+             c.name as debtor_name,
+             c.phone as phone,
+             c.area as zone,
+             c.house_no as house_no,
+             c.street,
+             '' as neighborhood,
+             c.name as customer_name,
+             i.amount, i.currency, 'Unpaid Service Invoice' as description, i.status, i.created_at,
+             'invoice' as type
+      FROM invoices i
+      JOIN customers c ON i.customer_id = c.id
+      WHERE i.status = 'Unpaid'
+      ORDER BY created_at DESC
     `);
     res.json(result.rows);
   } catch (err) {
@@ -1006,13 +1247,22 @@ app.delete('/api/debts/:id', async (req, res) => {
 
 app.put('/api/debts/:id/status', async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, payment_method } = req.body;
   try {
-    const result = await db.query(
-      `UPDATE debts SET status = $1 WHERE id = $2 RETURNING *`,
-      [status, id]
-    );
-    res.json(result.rows[0]);
+    if (id.toString().startsWith('INV-')) {
+      const invId = id.toString().replace('INV-', '');
+      const result = await db.query(
+        `UPDATE invoices SET status = $1, payment_method = COALESCE($2, payment_method) WHERE id = $3 RETURNING *`,
+        [status, payment_method || null, invId]
+      );
+      res.json({ ...result.rows[0], id: `INV-${result.rows[0].id}` });
+    } else {
+      const result = await db.query(
+        `UPDATE debts SET status = $1 WHERE id = $2 RETURNING *`,
+        [status, id]
+      );
+      res.json(result.rows[0]);
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1144,8 +1394,250 @@ app.post('/api/auth/2fa/disable', async (req, res) => {
   }
 });
 
+// --- Fleet Maintenance & Fuel ---
+app.get('/api/fleet/fuel', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT f.*, t.plate_number, u.full_name as recorded_by_name 
+      FROM truck_fuel_logs f
+      JOIN trucks t ON f.truck_id = t.id
+      LEFT JOIN users u ON f.recorded_by = u.id
+      ORDER BY f.date DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/fleet/fuel', async (req, res) => {
+  const { truck_id, liters, cost, odometer_reading, recorded_by } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO truck_fuel_logs (truck_id, liters, cost, odometer_reading, recorded_by) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [truck_id, liters, cost, odometer_reading, recorded_by]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/fleet/maintenance', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT m.*, t.plate_number, u.full_name as recorded_by_name 
+      FROM truck_maintenance_logs m
+      JOIN trucks t ON m.truck_id = t.id
+      LEFT JOIN users u ON m.recorded_by = u.id
+      ORDER BY m.date DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/fleet/maintenance', async (req, res) => {
+  const { truck_id, description, cost, next_service_date, recorded_by } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO truck_maintenance_logs (truck_id, description, cost, next_service_date, recorded_by) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [truck_id, description, cost, next_service_date, recorded_by]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Inventory Management ---
+app.get('/api/inventory', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM inventory ORDER BY item_name ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/inventory', async (req, res) => {
+  const { item_name, quantity, unit, price_per_unit, status } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO inventory (item_name, quantity, unit, price_per_unit, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [item_name, quantity, unit, price_per_unit, status]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/inventory/:id', async (req, res) => {
+  const { item_name, quantity, unit, price_per_unit, status } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE inventory SET item_name = $1, quantity = $2, unit = $3, price_per_unit = $4, status = $5 WHERE id = $6 RETURNING *',
+      [item_name, quantity, unit, price_per_unit, status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/inventory/:id', async (req, res) => {
+  try {
+    await db.query('DELETE FROM inventory WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Complaints Management ---
+app.get('/api/complaints', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT c.*, cust.name as customer_name, cust.phone as customer_phone, u.full_name as assigned_to_name
+      FROM complaints c
+      LEFT JOIN customers cust ON c.customer_id = cust.id
+      LEFT JOIN users u ON c.assigned_to = u.id
+      ORDER BY c.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/complaints', async (req, res) => {
+  const { customer_id, title, description, priority, assigned_to } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO complaints (customer_id, title, description, priority, assigned_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [customer_id, title, description, priority || 'Medium', assigned_to || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/complaints/:id/status', async (req, res) => {
+  const { status } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE complaints SET status = $1 WHERE id = $2 RETURNING *',
+      [status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Global Search ---
+app.get('/api/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.json([]);
+  const term = `%${q}%`;
+  try {
+    const results = [];
+    
+    // Search Customers
+    const custRes = await db.query('SELECT id, name, phone as subtitle FROM customers WHERE name ILIKE $1 OR phone ILIKE $1 LIMIT 5', [term]);
+    custRes.rows.forEach(r => results.push({ ...r, type: 'customer', tab: 'customers' }));
+    
+    // Search Employees
+    const empRes = await db.query('SELECT id, name, role as subtitle FROM employees WHERE name ILIKE $1 OR role ILIKE $1 LIMIT 5', [term]);
+    empRes.rows.forEach(r => results.push({ ...r, type: 'employee', tab: 'hrm' }));
+    
+    // Search Invoices
+    const invRes = await db.query('SELECT id, phone as name, status as subtitle FROM invoices WHERE phone ILIKE $1 OR status ILIKE $1 LIMIT 5', [term]);
+    invRes.rows.forEach(r => results.push({ ...r, type: 'invoice', tab: 'billing' }));
+
+    // Search Tasks
+    const taskRes = await db.query('SELECT id, route_name as name, status as subtitle FROM tasks WHERE route_name ILIKE $1 OR status ILIKE $1 LIMIT 5', [term]);
+    taskRes.rows.forEach(r => results.push({ ...r, type: 'task', tab: 'tasks' }));
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Notifications ---
+app.get('/api/users/:userId/notifications', async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [req.params.userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/notifications/:id/read', async (req, res) => {
+  try {
+    await db.query('UPDATE notifications SET is_read = TRUE WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/:userId/notifications/read-all', async (req, res) => {
+  try {
+    await db.query('UPDATE notifications SET is_read = TRUE WHERE user_id = $1', [req.params.userId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Audit Logs ---
+app.get('/api/admin/audit-logs', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT a.*, u.username, u.full_name 
+      FROM audit_logs a
+      LEFT JOIN users u ON a.user_id = u.id
+      ORDER BY a.created_at DESC
+      LIMIT 100
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Backup System ---
+app.get('/api/admin/backup', checkRole(['admin']), async (req, res) => {
+  try {
+    const tables = ['users', 'employees', 'trucks', 'zones', 'customers', 'invoices', 'expenses', 'tasks', 'inventory', 'debts', 'payroll', 'attendance', 'audit_logs', 'truck_fuel_logs', 'truck_maintenance_logs'];
+    const backupData = {};
+    
+    for (const table of tables) {
+      const result = await db.query(`SELECT * FROM ${table}`);
+      backupData[table] = result.rows;
+    }
+    
+    const backupFileName = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    const backupPath = path.join(__dirname, 'uploads', backupFileName);
+    fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2));
+    
+    res.json({ success: true, fileName: backupFileName, url: `/uploads/${backupFileName}` });
+  } catch (err) {
+    res.status(500).json({ error: 'Backup failed: ' + err.message });
+  }
+});
+
 // --- User Management (Admin Only) ---
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('SELECT id, username, full_name, role, two_factor_enabled, created_at FROM users ORDER BY id ASC');
     res.json(result.rows);

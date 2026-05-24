@@ -21,11 +21,15 @@ import {
   ExternalLink,
   ChevronRight,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  FileSpreadsheet
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { exportToCSV } from '../utils/exportUtils';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const BillingView = ({ searchQuery = '' }) => {
+  const { t } = useLanguage();
   const [invoices, setInvoices] = useState([]);
   const [stats, setStats] = useState({ total_usd: 0, total_slsh: 0, total_debt: 0, total_discount: 0, active_trucks: 0 });
   const [loading, setLoading] = useState(true);
@@ -492,9 +496,29 @@ const BillingView = ({ searchQuery = '' }) => {
               </h3>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>Last updated: {lastRefreshed.toLocaleTimeString()}</p>
             </div>
-            <button onClick={fetchAllData} className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
-               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                onClick={() => exportToCSV(filteredInvoices, 'Gurmad_Invoices')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  backgroundColor: '#dcfce7',
+                  color: '#15803d',
+                  border: '1px solid #86efac',
+                  borderRadius: '10px',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <FileSpreadsheet size={16} /> {t('export_excel')}
+              </button>
+              <button onClick={fetchAllData} className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
+                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
           </div>
           
           <div style={{ width: '100%', overflowX: 'auto' }}>
@@ -621,6 +645,17 @@ const BillingView = ({ searchQuery = '' }) => {
                       <span style={{ fontWeight: 900, fontSize: '1.5rem', color: 'var(--gurmad-green)' }}>${parseFloat(selectedInvoice.amount).toFixed(2)}</span>
                    </div>
                 </div>
+
+                <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ padding: '10px', backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                       <img 
+                         src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`GURMAD-INV-${selectedInvoice.id}-${selectedInvoice.amount}`)}`} 
+                         alt="Payment QR"
+                         style={{ width: '120px', height: '120px' }}
+                       />
+                    </div>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Scan to Verify Payment</p>
+                 </div>
 
                 <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem' }}>
                    <button onClick={() => window.print()} className="btn-secondary" style={{ flex: 1, padding: '1rem', borderRadius: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>

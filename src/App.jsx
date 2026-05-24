@@ -19,7 +19,10 @@ import {
   Briefcase,
   Fingerprint,
   Package,
-  FolderOpen
+  FolderOpen,
+  MessageSquare,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
 import { api } from './api';
@@ -42,6 +45,9 @@ import LandingView from './components/LandingView';
 import ChatWidget from './components/ChatWidget';
 import LandingManagementView from './components/LandingManagementView';
 import ArchiveView from './components/ArchiveView';
+import PayrollView from './components/PayrollView';
+import AuditLogsView from './components/AuditLogsView';
+import ComplaintsView from './components/ComplaintsView';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 
@@ -66,6 +72,12 @@ const App = () => {
     companyName: 'GURMAD',
     systemTitle: 'MANAGEMENT'
   });
+  const [theme, setTheme] = useState(() => localStorage.getItem('gurmadTheme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('gurmadTheme', theme);
+  }, [theme]);
 
   useEffect(() => {
     const handleClearSearch = () => setGlobalSearch('');
@@ -177,6 +189,13 @@ const App = () => {
       icon: Users, 
       roles: ['admin', 'cashier', 'collector'] 
     },
+    { 
+      type: 'item',
+      id: 'complaints', 
+      label: t('complaints'), 
+      icon: MessageSquare, 
+      roles: ['admin', 'cashier'] 
+    },
     {
       type: 'group',
       id: 'operations',
@@ -199,6 +218,7 @@ const App = () => {
       roles: ['admin', 'cashier', 'collector'],
       items: [
         { id: 'billing', label: t('billing_invoices'), icon: Receipt, roles: ['admin', 'cashier', 'collector'] },
+        { id: 'payroll', label: 'Employee Payroll', icon: Wallet, roles: ['admin', 'cashier'] },
         { id: 'expenses', label: t('expense_tracker'), icon: Wallet, roles: ['admin', 'cashier'] },
         { id: 'debts', label: t('debts'), icon: ClipboardList, roles: ['admin', 'cashier'] },
         { id: 'reports', label: t('financial_reports'), icon: BarChart3, roles: ['admin'] },
@@ -242,6 +262,13 @@ const App = () => {
       id: 'settings', 
       label: t('system_settings'), 
       icon: Settings, 
+      roles: ['admin', 'cashier'] 
+    },
+    { 
+      type: 'item',
+      id: 'audit_logs', 
+      label: 'Security Logs', 
+      icon: FolderOpen, 
       roles: ['admin'] 
     },
   ];
@@ -281,6 +308,7 @@ const App = () => {
       case 'tasks': return <TaskView searchQuery={globalSearch} />;
       case 'map': return <MapView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'billing': return <BillingView searchQuery={globalSearch} />;
+      case 'payroll': return <PayrollView />;
       case 'expenses': return <ExpenseView searchQuery={globalSearch} />;
       case 'inventory': return <InventoryView searchQuery={globalSearch} />;
       case 'debts': return <DebtView searchQuery={globalSearch} />;
@@ -299,6 +327,8 @@ const App = () => {
       />;
       case 'landing_mgmt': return <LandingManagementView />;
       case 'archive': return <ArchiveView searchQuery={globalSearch} />;
+      case 'complaints': return <ComplaintsView searchQuery={globalSearch} />;
+      case 'audit_logs': return <AuditLogsView />;
       default: return <DashboardView />;
     }
   };
@@ -651,6 +681,25 @@ const App = () => {
                 )}
               </div>
             )}
+
+            {/* Theme Toggle */}
+            <button 
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              className="glass" 
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: 'none',
+                cursor: 'pointer',
+                color: theme === 'light' ? '#64748b' : '#fbbf24'
+              }}
+            >
+              {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            </button>
 
             {/* Language Switcher */}
             <div style={{ display: 'flex', gap: '8px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>

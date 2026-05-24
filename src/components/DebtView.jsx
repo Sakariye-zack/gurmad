@@ -12,6 +12,7 @@ const DebtView = ({ searchQuery = '' }) => {
   const [systemInfo, setSystemInfo] = useState({ logo: '', name: 'GURMAD' });
   const [collectors, setCollectors] = useState([]);
   const [zones, setZones] = useState([]);
+  const [paymentModal, setPaymentModal] = useState({ isOpen: false, debtId: null, method: 'Cash' });
 
   // Form State
   const [newDebt, setNewDebt] = useState({
@@ -107,11 +108,14 @@ const DebtView = ({ searchQuery = '' }) => {
     }
   };
 
-  const handleStatusUpdate = async (id, status) => {
+  const handleStatusUpdate = async (id, status, method = null) => {
     try {
-      const data = await api.updateDebtStatus(id, status);
+      const data = await api.updateDebtStatus(id, status, method);
       setDebts(debts.map(debt => debt.id === id ? { ...debt, status: data.status } : debt));
       toast.success('Status updated');
+      if (paymentModal.isOpen) {
+        setPaymentModal({ isOpen: false, debtId: null, method: 'Cash' });
+      }
     } catch (err) {
       toast.error('Failed to update status');
     }
@@ -292,7 +296,7 @@ const DebtView = ({ searchQuery = '' }) => {
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
                         {debt.status === 'Unpaid' ? (
                           <button 
-                            onClick={(e) => { e.stopPropagation(); handleStatusUpdate(debt.id, 'Paid'); }}
+                            onClick={(e) => { e.stopPropagation(); setPaymentModal({ isOpen: true, debtId: debt.id, method: 'Cash' }); }}
                             className="glass"
                             style={{ 
                               backgroundColor: 'var(--gurmad-green)', 
@@ -672,6 +676,50 @@ const DebtView = ({ searchQuery = '' }) => {
               >
                 <Copy size={18} /> Print Receipt
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Method Modal */}
+      {paymentModal.isOpen && (
+        <div 
+          className="modal-overlay" 
+          onClick={() => setPaymentModal({ isOpen: false, debtId: null, method: 'Cash' })}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
+        >
+          <div 
+            className="card scale-in" 
+            onClick={e => e.stopPropagation()}
+            style={{ width: '90%', maxWidth: '400px', padding: '2rem', animation: 'slideUp 0.3s ease-out' }}
+          >
+            <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', marginTop: 0 }}>Select Payment Method</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <select 
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', backgroundColor: 'white' }}
+                value={paymentModal.method}
+                onChange={(e) => setPaymentModal({...paymentModal, method: e.target.value})}
+              >
+                <option value="Cash">Cash (Caddaan)</option>
+                <option value="Zaad">Zaad Service</option>
+                <option value="eDahab">eDahab</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+              </select>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
+                <button 
+                  onClick={() => setPaymentModal({ isOpen: false, debtId: null, method: 'Cash' })}
+                  style={{ padding: '0.75rem 1.5rem', fontWeight: 600, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn-primary" 
+                  onClick={() => handleStatusUpdate(paymentModal.debtId, 'Paid', paymentModal.method)}
+                  style={{ padding: '0.75rem 2rem' }}
+                >
+                  Confirm Payment
+                </button>
+              </div>
             </div>
           </div>
         </div>
