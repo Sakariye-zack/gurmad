@@ -36,6 +36,8 @@ const BillingView = ({ searchQuery = '' }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [collectorName, setCollectorName] = useState('');
   const [splitPayments, setSplitPayments] = useState({ cash: '', zaad: '', edahab: '', debt: '' });
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [singleAmount, setSingleAmount] = useState('');
   const [currencyMode, setCurrencyMode] = useState('USD');
   const [discount, setDiscount] = useState('');
   const [selectedTruck, setSelectedTruck] = useState('');
@@ -99,20 +101,22 @@ const BillingView = ({ searchQuery = '' }) => {
     }
   };
 
+  const calculateRawTotal = () => {
+    if (paymentMethod === 'Split') {
+      return (parseFloat(splitPayments.cash) || 0) + 
+             (parseFloat(splitPayments.zaad) || 0) + 
+             (parseFloat(splitPayments.edahab) || 0) + 
+             (parseFloat(splitPayments.debt) || 0);
+    }
+    return parseFloat(singleAmount) || 0;
+  };
+
+  const rawTotal = calculateRawTotal();
+
   const totalAmount = (
     currencyMode === 'USD' 
-    ? (
-        (parseFloat(splitPayments.cash) || 0) + 
-        (parseFloat(splitPayments.zaad) || 0) + 
-        (parseFloat(splitPayments.edahab) || 0) + 
-        (parseFloat(splitPayments.debt) || 0)
-      )
-    : (
-        ((parseFloat(splitPayments.cash) || 0) + 
-        (parseFloat(splitPayments.zaad) || 0) + 
-        (parseFloat(splitPayments.edahab) || 0) + 
-        (parseFloat(splitPayments.debt) || 0)) / exchangeRate
-      )
+    ? rawTotal
+    : (rawTotal / exchangeRate)
   ) - (parseFloat(discount) || 0);
 
   const filteredInvoices = invoices.filter(inv => {
@@ -136,7 +140,25 @@ const BillingView = ({ searchQuery = '' }) => {
     
     setIsProcessing(true);
 
-    const zaadAmount = currencyMode === 'USD' ? (parseFloat(splitPayments.zaad) || 0) : 0; // Slsh not directly supported for zaad Waafi here unless converted, assuming USD for Zaad
+    let cash = 0, zaad = 0, edahab = 0, debt = 0;
+    const amountVal = parseFloat(singleAmount) || 0;
+
+    if (paymentMethod === 'Split') {
+      cash = parseFloat(splitPayments.cash) || 0;
+      zaad = parseFloat(splitPayments.zaad) || 0;
+      edahab = parseFloat(splitPayments.edahab) || 0;
+      debt = parseFloat(splitPayments.debt) || 0;
+    } else if (paymentMethod === 'Cash') {
+      cash = amountVal;
+    } else if (paymentMethod === 'Zaad') {
+      zaad = amountVal;
+    } else if (paymentMethod === 'eDahab') {
+      edahab = amountVal;
+    } else if (paymentMethod === 'Debt') {
+      debt = amountVal;
+    }
+
+    const zaadAmount = currencyMode === 'USD' ? zaad : 0; // Slsh not directly supported for zaad Waafi here unless converted, assuming USD for Zaad
 
     // Process Zaad payment if there's a zaad amount
     if (zaadAmount > 0) {
@@ -169,16 +191,11 @@ const BillingView = ({ searchQuery = '' }) => {
       const result = await api.addInvoice({
           phone: phoneNumber,
           splitPayments: {
-            cash: currencyMode === 'USD' ? (parseFloat(splitPayments.cash) || 0) : 0,
-            zaad: currencyMode === 'USD' ? (parseFloat(splitPayments.zaad) || 0) : 0,
-            edahab: currencyMode === 'USD' ? (parseFloat(splitPayments.edahab) || 0) : 0,
-            debt: currencyMode === 'USD' ? (parseFloat(splitPayments.debt) || 0) : 0,
-            slsh: currencyMode === 'SLSH' ? (
-                (parseFloat(splitPayments.cash) || 0) + 
-                (parseFloat(splitPayments.zaad) || 0) + 
-                (parseFloat(splitPayments.edahab) || 0) + 
-                (parseFloat(splitPayments.debt) || 0)
-            ) : 0
+            cash: currencyMode === 'USD' ? cash : 0,
+            zaad: currencyMode === 'USD' ? zaad : 0,
+            edahab: currencyMode === 'USD' ? edahab : 0,
+            debt: currencyMode === 'USD' ? debt : 0,
+            slsh: currencyMode === 'SLSH' ? (cash + zaad + edahab + debt) : 0
           },
           currency: currencyMode,
           customer_name: customerName,
@@ -197,6 +214,8 @@ const BillingView = ({ searchQuery = '' }) => {
           setPhoneNumber('');
           setCustomerName('');
           setCollectorName('');
+          setSingleAmount('');
+          setPaymentMethod('Cash');
           setSplitPayments({ cash: '', zaad: '', edahab: '', debt: '' });
           setDiscount('');
           setHouseNo('');
@@ -430,53 +449,83 @@ const BillingView = ({ searchQuery = '' }) => {
             </div>
 
             <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-              <label style={{ display: 'block', marginBottom: '1rem', fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)' }}>Cadadka Lacagta (Breakdown)</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>CASH ({currencyMode})</div>
-                  <input 
-                    type="number" 
-                    placeholder="0.00"
-                    value={splitPayments.cash}
-                    onChange={(e) => setSplitPayments({...splitPayments, cash: e.target.value})}
-                    style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
-                  />
-                  {splitPayments.cash > 0 && <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                    ≈ {currencyMode === 'USD' ? `SLSH ${ (parseFloat(splitPayments.cash) * exchangeRate).toLocaleString() }` : `$${(parseFloat(splitPayments.cash) / exchangeRate).toFixed(2)}`}
-                  </div>}
-                </div>
-                <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ color: '#3b82f6', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>ZAAD ({currencyMode})</div>
-                  <input 
-                    type="number" 
-                    placeholder="0.00"
-                    value={splitPayments.zaad}
-                    onChange={(e) => setSplitPayments({...splitPayments, zaad: e.target.value})}
-                    style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
-                  />
-                </div>
-                <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>EDAHAB ({currencyMode})</div>
-                  <input 
-                    type="number" 
-                    placeholder="0.00"
-                    value={splitPayments.edahab}
-                    onChange={(e) => setSplitPayments({...splitPayments, edahab: e.target.value})}
-                    style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
-                  />
-                </div>
-                <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>AMAAH ({currencyMode})</div>
-                  <input 
-                    type="number" 
-                    placeholder="0.00"
-                    value={splitPayments.debt}
-                    onChange={(e) => setSplitPayments({...splitPayments, debt: e.target.value})}
-                    style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
-                  />
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Lacag Bixinta (Payment)</label>
+                <select 
+                  value={paymentMethod}
+                  onChange={(e) => {
+                    setPaymentMethod(e.target.value);
+                    if (e.target.value !== 'Split') setSplitPayments({ cash: '', zaad: '', edahab: '', debt: '' });
+                  }}
+                  style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: 700, backgroundColor: '#fff' }}
+                >
+                  <option value="Cash">Cash (Caddaan)</option>
+                  <option value="Zaad">Zaad Service</option>
+                  <option value="eDahab">eDahab</option>
+                  <option value="Debt">Amaah (Debt)</option>
+                  <option value="Split">Split (Isku-jir)</option>
+                </select>
               </div>
-              <div style={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: '#fdf2f8', borderRadius: '12px', border: '1px solid #fce7f3' }}>
+
+              {paymentMethod !== 'Split' ? (
+                <div style={{ backgroundColor: '#fff', padding: '1rem', borderRadius: '12px', border: '2px solid var(--gurmad-green)', display: 'flex', alignItems: 'center' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-muted)', marginRight: '8px' }}>
+                    {currencyMode === 'USD' ? '$' : 'SLSH'}
+                  </div>
+                  <input 
+                    type="number" 
+                    placeholder="0.00"
+                    value={singleAmount}
+                    onChange={(e) => setSingleAmount(e.target.value)}
+                    style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.75rem', fontWeight: 900, outline: 'none', color: 'var(--text-primary)' }}
+                  />
+                </div>
+              ) : (
+                <div className="fade-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ color: '#10b981', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>CASH ({currencyMode})</div>
+                    <input 
+                      type="number" 
+                      placeholder="0.00"
+                      value={splitPayments.cash}
+                      onChange={(e) => setSplitPayments({...splitPayments, cash: e.target.value})}
+                      style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
+                    />
+                  </div>
+                  <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ color: '#3b82f6', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>ZAAD ({currencyMode})</div>
+                    <input 
+                      type="number" 
+                      placeholder="0.00"
+                      value={splitPayments.zaad}
+                      onChange={(e) => setSplitPayments({...splitPayments, zaad: e.target.value})}
+                      style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
+                    />
+                  </div>
+                  <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>EDAHAB ({currencyMode})</div>
+                    <input 
+                      type="number" 
+                      placeholder="0.00"
+                      value={splitPayments.edahab}
+                      onChange={(e) => setSplitPayments({...splitPayments, edahab: e.target.value})}
+                      style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
+                    />
+                  </div>
+                  <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>AMAAH ({currencyMode})</div>
+                    <input 
+                      type="number" 
+                      placeholder="0.00"
+                      value={splitPayments.debt}
+                      onChange={(e) => setSplitPayments({...splitPayments, debt: e.target.value})}
+                      style={{ background: 'transparent', border: 'none', width: '100%', fontSize: '1.1rem', fontWeight: 800, outline: 'none' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#fdf2f8', borderRadius: '12px', border: '1px solid #fce7f3' }}>
                 <div style={{ color: '#ec4899', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}><Tag size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} /> DISCOUNT ($)</div>
                 <input 
                   type="number" 
