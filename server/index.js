@@ -1954,6 +1954,69 @@ app.post('/api/whatsapp/notify', async (req, res) => {
   }
 });
 
+// Waafi ZAAD API Integration
+app.post('/api/payments/zaad', async (req, res) => {
+  const { amount, phone, reference, currency } = req.body;
+  try {
+    const merchantUid = process.env.ZAAD_MERCHANT_UID;
+    const apiUserId = process.env.ZAAD_API_USER_ID;
+    const apiKey = process.env.ZAAD_API_KEY;
+
+    if (!merchantUid || !apiUserId || !apiKey) {
+      return res.status(400).json({ error: 'ZAAD API credentials not configured on the server.' });
+    }
+
+    // Format phone: must start with 252 for Waafi
+    let formattedPhone = phone.replace(/\D/g, '');
+    if (formattedPhone.startsWith('063')) formattedPhone = '252' + formattedPhone.substring(1);
+    else if (formattedPhone.startsWith('63')) formattedPhone = '252' + formattedPhone;
+    else if (!formattedPhone.startsWith('252')) formattedPhone = '252' + formattedPhone;
+
+    const reqCurrency = currency === 'SLSH' ? 'SLSH' : 'USD';
+
+    const payload = {
+      schemaVersion: "1.0",
+      requestId: "REQ-" + Date.now() + Math.floor(Math.random() * 1000),
+      timestamp: new Date().toISOString(),
+      channelName: "WEB",
+      serviceName: "API_PURCHASE",
+      serviceParams: {
+        merchantUid,
+        apiUserId,
+        apiKey,
+        paymentMethod: "MWALLET_ACCOUNT",
+        payerInfo: {
+          accountNo: formattedPhone
+        },
+        transactionInfo: {
+          referenceId: reference ? String(reference) : "REF-" + Date.now(),
+          invoiceId: reference ? String(reference) : "INV-" + Date.now(),
+          amount: parseFloat(amount).toString(),
+          currency: reqCurrency,
+          description: "Payment for Gurmad Services"
+        }
+      }
+    };
+
+    const response = await fetch('https://api.waafipay.net/asm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const responseData = await response.json();
+
+    if (responseData.responseCode === "2001") {
+      res.json({ success: true, data: responseData });
+    } else {
+      res.status(400).json({ error: responseData.responseMsg || 'Payment failed' });
+    }
+  } catch (err) {
+    console.error('ZAAD API Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Gurmad Backend running on port ${PORT}`);
 });

@@ -12,7 +12,7 @@ const DebtView = ({ searchQuery = '' }) => {
   const [systemInfo, setSystemInfo] = useState({ logo: '', name: 'GURMAD' });
   const [collectors, setCollectors] = useState([]);
   const [zones, setZones] = useState([]);
-  const [paymentModal, setPaymentModal] = useState({ isOpen: false, debtId: null, method: 'Cash' });
+  const [paymentModal, setPaymentModal] = useState({ isOpen: false, debt: null, debtId: null, method: 'Cash', phone: '' });
 
   // Form State
   const [newDebt, setNewDebt] = useState({
@@ -110,11 +110,37 @@ const DebtView = ({ searchQuery = '' }) => {
 
   const handleStatusUpdate = async (id, status, method = null) => {
     try {
+      if (status === 'Paid' && method === 'Zaad') {
+        if (!paymentModal.phone || paymentModal.phone.length < 9) {
+          toast.error('Fadlan geli nambarka Zaad sax ah');
+          return;
+        }
+        const loadingToast = toast.loading('Fadlan sug... Macmiilka ayaa la weydiinayaa PIN-ka');
+        try {
+          const payRes = await api.processZaadPayment({
+            amount: paymentModal.debt.amount,
+            phone: paymentModal.phone,
+            currency: paymentModal.debt.currency,
+            reference: paymentModal.debtId
+          });
+          toast.dismiss(loadingToast);
+          if (!payRes.success) {
+            toast.error('Lacag bixinta waa la diiday ama waa fashilantay');
+            return; // Stop update if payment failed
+          }
+          toast.success('Lacag bixinta Zaad way guulaysatay!');
+        } catch (err) {
+          toast.dismiss(loadingToast);
+          toast.error(err.message || 'Cilad ayaa ka dhacday Zaad API');
+          return; // Stop update if error
+        }
+      }
+
       const data = await api.updateDebtStatus(id, status, method);
       setDebts(debts.map(debt => debt.id === id ? { ...debt, status: data.status } : debt));
       toast.success('Status updated');
       if (paymentModal.isOpen) {
-        setPaymentModal({ isOpen: false, debtId: null, method: 'Cash' });
+        setPaymentModal({ isOpen: false, debt: null, debtId: null, method: 'Cash', phone: '' });
       }
     } catch (err) {
       toast.error('Failed to update status');
@@ -296,7 +322,7 @@ const DebtView = ({ searchQuery = '' }) => {
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
                         {debt.status === 'Unpaid' ? (
                           <button 
-                            onClick={(e) => { e.stopPropagation(); setPaymentModal({ isOpen: true, debtId: debt.id, method: 'Cash' }); }}
+                            onClick={(e) => { e.stopPropagation(); setPaymentModal({ isOpen: true, debt: debt, debtId: debt.id, method: 'Cash', phone: debt.phone || '' }); }}
                             className="glass"
                             style={{ 
                               backgroundColor: 'var(--gurmad-green)', 
@@ -685,7 +711,7 @@ const DebtView = ({ searchQuery = '' }) => {
       {paymentModal.isOpen && (
         <div 
           className="modal-overlay" 
-          onClick={() => setPaymentModal({ isOpen: false, debtId: null, method: 'Cash' })}
+          onClick={() => setPaymentModal({ isOpen: false, debt: null, debtId: null, method: 'Cash', phone: '' })}
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
         >
           <div 
@@ -695,19 +721,37 @@ const DebtView = ({ searchQuery = '' }) => {
           >
             <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', marginTop: 0 }}>Select Payment Method</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <select 
-                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', backgroundColor: 'white' }}
-                value={paymentModal.method}
-                onChange={(e) => setPaymentModal({...paymentModal, method: e.target.value})}
-              >
-                <option value="Cash">Cash (Caddaan)</option>
-                <option value="Zaad">Zaad Service</option>
-                <option value="eDahab">eDahab</option>
-                <option value="Bank Transfer">Bank Transfer</option>
-              </select>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Qaabka Lacagta lagu Bixinayo</label>
+                <select 
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', backgroundColor: 'white' }}
+                  value={paymentModal.method}
+                  onChange={(e) => setPaymentModal({...paymentModal, method: e.target.value})}
+                >
+                  <option value="Cash">Cash (Caddaan)</option>
+                  <option value="Zaad">Zaad Service (Automatic)</option>
+                  <option value="eDahab">eDahab</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                </select>
+              </div>
+
+              {paymentModal.method === 'Zaad' && (
+                <div className="fade-in">
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Nambarka Zaad ee Macmiilka *</label>
+                  <input 
+                    type="text" 
+                    placeholder="Tusaale: 25263..." 
+                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--gurmad-green)', outline: 'none', backgroundColor: '#f0fdf4' }}
+                    value={paymentModal.phone}
+                    onChange={(e) => setPaymentModal({...paymentModal, phone: e.target.value})}
+                  />
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>Nambarkan ayaa si toos ah fariin "USSD PIN" ah loogu dirayaa.</p>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem', marginTop: '1rem' }}>
                 <button 
-                  onClick={() => setPaymentModal({ isOpen: false, debtId: null, method: 'Cash' })}
+                  onClick={() => setPaymentModal({ isOpen: false, debt: null, debtId: null, method: 'Cash', phone: '' })}
                   style={{ padding: '0.75rem 1.5rem', fontWeight: 600, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   Cancel
@@ -717,7 +761,7 @@ const DebtView = ({ searchQuery = '' }) => {
                   onClick={() => handleStatusUpdate(paymentModal.debtId, 'Paid', paymentModal.method)}
                   style={{ padding: '0.75rem 2rem' }}
                 >
-                  Confirm Payment
+                  {paymentModal.method === 'Zaad' ? 'Pay with Zaad' : 'Confirm Payment'}
                 </button>
               </div>
             </div>

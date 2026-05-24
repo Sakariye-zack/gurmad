@@ -135,6 +135,34 @@ const BillingView = ({ searchQuery = '' }) => {
     }
     
     setIsProcessing(true);
+
+    const zaadAmount = currencyMode === 'USD' ? (parseFloat(splitPayments.zaad) || 0) : 0; // Slsh not directly supported for zaad Waafi here unless converted, assuming USD for Zaad
+
+    // Process Zaad payment if there's a zaad amount
+    if (zaadAmount > 0) {
+       const loadingZaad = toast.loading('Fadlan sug... Macmiilka ayaa ZAAD PIN weydiinayaa', { id: 'zaad-process' });
+       try {
+         const payRes = await api.processZaadPayment({
+           amount: zaadAmount,
+           phone: phoneNumber,
+           currency: currencyMode,
+           reference: `BILL-${Date.now()}`
+         });
+         toast.dismiss(loadingZaad);
+         if (!payRes.success) {
+           toast.error('Lacag bixinta Zaad waa la diiday ama fashilantay', { id: 'zaad-process' });
+           setIsProcessing(false);
+           return;
+         }
+         toast.success('Lacag bixinta Zaad way guulaysatay!', { id: 'zaad-process' });
+       } catch (err) {
+         toast.dismiss(loadingZaad);
+         toast.error(err.message || 'Cilad ayaa ka dhacday Zaad API', { id: 'zaad-process' });
+         setIsProcessing(false);
+         return;
+       }
+    }
+
     toast.loading('Diiwaangelinta lacag bixinta...', { id: 'payment-request' });
     
     try {

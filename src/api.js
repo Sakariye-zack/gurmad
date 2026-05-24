@@ -270,6 +270,11 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ status, payment_method: method })
   }).then(handleResponse),
+  processZaadPayment: (data) => fetch(`${API_BASE_URL}/payments/zaad`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
   deleteDebt: (id) => fetch(`${API_BASE_URL}/debts/${id}`, { 
     method: 'DELETE',
     headers: getAuthHeaders()
