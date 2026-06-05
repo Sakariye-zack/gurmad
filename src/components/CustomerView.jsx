@@ -183,6 +183,7 @@ const CustomerView = ({ searchQuery = '' }) => {
   const [debtForm, setDebtForm] = useState({ amount: '', description: '', currency: 'USD' });
   const [viewMode, setViewMode] = useState('list'); // 'list', 'details', or 'register'
   const [employees, setEmployees] = useState([]);
+  const [localSearch, setLocalSearch] = useState('');
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -383,7 +384,7 @@ const CustomerView = ({ searchQuery = '' }) => {
   };
 
   const filteredCustomers = useMemo(() => {
-    const search = searchQuery.toLowerCase();
+    const search = (localSearch || searchQuery).toLowerCase();
     return customers.filter(c => {
       const name = c.name?.toLowerCase() || '';
       const phone = c.phone?.toLowerCase() || '';
@@ -873,11 +874,8 @@ const CustomerView = ({ searchQuery = '' }) => {
           <input 
              type="text" 
              placeholder="Search by name, ID or phone..." 
-             value={searchQuery}
-             onChange={(e) => {
-               // We need to trigger the parent search update if available, 
-               // but for now we ensure it at least shows the current value
-             }}
+             value={localSearch}
+             onChange={(e) => setLocalSearch(e.target.value)}
              style={{ 
                width: '100%', padding: '0.85rem 1rem 0.85rem 3rem', borderRadius: '16px', 
                border: '1px solid var(--border-color)', outline: 'none', fontSize: '1rem', fontWeight: 600,

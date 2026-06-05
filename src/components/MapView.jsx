@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { socket } from '../socket';
+import { AnimatedTruckMarker } from './AnimatedTruckMarker';
 
 // Fix for default leaflet icon issues in React
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -135,9 +137,38 @@ const MapView = ({ currentUser }) => {
 
   useEffect(() => {
     loadData();
-    // Poll every 5 seconds for real-time tracking
-    const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
+    
+    // Real-time tracking via Socket.io
+    socket.on('truck_location_updated', (data) => {
+      setTasks(prev => prev.map(t => {
+        if (t.id === data.taskId) {
+          return { ...t, lat: data.lat, lng: data.lng };
+        }
+        return t;
+      }));
+
+      setTaskHistory(prev => {
+        if (prev[data.taskId]) {
+          return { ...prev, [data.taskId]: [...prev[data.taskId], [data.lat, data.lng]] };
+        }
+        return prev;
+      });
+    });
+
+    socket.on('customer_status_updated', (data) => {
+      setCustomers(prev => prev.map(c => {
+        if (c.id === data.customerId) {
+          return { ...c, status: data.status, payment_status: data.status };
+        }
+        return c;
+      }));
+      toast.success('Customer status updated!', { icon: '🔄', position: 'bottom-right' });
+    });
+
+    return () => {
+      socket.off('truck_location_updated');
+      socket.off('customer_status_updated');
+    };
   }, []);
 
   const handleLocalSearch = (query) => {
@@ -389,45 +420,17 @@ const MapView = ({ currentUser }) => {
             const zone = zones.find(z => z.name === t.route_name);
             const center = zone?.coordinates?.[0] || [9.524, 45.535];
             pos = [center[0] + (Math.random()-0.5)*0.002, center[1] + (Math.random()-0.5)*0.002];
+            t.lat = pos[0];
+            t.lng = pos[1];
           }
           
           return (
-            <Marker 
+            <AnimatedTruckMarker 
               key={t.id} 
-              position={pos} 
-              icon={t.status === 'In Progress' ? truckIcon : pendingTruckIcon}
-              eventHandlers={{
-                click: () => handleSelectTask(t)
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -20]} opacity={1} permanent={t.status === 'In Progress'}>
-                <div style={{ fontWeight: 900, fontSize: '0.8rem', backgroundColor: 'white', padding: '4px 8px', borderRadius: '8px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
-                  {t.vehicle_plate || 'TRK-01'}
-                </div>
-              </Tooltip>
-              <Popup>
-                <div style={{ padding: '0', minWidth: '260px', borderRadius: '24px', overflow: 'hidden' }}>
-                  <div style={{ backgroundColor: getStatusColor(t.status), padding: '20px', color: 'white' }}>
-                    <div style={{ fontWeight: 900, fontSize: '1.2rem' }}>{t.vehicle_plate || 'GAADHI'}</div>
-                    <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>{t.status} • {t.route_name}</div>
-                  </div>
-                  <div style={{ padding: '20px' }}>
-                    <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 800, marginBottom: '4px' }}>DRIVER & COLLECTOR</div>
-                    <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#1e293b' }}>{t.driver_name}</div>
-                    <div style={{ fontSize: '0.9rem', color: '#64748b' }}>Collector: {t.collector_name || 'N/A'}</div>
-                    
-                    <div style={{ marginTop: '16px', padding: '14px', backgroundColor: '#f0fdf4', borderRadius: '16px', border: '1px solid #dcfce7' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', fontWeight: 900, color: '#166534', marginBottom: '6px' }}>
-                          <Cpu size={16} /> AI SMART INSIGHT
-                       </div>
-                       <div style={{ fontSize: '0.85rem', color: '#14532d', fontStyle: 'italic', lineHeight: 1.5 }}>
-                          {t.status === 'In Progress' ? 'Gaadhigu wuxuu u socdaa si hufan. Waxaa loo qorsheeyey inuu zone-ka dhamaystiro 45 daqiiqo gudahood.' : 'Sugaya in la bilaabo hawsha. Dhammaan agabkii waa diyaar.'}
-                       </div>
-                    </div>
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
+              task={t} 
+              isSelected={selectedTaskId === t.id} 
+              onSelect={() => handleSelectTask(t)} 
+            />
           );
         })}
 

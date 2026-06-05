@@ -61,6 +61,7 @@ const App = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState(['operations', 'accounting', 'staff']);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [globalSearch, setGlobalSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -820,28 +821,80 @@ const App = () => {
               )}
             </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{currentUser.full_name || currentUser.username}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{currentUser.role}</div>
+            <div style={{ position: 'relative' }}>
+              <div onClick={() => setShowProfileMenu(!showProfileMenu)} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{currentUser.full_name || currentUser.username}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{currentUser.role}</div>
+                </div>
+                <div style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '12px',
+                  backgroundColor: '#cbd5e1',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '1px solid var(--border-color)'
+                }}>
+                  <img 
+                    src={currentUser.profile_image ? `/uploads/${currentUser.profile_image}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || currentUser.username)}&background=3FAE2A&color=fff&size=128`} 
+                    alt="User" 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
               </div>
-              <div style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '12px',
-                backgroundColor: '#cbd5e1',
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '1px solid var(--border-color)'
-              }}>
-                <img 
-                  src={currentUser.profile_image ? `/uploads/${currentUser.profile_image}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || currentUser.username)}&background=3FAE2A&color=fff&size=128`} 
-                  alt="User" 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              </div>
+              
+              {showProfileMenu && (
+                <div style={{
+                  position: 'absolute',
+                  top: '55px',
+                  right: 0,
+                  width: '200px',
+                  backgroundColor: 'white',
+                  borderRadius: '12px',
+                  boxShadow: 'var(--shadow-lg)',
+                  border: '1px solid var(--border-color)',
+                  zIndex: 50,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: '8px'
+                }}>
+                  <button 
+                    onClick={() => {
+                      setActiveTab('settings');
+                      setShowProfileMenu(false);
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px', padding: '10px',
+                      border: 'none', backgroundColor: 'transparent', cursor: 'pointer',
+                      borderRadius: '8px', color: '#1e293b', fontWeight: 500, textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    <Settings size={18} /> My Profile & Settings
+                  </button>
+                  <div style={{ height: '1px', backgroundColor: 'var(--border-color)', margin: '4px 0' }}></div>
+                  <button 
+                    onClick={() => {
+                      setCurrentUser(null);
+                      localStorage.removeItem('gurmadUser');
+                      toast.success('Logged out successfully');
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '10px', padding: '10px',
+                      border: 'none', backgroundColor: 'transparent', cursor: 'pointer',
+                      borderRadius: '8px', color: '#ef4444', fontWeight: 500, textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    <LogOut size={18} /> Logout
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>

@@ -7,8 +7,18 @@ const multer = require('multer');
 const fs = require('fs');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE"]
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
@@ -555,6 +565,17 @@ app.put('/api/tasks/:taskId/customers/:customerId', async (req, res) => {
       `UPDATE task_customers SET collected = $1 WHERE task_id = $2 AND customer_id = $3`,
       [collected, taskId, customerId]
     );
+
+    if (collected) {
+      await db.query(`UPDATE customers SET status = 'Paid' WHERE id = $1`, [customerId]);
+    }
+
+    // Emit real-time customer status update
+    io.emit('customer_status_updated', {
+      customerId: parseInt(customerId),
+      status: collected ? 'Paid' : 'Unpaid'
+    });
+
     res.json({ success: true, collected });
 
     if (collected) {
@@ -615,6 +636,15 @@ app.post('/api/tasks/:id/ping', async (req, res) => {
       'INSERT INTO truck_location_history (task_id, lat, lng) VALUES ($1, $2, $3) RETURNING *',
       [req.params.id, lat, lng]
     );
+    
+    // Emit real-time truck location update
+    io.emit('truck_location_updated', {
+      taskId: parseInt(req.params.id),
+      lat: parseFloat(lat),
+      lng: parseFloat(lng),
+      timestamp: new Date().toISOString()
+    });
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1538,35 +1568,6 @@ app.put('/api/complaints/:id/status', async (req, res) => {
   }
 });
 
-// --- Global Search ---
-app.get('/api/search', async (req, res) => {
-  const { q } = req.query;
-  if (!q) return res.json([]);
-  const term = `%${q}%`;
-  try {
-    const results = [];
-    
-    // Search Customers
-    const custRes = await db.query('SELECT id, name, phone as subtitle FROM customers WHERE name ILIKE $1 OR phone ILIKE $1 LIMIT 5', [term]);
-    custRes.rows.forEach(r => results.push({ ...r, type: 'customer', tab: 'customers' }));
-    
-    // Search Employees
-    const empRes = await db.query('SELECT id, name, role as subtitle FROM employees WHERE name ILIKE $1 OR role ILIKE $1 LIMIT 5', [term]);
-    empRes.rows.forEach(r => results.push({ ...r, type: 'employee', tab: 'hrm' }));
-    
-    // Search Invoices
-    const invRes = await db.query('SELECT id, phone as name, status as subtitle FROM invoices WHERE phone ILIKE $1 OR status ILIKE $1 LIMIT 5', [term]);
-    invRes.rows.forEach(r => results.push({ ...r, type: 'invoice', tab: 'billing' }));
-
-    // Search Tasks
-    const taskRes = await db.query('SELECT id, route_name as name, status as subtitle FROM tasks WHERE route_name ILIKE $1 OR status ILIKE $1 LIMIT 5', [term]);
-    taskRes.rows.forEach(r => results.push({ ...r, type: 'task', tab: 'tasks' }));
-
-    res.json(results);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // --- Notifications ---
 app.get('/api/users/:userId/notifications', async (req, res) => {
@@ -2017,6 +2018,6 @@ app.post('/api/payments/zaad', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Gurmad Backend running on port ${PORT}`);
 });
