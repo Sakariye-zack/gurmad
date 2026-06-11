@@ -678,71 +678,106 @@ const BillingView = ({ searchQuery = '' }) => {
 
       {/* Expanded Receipt Modal */}
       {selectedInvoice && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-          <div className="card" style={{ maxWidth: '500px', width: '95%', padding: '0', borderRadius: '24px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
-             <div style={{ backgroundColor: 'var(--gurmad-green)', color: '#fff', padding: '2rem', textAlign: 'center', position: 'relative' }}>
-                <button onClick={() => setSelectedInvoice(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}>×</button>
-                <div style={{ display: 'inline-flex', padding: '12px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '16px', marginBottom: '1rem' }}>
-                   <Receipt size={32} />
+        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '1rem' }}>
+          <div className="card receipt-modal" style={{ maxWidth: '450px', width: '100%', padding: '0', borderRadius: '24px', backgroundColor: '#f8fafc', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)', position: 'relative' }}>
+             
+             {/* Header */}
+             <div style={{ backgroundColor: 'white', padding: '2rem 2rem 1.5rem', borderBottom: '2px dashed #e2e8f0', position: 'relative' }}>
+                <button onClick={() => setSelectedInvoice(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: '#f1f5f9', border: 'none', color: '#64748b', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s' }} onMouseEnter={e => e.currentTarget.style.background='#e2e8f0'} onMouseLeave={e => e.currentTarget.style.background='#f1f5f9'}><XCircle size={20} /></button>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                   <div style={{ width: '50px', height: '50px', backgroundColor: '#f0fdf4', color: 'var(--gurmad-green)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #dcfce7' }}>
+                      <Receipt size={24} />
+                   </div>
+                   <div>
+                      <h2 style={{ margin: 0, fontWeight: 900, fontSize: '1.5rem', color: '#0f172a' }}>Payment Receipt</h2>
+                      <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>Invoice <span style={{ color: 'var(--gurmad-green)' }}>#GUR-{selectedInvoice.id}</span></p>
+                   </div>
                 </div>
-                <h2 style={{ margin: 0, fontWeight: 900 }}>Invois Qabasho</h2>
-                <p style={{ margin: '4px 0 0 0', opacity: 0.8, fontSize: '0.9rem' }}>Invoice ID: #{selectedInvoice.id}</p>
              </div>
 
-             <div style={{ padding: '2rem' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+             {/* Body */}
+             <div style={{ padding: '2rem', backgroundColor: 'white', position: 'relative' }}>
+                {/* Watermark */}
+                {selectedInvoice.status === 'Paid' && (
+                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-30deg)', fontSize: '5rem', fontWeight: 900, color: 'rgba(16, 185, 129, 0.05)', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 0 }}>
+                    PAID
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', position: 'relative', zIndex: 1 }}>
                    <div>
-                      <h4 style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>Macaamiilka</h4>
-                      <p style={{ fontWeight: 800, margin: '0 0 4px 0' }}>{selectedInvoice.customer_name}</p>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>{selectedInvoice.customer_phone}</p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: 'var(--gurmad-green)', fontWeight: 700, marginTop: '8px' }}>
-                         <MapPin size={12} /> {selectedInvoice.invoice_zone || selectedInvoice.zone || 'N/A'}, H-{selectedInvoice.invoice_house_no || '---'}
+                      <h4 style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.5px' }}>Billed To</h4>
+                      <p style={{ fontWeight: 800, color: '#1e293b', margin: '0 0 4px 0', fontSize: '1.1rem' }}>{selectedInvoice.customer_name}</p>
+                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>{selectedInvoice.customer_phone}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#475569', fontWeight: 700, marginTop: '8px' }}>
+                         <MapPin size={14} color="var(--gurmad-green)" /> {selectedInvoice.invoice_zone || selectedInvoice.zone || 'N/A'}, H-{selectedInvoice.invoice_house_no || '---'}
                       </div>
                    </div>
                    <div style={{ textAlign: 'right' }}>
-                      <h4 style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>Taariikhda</h4>
-                      <p style={{ fontWeight: 700, margin: 0 }}>{new Date(selectedInvoice.created_at).toLocaleDateString()}</p>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>{new Date(selectedInvoice.created_at).toLocaleTimeString()}</p>
-                      <p style={{ fontSize: '0.75rem', fontWeight: 600, marginTop: '8px', color: '#3b82f6' }}>Truck: {selectedInvoice.truck_name || 'N/A'}</p>
+                      <h4 style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.5px' }}>Date Issued</h4>
+                      <p style={{ fontWeight: 800, color: '#1e293b', margin: '0 0 4px 0' }}>{new Date(selectedInvoice.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                      <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>{new Date(selectedInvoice.created_at).toLocaleTimeString()}</p>
+                      <p style={{ fontSize: '0.75rem', fontWeight: 700, marginTop: '8px', color: '#3b82f6', backgroundColor: '#eff6ff', padding: '4px 8px', borderRadius: '8px', display: 'inline-block' }}><Truck size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}/> {selectedInvoice.truck_name || 'N/A'}</p>
                    </div>
                 </div>
 
-                <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '1.25rem', borderRadius: '16px', border: '1px dashed var(--border-color)' }}>
-                   <h4 style={{ fontSize: '0.75rem', fontWeight: 800, marginBottom: '12px' }}>Payment Breakdown</h4>
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {parseFloat(selectedInvoice.zaad_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}><span>ZAAD</span><span style={{ fontWeight: 700 }}>${parseFloat(selectedInvoice.zaad_amount).toFixed(2)}</span></div>}
-                      {parseFloat(selectedInvoice.edahab_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}><span>eDahab</span><span style={{ fontWeight: 700 }}>${parseFloat(selectedInvoice.edahab_amount).toFixed(2)}</span></div>}
-                      {parseFloat(selectedInvoice.cash_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}><span>Cash (USD)</span><span style={{ fontWeight: 700 }}>${parseFloat(selectedInvoice.cash_amount).toFixed(2)}</span></div>}
-                      {parseFloat(selectedInvoice.slsh_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}><span>Cash (SLSH)</span><span style={{ fontWeight: 700 }}>{parseFloat(selectedInvoice.slsh_amount).toLocaleString()}</span></div>}
-                      {parseFloat(selectedInvoice.debt_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#f59e0b' }}><span>Debt</span><span style={{ fontWeight: 700 }}>${parseFloat(selectedInvoice.debt_amount).toFixed(2)}</span></div>}
-                      {parseFloat(selectedInvoice.discount_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#be185d' }}><span>Discount Given</span><span style={{ fontWeight: 700 }}>-${parseFloat(selectedInvoice.discount_amount).toFixed(2)}</span></div>}
+                <div style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '16px', border: '1px solid #e2e8f0', position: 'relative', zIndex: 1 }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
+                      <Wallet size={16} color="#64748b" />
+                      <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#475569', margin: 0, textTransform: 'uppercase' }}>Payment Breakdown</h4>
                    </div>
-                   <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '2px solid #fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 800, fontSize: '1rem' }}>Total Amount</span>
-                      <span style={{ fontWeight: 900, fontSize: '1.5rem', color: 'var(--gurmad-green)' }}>${parseFloat(selectedInvoice.amount).toFixed(2)}</span>
+                   
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {parseFloat(selectedInvoice.zaad_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span style={{ color: '#64748b', fontWeight: 600 }}>ZAAD Service</span><span style={{ fontWeight: 800, color: '#0f172a' }}>${parseFloat(selectedInvoice.zaad_amount).toFixed(2)}</span></div>}
+                      {parseFloat(selectedInvoice.edahab_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span style={{ color: '#64748b', fontWeight: 600 }}>eDahab</span><span style={{ fontWeight: 800, color: '#0f172a' }}>${parseFloat(selectedInvoice.edahab_amount).toFixed(2)}</span></div>}
+                      {parseFloat(selectedInvoice.cash_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span style={{ color: '#64748b', fontWeight: 600 }}>Cash (USD)</span><span style={{ fontWeight: 800, color: '#0f172a' }}>${parseFloat(selectedInvoice.cash_amount).toFixed(2)}</span></div>}
+                      {parseFloat(selectedInvoice.slsh_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span style={{ color: '#64748b', fontWeight: 600 }}>Cash (SLSH)</span><span style={{ fontWeight: 800, color: '#0f172a' }}>{parseFloat(selectedInvoice.slsh_amount).toLocaleString()}</span></div>}
+                      {parseFloat(selectedInvoice.debt_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span style={{ color: '#64748b', fontWeight: 600 }}>Debt Logged</span><span style={{ fontWeight: 800, color: '#e11d48' }}>${parseFloat(selectedInvoice.debt_amount).toFixed(2)}</span></div>}
+                      {parseFloat(selectedInvoice.discount_amount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}><span style={{ color: '#64748b', fontWeight: 600 }}>Discount Applied</span><span style={{ fontWeight: 800, color: '#10b981' }}>-${parseFloat(selectedInvoice.discount_amount).toFixed(2)}</span></div>}
+                   </div>
+
+                   <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '2px dashed #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 800, fontSize: '1rem', color: '#475569' }}>Total Paid</span>
+                      <span style={{ fontWeight: 900, fontSize: '1.75rem', color: 'var(--gurmad-green)' }}>${parseFloat(selectedInvoice.amount).toFixed(2)}</span>
                    </div>
                 </div>
 
-                <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ padding: '10px', backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                       <img 
-                         src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`GURMAD-INV-${selectedInvoice.id}-${selectedInvoice.amount}`)}`} 
-                         alt="Payment QR"
-                         style={{ width: '120px', height: '120px' }}
-                       />
+                <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', position: 'relative', zIndex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ padding: '6px', backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                           <img 
+                             src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`GURMAD-INV-${selectedInvoice.id}-${selectedInvoice.amount}`)}`} 
+                             alt="QR"
+                             style={{ width: '60px', height: '60px', display: 'block' }}
+                           />
+                        </div>
+                        <div>
+                           <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', margin: '0 0 2px 0' }}>Verify Online</p>
+                           <p style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 600, margin: 0 }}>Scan QR code</p>
+                        </div>
                     </div>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Scan to Verify Payment</p>
+                    
+                    <div style={{ textAlign: 'right' }}>
+                       <span className={`badge badge-${selectedInvoice.status.toLowerCase()}`} style={{ fontSize: '0.75rem', padding: '6px 12px', borderRadius: '8px', fontWeight: 800, textTransform: 'uppercase' }}>
+                         {selectedInvoice.status}
+                       </span>
+                    </div>
                  </div>
+             </div>
 
-                <div style={{ marginTop: '2rem', display: 'flex', gap: '1rem' }}>
-                   <button onClick={() => window.print()} className="btn-secondary" style={{ flex: 1, padding: '1rem', borderRadius: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                      <Printer size={18} /> Print
-                   </button>
-                   <button onClick={() => setSelectedInvoice(null)} className="btn-primary" style={{ flex: 1, padding: '1rem', borderRadius: '14px', fontWeight: 700 }}>
-                      Done
-                   </button>
-                </div>
-                <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '1.5rem' }}>Collector: {selectedInvoice.collector_name || 'System Auto'}</p>
+             {/* Footer Actions */}
+             <div style={{ padding: '1.5rem 2rem', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                 <button onClick={() => window.print()} style={{ flex: 1, padding: '1rem', borderRadius: '14px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#475569', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}>
+                    <Printer size={18} /> Print Receipt
+                 </button>
+                 <button onClick={() => setSelectedInvoice(null)} style={{ flex: 1, padding: '1rem', borderRadius: '14px', border: 'none', backgroundColor: 'var(--gurmad-green)', color: 'white', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
+                    Done
+                 </button>
+             </div>
+             
+             <div style={{ textAlign: 'center', padding: '0 0 1rem 0', fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600 }}>
+                Processed by: {selectedInvoice.collector_name || 'System Auto'}
              </div>
           </div>
         </div>

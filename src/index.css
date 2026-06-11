@@ -327,3 +327,24 @@ a {
   color: var(--gurmad-green) !important;
 }
 
+/* Layout Modes */
+[data-layout="compact"] .main-content {
+  padding: 1rem;
+}
+[data-layout="compact"] .card {
+  padding: 1rem;
+}
+
+[data-layout="boxed"] .main-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+[data-layout="boxed"] .app-container {
+  background-color: var(--bg-secondary);
+}
+

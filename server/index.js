@@ -5,8 +5,10 @@ const db = require('./db');
 const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
+const crypto = require('crypto');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
+const messaging = require('./messaging');
 const http = require('http');
 const { Server } = require('socket.io');
 
@@ -110,11 +112,22 @@ const upload = multer({ storage: storage });
 app.use('/uploads', express.static(uploadDir));
 
 // --- Middleware & Utilities ---
-const logAudit = async (userId, action, entityType, entityId, oldValues = null, newValues = null) => {
+const logAudit = async (req, action, entityType, entityId, oldValues = null, newValues = null) => {
   try {
+    const userId = req.headers['x-user-id'] || null;
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    
     await db.query(
-      'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values) VALUES ($1, $2, $3, $4, $5, $6)',
-      [userId, action, entityType, entityId, oldValues, newValues]
+      'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [
+        userId, 
+        action, 
+        entityType, 
+        entityId, 
+        oldValues ? JSON.stringify(oldValues) : null, 
+        newValues ? JSON.stringify(newValues) : null, 
+        ipAddress
+      ]
     );
   } catch (err) {
     console.error('Audit Log Error:', err.message);
@@ -284,6 +297,7 @@ app.post('/api/customers', async (req, res) => {
         b.payment_status || 'Unpaid'
       ]
     );
+    await logAudit(req, 'CREATE', 'customers', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/customers] ERROR:', err.message, '| DETAIL:', err.detail || '');
@@ -299,6 +313,9 @@ app.put('/api/customers/:id', async (req, res) => {
     const safeNull = (v) => (v === '' || v === undefined ? null : v);
     const safeInt  = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10) || null);
     const safeNum  = (v) => (v === '' || v === undefined || v === null ? null : parseFloat(v) || null);
+
+    const oldRow = await db.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
+    const oldValues = oldRow.rows[0];
 
     const result = await db.query(
       `UPDATE customers SET 
@@ -321,6 +338,7 @@ app.put('/api/customers/:id', async (req, res) => {
         req.params.id
       ]
     );
+    await logAudit(req, 'UPDATE', 'customers', req.params.id, oldValues, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[PUT /api/customers/:id] ERROR:', err.message, '| DETAIL:', err.detail || '');
@@ -331,7 +349,9 @@ app.put('/api/customers/:id', async (req, res) => {
 
 app.delete('/api/customers/:id', async (req, res) => {
   try {
+    const oldRow = await db.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
     const result = await db.query('DELETE FROM customers WHERE id = $1 RETURNING *', [req.params.id]);
+    await logAudit(req, 'DELETE', 'customers', req.params.id, oldRow.rows[0], null);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -448,6 +468,13 @@ app.post('/api/invoices', async (req, res) => {
       );
     }
 
+    // Sync customer status with the invoice
+    await db.query(
+      'UPDATE customers SET payment_status = $1, status = $1 WHERE id = $2',
+      [invoiceStatus, customerId]
+    );
+
+    await logAudit(req, 'CREATE', 'invoices', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -534,6 +561,7 @@ app.post('/api/tasks', async (req, res) => {
       }
     }
 
+    await logAudit(req, 'CREATE', 'tasks', task.id, null, task);
     res.json(task);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -599,11 +627,13 @@ app.put('/api/tasks/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   try {
+    const oldRow = await db.query('SELECT * FROM tasks WHERE id = $1', [id]);
     const completedAt = status === 'Completed' ? 'CURRENT_TIMESTAMP' : 'NULL';
     const result = await db.query(
       `UPDATE tasks SET status = $1, completed_at = ${completedAt} WHERE id = $2 RETURNING *`,
       [status, id]
     );
+    await logAudit(req, 'UPDATE', 'tasks', id, oldRow.rows[0], result.rows[0]);
     res.json(result.rows[0]);
 
     if (status === 'In Progress') {
@@ -654,10 +684,12 @@ app.post('/api/tasks/:id/ping', async (req, res) => {
 app.delete('/api/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const oldRow = await db.query('SELECT * FROM tasks WHERE id = $1', [id]);
     // Delete task customers first due to FK
     await db.query('DELETE FROM task_customers WHERE task_id = $1', [id]);
     await db.query('DELETE FROM truck_location_history WHERE task_id = $1', [id]);
     const result = await db.query('DELETE FROM tasks WHERE id = $1 RETURNING *', [id]);
+    await logAudit(req, 'DELETE', 'tasks', id, oldRow.rows[0], null);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -689,6 +721,7 @@ app.post('/api/trucks', async (req, res) => {
       'INSERT INTO trucks (plate_number, model, driver_id, collector_id) VALUES ($1, $2, $3, $4) RETURNING *',
       [plate_number, model, driver_id || null, collector_id || null]
     );
+    await logAudit(req, 'CREATE', 'trucks', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -698,10 +731,12 @@ app.post('/api/trucks', async (req, res) => {
 app.put('/api/trucks/:id', async (req, res) => {
   try {
     const { plate_number, model, status, driver_id, collector_id } = req.body;
+    const oldRow = await db.query('SELECT * FROM trucks WHERE id = $1', [req.params.id]);
     const result = await db.query(
       'UPDATE trucks SET plate_number = $1, model = $2, status = $3, driver_id = $4, collector_id = $5 WHERE id = $6 RETURNING *',
       [plate_number, model, status || 'Active', driver_id || null, collector_id || null, req.params.id]
     );
+    await logAudit(req, 'UPDATE', 'trucks', req.params.id, oldRow.rows[0], result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -711,7 +746,9 @@ app.put('/api/trucks/:id', async (req, res) => {
 
 app.delete('/api/trucks/:id', async (req, res) => {
   try {
+    const oldRow = await db.query('SELECT * FROM trucks WHERE id = $1', [req.params.id]);
     const result = await db.query('DELETE FROM trucks WHERE id = $1 RETURNING *', [req.params.id]);
+    await logAudit(req, 'DELETE', 'trucks', req.params.id, oldRow.rows[0], null);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -745,6 +782,7 @@ app.post('/api/zones', async (req, res) => {
       'INSERT INTO zones (name, truck_id, collection_days, collection_time, coordinates, area, neighborhood, zone_code, sub_zone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
       [name, truck_id || null, collection_days, collection_time, coordinates ? JSON.stringify(coordinates) : null, area || null, neighborhood || null, zone_code || null, sub_zone || null]
     );
+    await logAudit(req, 'CREATE', 'zones', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -755,10 +793,12 @@ app.post('/api/zones', async (req, res) => {
 app.put('/api/zones/:id', async (req, res) => {
   try {
     const { name, truck_id, collection_days, collection_time, coordinates, area, neighborhood, zone_code, sub_zone } = req.body;
+    const oldRow = await db.query('SELECT * FROM zones WHERE id = $1', [req.params.id]);
     const result = await db.query(
       'UPDATE zones SET name = $1, truck_id = $2, collection_days = $3, collection_time = $4, coordinates = COALESCE($5, coordinates), area = $6, neighborhood = $7, zone_code = $8, sub_zone = $9 WHERE id = $10 RETURNING *',
       [name, truck_id || null, collection_days, collection_time, coordinates ? JSON.stringify(coordinates) : null, area || null, neighborhood || null, zone_code, sub_zone, req.params.id]
     );
+    await logAudit(req, 'UPDATE', 'zones', req.params.id, oldRow.rows[0], result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -782,7 +822,9 @@ app.put('/api/zones/:id/coordinates', async (req, res) => {
 
 app.delete('/api/zones/:id', async (req, res) => {
   try {
+    const oldRow = await db.query('SELECT * FROM zones WHERE id = $1', [req.params.id]);
     const result = await db.query('DELETE FROM zones WHERE id = $1 RETURNING *', [req.params.id]);
+    await logAudit(req, 'DELETE', 'zones', req.params.id, oldRow.rows[0], null);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -802,10 +844,12 @@ app.get('/api/employees', checkRole(['admin', 'cashier']), async (req, res) => {
 app.put('/api/employees/:id', async (req, res) => {
   const { name, role, phone, salary, status } = req.body;
   try {
+    const oldRow = await db.query('SELECT * FROM employees WHERE id = $1', [req.params.id]);
     const result = await db.query(
       'UPDATE employees SET name = $1, role = $2, phone = $3, salary = $4, status = $5 WHERE id = $6 RETURNING *',
       [name, role, phone, salary, status || 'Active', req.params.id]
     );
+    await logAudit(req, 'UPDATE', 'employees', req.params.id, oldRow.rows[0], result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -814,7 +858,9 @@ app.put('/api/employees/:id', async (req, res) => {
 
 app.delete('/api/employees/:id', checkRole(['admin']), async (req, res) => {
   try {
+    const oldRow = await db.query('SELECT * FROM employees WHERE id = $1', [req.params.id]);
     const result = await db.query('DELETE FROM employees WHERE id = $1 RETURNING *', [req.params.id]);
+    await logAudit(req, 'DELETE', 'employees', req.params.id, oldRow.rows[0], null);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -833,6 +879,7 @@ app.post('/api/employees', checkRole(['admin']), upload.fields([
       'INSERT INTO employees (name, role, phone, salary, photo, id_document, guarantor_name, guarantor_phone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
       [name, role, phone, salary, photo, id_document, guarantor_name || null, guarantor_phone || null]
     );
+    await logAudit(req, 'CREATE', 'employees', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1603,13 +1650,44 @@ app.put('/api/users/:userId/notifications/read-all', async (req, res) => {
 // --- Audit Logs ---
 app.get('/api/admin/audit-logs', checkRole(['admin']), async (req, res) => {
   try {
-    const result = await db.query(`
+    const { action, startDate, endDate, search } = req.query;
+    
+    let queryStr = `
       SELECT a.*, u.username, u.full_name 
       FROM audit_logs a
       LEFT JOIN users u ON a.user_id = u.id
-      ORDER BY a.created_at DESC
-      LIMIT 100
-    `);
+      WHERE 1=1
+    `;
+    let queryParams = [];
+    let paramCount = 1;
+
+    if (action && action !== 'ALL') {
+      queryStr += ` AND a.action = $${paramCount}`;
+      queryParams.push(action);
+      paramCount++;
+    }
+    
+    if (startDate) {
+      queryStr += ` AND a.created_at >= $${paramCount}`;
+      queryParams.push(`${startDate} 00:00:00`);
+      paramCount++;
+    }
+    
+    if (endDate) {
+      queryStr += ` AND a.created_at <= $${paramCount}`;
+      queryParams.push(`${endDate} 23:59:59`);
+      paramCount++;
+    }
+
+    if (search) {
+      queryStr += ` AND (u.full_name ILIKE $${paramCount} OR a.entity_type ILIKE $${paramCount} OR a.action ILIKE $${paramCount})`;
+      queryParams.push(`%${search}%`);
+      paramCount++;
+    }
+
+    queryStr += ` ORDER BY a.created_at DESC LIMIT 500`;
+
+    const result = await db.query(queryStr, queryParams);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1701,7 +1779,147 @@ app.post('/api/users/:id/full-reset', async (req, res) => {
   }
 });
 
-// --- ZAAD API Integration Prepared ---
+// ----------------------------------------------------
+// COMMUNICATIONS & MESSAGING API
+// ----------------------------------------------------
+
+app.post('/api/messages/send', async (req, res) => {
+  const { phone, message, type = 'sms' } = req.body;
+  
+  if (!phone || !message) {
+    return res.status(400).json({ error: 'Phone and message are required' });
+  }
+
+  const formattedPhone = phone.startsWith('+') ? phone : '+252' + phone;
+
+  try {
+    let result;
+    if (type === 'whatsapp') {
+      result = await messaging.sendWhatsApp(formattedPhone, message);
+    } else {
+      result = await messaging.sendSMS(formattedPhone, message);
+    }
+    
+    // Log this message to the DB for history
+    // For now we just return success
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/messages/broadcast', async (req, res) => {
+  const { targetType, targetValue, message, type = 'sms' } = req.body;
+  // targetType can be 'zone', 'all', 'unpaid', 'task_id'
+  
+  try {
+    let customersToMessage = [];
+    
+    if (targetType === 'all') {
+      const result = await db.query('SELECT name, phone FROM customers WHERE phone IS NOT NULL');
+      customersToMessage = result.rows;
+    } else if (targetType === 'task_id') {
+      const result = await db.query(`
+        SELECT c.name, c.phone 
+        FROM task_customers tc
+        JOIN customers c ON tc.customer_id = c.id
+        WHERE tc.task_id = $1 AND c.phone IS NOT NULL
+      `, [targetValue]);
+      customersToMessage = result.rows;
+    } else if (targetType === 'unpaid') {
+      const result = await db.query('SELECT name, phone FROM customers WHERE payment_status = \'Unpaid\' AND phone IS NOT NULL');
+      customersToMessage = result.rows;
+    }
+
+    if (customersToMessage.length === 0) {
+      return res.status(404).json({ error: 'No customers found for the specified target' });
+    }
+
+    // Process in background
+    (async () => {
+      for (const cust of customersToMessage) {
+        const formattedPhone = cust.phone.startsWith('+') ? cust.phone : '+252' + cust.phone;
+        const personalizedMsg = message.replace('{name}', cust.name);
+        try {
+          if (type === 'whatsapp') await messaging.sendWhatsApp(formattedPhone, personalizedMsg);
+          else await messaging.sendSMS(formattedPhone, personalizedMsg);
+          // Add a small delay to prevent rate limits
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch(e) {
+           console.error(`Failed to broadcast to ${cust.phone}:`, e.message);
+        }
+      }
+    })();
+
+    res.json({ success: true, count: customersToMessage.length, message: 'Broadcast started in background' });
+  } catch (err) {
+    console.error('Broadcast Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// AI ROUTE OPTIMIZATION API
+// ----------------------------------------------------
+
+app.get('/api/optimize-route', async (req, res) => {
+  const { task_id } = req.query;
+  if (!task_id) return res.status(400).json({ error: 'task_id is required' });
+
+  try {
+    // 1. Get the current truck location or center of the zone
+    // For simplicity, we just use the customers' locations for the TSP calculation
+    const customersQuery = await db.query(`
+      SELECT c.id, c.name, c.lat, c.lng
+      FROM task_customers tc
+      JOIN customers c ON tc.customer_id = c.id
+      WHERE tc.task_id = $1 AND c.lat IS NOT NULL AND c.lng IS NOT NULL
+      LIMIT 25 -- OSRM public API limit is often 100 or less, we keep it safe
+    `, [task_id]);
+
+    const customers = customersQuery.rows.filter(c => parseFloat(c.lat) !== 0 && !isNaN(parseFloat(c.lat)));
+
+    if (customers.length < 2) {
+      return res.status(400).json({ error: 'Not enough valid coordinates to optimize route' });
+    }
+
+    // Mapbox/OSRM expects: lng,lat;lng,lat
+    const coordinatesString = customers.map(c => `${c.lng},${c.lat}`).join(';');
+    
+    const osrmUrl = `http://router.project-osrm.org/trip/v1/driving/${coordinatesString}?roundtrip=true&source=first&geometries=geojson`;
+    
+    const osrmResponse = await fetch(osrmUrl);
+    const osrmData = await osrmResponse.json();
+
+    if (osrmData.code !== 'Ok') {
+      throw new Error('OSRM API failed: ' + osrmData.code);
+    }
+
+    // Reorder customers based on OSRM waypoints
+    const tripOrder = customers.map((c, i) => {
+      return {
+        ...c,
+        order: osrmData.waypoints[i].waypoint_index
+      };
+    }).sort((a, b) => a.order - b.order);
+
+    res.json({
+      success: true,
+      geometry: osrmData.trips[0].geometry,
+      distance: osrmData.trips[0].distance,
+      duration: osrmData.trips[0].duration,
+      optimized_order: tripOrder
+    });
+
+  } catch (err) {
+    console.error('Route Optimization Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// DATABASE INITIALIZATION
+// ----------------------------------------------------
 app.post('/api/zaad/pay', async (req, res) => {
   const { phone, amount, invoiceId } = req.body;
   const currency = amount > 1000 ? 'SLSH' : 'USD';

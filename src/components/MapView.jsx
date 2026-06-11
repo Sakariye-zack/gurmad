@@ -131,9 +131,36 @@ const MapView = ({ currentUser }) => {
   const [selectedZoneToAssign, setSelectedZoneToAssign] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [selectedTaskCustomers, setSelectedTaskCustomers] = useState([]);
+  const [optimizedRoute, setOptimizedRoute] = useState(null);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [dbTrucks, setDbTrucks] = useState([]);
   const [localSearch, setLocalSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+
+  const fetchStats = async () => {
+    try {
+      const data = await api.getStats();
+      setDbTrucks(data.trucks || []);
+    } catch(err) {
+      console.log('Stats error');
+    }
+  };
+
+  const handleOptimizeRoute = async (taskId) => {
+    try {
+      setIsOptimizing(true);
+      toast.loading('AI is calculating the optimal route...', { id: 'opt-route' });
+      const res = await api.optimizeRoute(taskId);
+      if (res.success && res.geometry) {
+        setOptimizedRoute(res);
+        toast.success('Route optimized successfully!', { id: 'opt-route' });
+      }
+    } catch(err) {
+      toast.error('Failed to optimize route', { id: 'opt-route' });
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -429,7 +456,8 @@ const MapView = ({ currentUser }) => {
               key={t.id} 
               task={t} 
               isSelected={selectedTaskId === t.id} 
-              onSelect={() => handleSelectTask(t)} 
+              onSelect={() => handleSelectTask(t)}
+              onOptimizeRoute={handleOptimizeRoute}
             />
           );
         })}
@@ -445,6 +473,20 @@ const MapView = ({ currentUser }) => {
               lineCap: 'round', 
               lineJoin: 'round',
               dashArray: '1, 10'
+            }} 
+          />
+        )}
+
+        {/* AI Optimized Route */}
+        {optimizedRoute && optimizedRoute.geometry && optimizedRoute.geometry.coordinates && (
+          <Polyline 
+            positions={optimizedRoute.geometry.coordinates.map(c => [c[1], c[0]])} 
+            pathOptions={{ 
+              color: '#4f46e5', // Indigo
+              weight: 6, 
+              opacity: 0.9, 
+              lineCap: 'round', 
+              lineJoin: 'round'
             }} 
           />
         )}

@@ -64,40 +64,33 @@ const MonthlyCalendar = ({ collectionDaysString, collectionTime }) => {
   
   return (
     <div style={{ 
-      background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', 
-      color: '#f1f5f9', 
-      padding: '1.25rem', 
-      borderRadius: '16px', 
+      background: 'white', 
+      color: '#1e293b', 
+      padding: '1.5rem', 
+      borderRadius: '24px', 
       width: '100%', 
       fontFamily: 'Outfit, Inter, sans-serif', 
-      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
-      border: '1px solid rgba(255,255,255,0.1)'
+      boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+      border: '1px solid #f1f5f9'
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontWeight: 700, fontSize: '1.1rem', letterSpacing: '-0.01em' }}>{monthNames[month]} {year}</span>
-          <span style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Collection Schedule</span>
+          <span style={{ fontWeight: 800, fontSize: '1.1rem', color: '#1e293b' }}>{monthNames[month]} {year}</span>
+          <span style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Collection Schedule</span>
         </div>
         {collectionTime && (
           <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '6px',
-            backgroundColor: 'rgba(2, 132, 199, 0.2)', 
-            padding: '6px 12px', 
-            borderRadius: '12px', 
-            color: '#38bdf8',
-            fontSize: '0.8rem',
-            fontWeight: 600,
-            border: '1px solid rgba(56, 189, 248, 0.2)'
+            display: 'flex', alignItems: 'center', gap: '6px',
+            backgroundColor: '#f0fdf4', padding: '6px 12px', borderRadius: '12px', 
+            color: 'var(--gurmad-green)', fontSize: '0.8rem', fontWeight: 700,
+            border: '1px solid #dcfce7'
           }}>
-             <Calendar size={14} />
-             {collectionTime}
+             <Calendar size={14} /> {collectionTime}
           </div>
         )}
       </div>
       
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, color: '#64748b', marginBottom: '10px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', marginBottom: '10px' }}>
         {daysOfWeekNames.map(d => <div key={d}>{d.substring(0, 3).toUpperCase()}</div>)}
       </div>
       
@@ -109,54 +102,35 @@ const MonthlyCalendar = ({ collectionDaysString, collectionTime }) => {
               const isToday = day === today.getDate();
               const isCol = isCollectionDay(day);
               
-              let bg = 'rgba(255,255,255,0.03)';
-              let color = '#94a3b8';
-              let fw = 500;
-              let border = '1px solid rgba(255,255,255,0.05)';
+              let bg = '#f8fafc';
+              let color = '#64748b';
+              let fw = 600;
+              let border = '1px solid #f1f5f9';
               let shadow = 'none';
               
               if (isCol) {
-                 bg = 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)';
+                 bg = 'var(--gurmad-green)';
                  color = 'white';
-                 fw = 700;
+                 fw = 800;
                  border = 'none';
-                 shadow = '0 4px 10px rgba(2, 132, 199, 0.4)';
+                 shadow = '0 4px 10px rgba(63, 174, 42, 0.3)';
               } else if (isToday) {
-                 bg = 'rgba(255,255,255,0.1)';
-                 color = 'white';
-                 fw = 700;
-                 border = '1px solid rgba(255,255,255,0.2)';
+                 bg = 'white';
+                 color = '#1e293b';
+                 fw = 800;
+                 border = '2px solid var(--gurmad-green)';
               }
               
               return (
                 <div key={dIdx} style={{ 
-                  position: 'relative',
-                  padding: '8px 0', 
-                  background: bg, 
-                  color: color,
-                  fontWeight: fw,
-                  borderRadius: '10px',
-                  width: '100%',
-                  aspectRatio: '1',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '0.85rem',
-                  border: border,
-                  boxShadow: shadow,
-                  transition: 'all 0.2s ease'
+                  position: 'relative', padding: '8px 0', background: bg, color: color,
+                  fontWeight: fw, borderRadius: '12px', width: '100%', aspectRatio: '1',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem',
+                  border: border, boxShadow: shadow, transition: 'all 0.2s ease'
                 }}>
                   {day}
                   {isCol && (
-                    <div style={{ 
-                      position: 'absolute', 
-                      bottom: '4px', 
-                      width: '4px', 
-                      height: '4px', 
-                      backgroundColor: 'white', 
-                      borderRadius: '50%',
-                      opacity: 0.6
-                    }} />
+                    <div style={{ position: 'absolute', bottom: '4px', width: '4px', height: '4px', backgroundColor: 'white', borderRadius: '50%', opacity: 0.8 }} />
                   )}
                 </div>
               );
@@ -181,6 +155,8 @@ const CustomerView = ({ searchQuery = '' }) => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
   const [debtForm, setDebtForm] = useState({ amount: '', description: '', currency: 'USD' });
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [broadcastForm, setBroadcastForm] = useState({ targetType: 'all', targetValue: '', message: '', type: 'sms' });
   const [viewMode, setViewMode] = useState('list'); // 'list', 'details', or 'register'
   const [employees, setEmployees] = useState([]);
   const [localSearch, setLocalSearch] = useState('');
@@ -190,6 +166,18 @@ const CustomerView = ({ searchQuery = '' }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+  
+  const handleBroadcastSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api.broadcastMessage(broadcastForm);
+      toast.success(res.message || 'Fariinta si wadajir ah ayaa loo diray!', { icon: '🚀' });
+      setIsBroadcastModalOpen(false);
+      setBroadcastForm({ targetType: 'all', targetValue: '', message: '', type: 'sms' });
+    } catch (err) {
+      toast.error(err.message || 'Waa la diidi waayay fariinta');
+    }
+  };
   
   // Form State
   const [newCustomer, setNewCustomer] = useState({ 
@@ -320,7 +308,6 @@ const CustomerView = ({ searchQuery = '' }) => {
       fee: customer.fee || (customer.category === 'Meherad' ? '20.00' : '10.00'),
       collection_mode: customer.collection_mode || 'Monthly',
       collector_id: customer.collector_id || '',
-      collector_id: customer.collector_id || '',
       lat: customer.lat || '',
       lng: customer.lng || '',
       route_order: customer.route_order || '',
@@ -403,25 +390,24 @@ const CustomerView = ({ searchQuery = '' }) => {
           <button 
             onClick={() => setViewMode('list')}
             style={{ 
-              display: 'flex', alignItems: 'center', gap: '12px', padding: '0.85rem 1.75rem', 
-              borderRadius: '20px', border: '1px solid rgba(255, 255, 255, 0.1)', backgroundColor: 'rgba(15, 23, 42, 0.8)', 
-              color: 'white', fontWeight: 800, cursor: 'pointer',
-              boxShadow: '0 10px 20px -5px rgba(0, 0, 0, 0.2)',
-              backdropFilter: 'blur(12px)',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '0.75rem 1.5rem', 
+              borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', 
+              color: '#475569', fontWeight: 700, cursor: 'pointer',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+              transition: 'all 0.2s'
             }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateX(-6px)'; e.currentTarget.style.backgroundColor = '#1e293b'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'translateX(0)'; e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.8)'; }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.color = '#0f172a'; }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white'; e.currentTarget.style.color = '#475569'; }}
           >
-            <XCircle size={22} color="#94a3b8" /> Back to Dashboard
+            <XCircle size={20} /> Back to Dashboard
           </button>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '15px', backgroundColor: '#0f172a', padding: '10px 24px', borderRadius: '100px', border: '1px solid rgba(255,255,255,0.05)' }}>
-             <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: (selectedCustomer.status === 'Paid' ? '#10b981' : '#f43f5e'), animation: 'pulse 1.5s infinite' }}></div>
-             <span style={{ fontSize: '0.9rem', color: '#94a3b8', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>System Status:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: 'white', padding: '10px 20px', borderRadius: '100px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
+             <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: (selectedCustomer.status === 'Paid' ? '#10b981' : '#f43f5e'), animation: 'pulse 2s infinite' }}></div>
+             <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status:</span>
              <span style={{ 
                 color: selectedCustomer.status === 'Paid' ? '#10b981' : '#f43f5e', 
-                fontSize: '0.9rem', textTransform: 'uppercase', fontWeight: 900,
+                fontSize: '0.95rem', textTransform: 'uppercase', fontWeight: 900,
                 letterSpacing: '0.5px'
              }}>
                 {selectedCustomer.status || 'Unpaid'}
@@ -429,13 +415,13 @@ const CustomerView = ({ searchQuery = '' }) => {
           </div>
         </div>
 
-        {/* NEW STRUCTURE: TOP BANNER PROFILE */}
-        <div className="card glass" style={{ 
+        {/* TOP BANNER PROFILE */}
+        <div className="card" style={{ 
           padding: '2.5rem', 
-          borderRadius: '40px', 
-          backgroundColor: 'rgba(15, 23, 42, 0.95)',
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-          boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.3)',
+          borderRadius: '24px', 
+          backgroundColor: 'white',
+          border: '1px solid #f1f5f9',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.05)',
           marginBottom: '2rem',
           display: 'flex',
           alignItems: 'center',
@@ -445,127 +431,126 @@ const CustomerView = ({ searchQuery = '' }) => {
           position: 'relative',
           overflow: 'hidden'
         }}>
-           <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '250px', height: '250px', background: 'radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, transparent 70%)', zIndex: 0 }}></div>
+           <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '250px', height: '250px', background: 'radial-gradient(circle, rgba(63, 174, 42, 0.05) 0%, transparent 70%)', zIndex: 0 }}></div>
            
-           <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem', position: 'relative', zIndex: 1 }}>
+           <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', position: 'relative', zIndex: 1 }}>
               <div style={{ 
-                 width: '120px', height: '120px', borderRadius: '40px', 
-                 background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                 width: '100px', height: '100px', borderRadius: '30px', 
+                 background: 'linear-gradient(135deg, var(--gurmad-green) 0%, #34d399 100%)',
                  display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                 color: 'white', fontSize: '3.5rem', fontWeight: 900,
-                 boxShadow: '0 20px 40px rgba(16, 185, 129, 0.3)',
-                 border: '4px solid rgba(255,255,255,0.1)'
+                 color: 'white', fontSize: '3rem', fontWeight: 900,
+                 boxShadow: '0 10px 25px rgba(63, 174, 42, 0.3)',
+                 border: '4px solid #f0fdf4'
                }}>
                  {selectedCustomer.name[0].toUpperCase()}
               </div>
               <div>
-                 <h2 style={{ fontSize: '2.5rem', fontWeight: 900, color: 'white', marginBottom: '0.25rem', letterSpacing: '-0.03em' }}>{selectedCustomer.name}</h2>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', padding: '6px 18px', borderRadius: '100px', fontSize: '0.9rem', fontWeight: 900, color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.2)' }}>#GUR-{selectedCustomer.id}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontWeight: 700 }}>
-                       <MapPin size={18} /> {selectedCustomer.area}
+                 <h2 style={{ fontSize: '2.2rem', fontWeight: 900, color: '#0f172a', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>{selectedCustomer.name}</h2>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ backgroundColor: '#f0fdf4', padding: '6px 14px', borderRadius: '100px', fontSize: '0.85rem', fontWeight: 800, color: 'var(--gurmad-green)', border: '1px solid #dcfce7' }}>#GUR-{selectedCustomer.id}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontWeight: 700, fontSize: '0.95rem' }}>
+                       <MapPin size={16} /> {selectedCustomer.area}
                     </div>
                  </div>
               </div>
            </div>
 
-           <div style={{ display: 'flex', gap: '15px', position: 'relative', zIndex: 1 }}>
-              <a href={`tel:${selectedCustomer.phone}`} style={{ width: '56px', height: '56px', borderRadius: '20px', backgroundColor: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', border: '1px solid rgba(255,255,255,0.1)', transition: '0.3s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}>
-                 <Phone size={24} />
+           <div style={{ display: 'flex', gap: '12px', position: 'relative', zIndex: 1 }}>
+              <a href={`tel:${selectedCustomer.phone}`} style={{ width: '48px', height: '48px', borderRadius: '16px', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f172a', border: '1px solid #e2e8f0', transition: '0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}>
+                 <Phone size={20} />
               </a>
               {selectedCustomer.whatsapp && (
-                <a href={`https://wa.me/${selectedCustomer.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent('Asc ' + selectedCustomer.name + ', Gurmad Waste Management ayaa kula soo xidhiidhaya.')}`} target="_blank" rel="noopener noreferrer" style={{ width: '56px', height: '56px', borderRadius: '20px', backgroundColor: 'rgba(37, 211, 102, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#25D366', border: '1px solid rgba(37, 211, 102, 0.2)', transition: '0.3s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(37, 211, 102, 0.25)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(37, 211, 102, 0.15)'}>
-                   <MessageSquare size={24} />
+                <a href={`https://wa.me/${selectedCustomer.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent('Asc ' + selectedCustomer.name + ', Gurmad Waste Management ayaa kula soo xidhiidhaya.')}`} target="_blank" rel="noopener noreferrer" style={{ width: '48px', height: '48px', borderRadius: '16px', backgroundColor: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#166534', border: '1px solid #bbf7d0', transition: '0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#bbf7d0'} onMouseLeave={e => e.currentTarget.style.backgroundColor = '#dcfce7'}>
+                   <MessageSquare size={20} />
                 </a>
               )}
-              <div style={{ width: '1px', height: '56px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '0 10px' }}></div>
-              <button onClick={() => startEdit(selectedCustomer)} style={{ padding: '0 24px', height: '56px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                 <Edit3 size={20} color="#34d399" /> Edit
+              <div style={{ width: '1px', height: '48px', backgroundColor: '#e2e8f0', margin: '0 8px' }}></div>
+              <button onClick={() => startEdit(selectedCustomer)} style={{ padding: '0 20px', height: '48px', borderRadius: '16px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: '0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}>
+                 <Edit3 size={18} color="var(--gurmad-green)" /> Edit
               </button>
-              <button onClick={() => handleDelete(selectedCustomer.id)} style={{ width: '56px', height: '56px', borderRadius: '20px', border: 'none', backgroundColor: 'rgba(244, 63, 94, 0.1)', color: '#f43f5e', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                 <Trash2 size={24} />
+              <button onClick={() => handleDelete(selectedCustomer.id)} style={{ width: '48px', height: '48px', borderRadius: '16px', border: 'none', backgroundColor: '#fff1f2', color: '#e11d48', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#ffe4e6'} onMouseLeave={e => e.currentTarget.style.backgroundColor = '#fff1f2'}>
+                 <Trash2 size={20} />
               </button>
            </div>
         </div>
 
-        {/* TOP ROW: QUICK STATS */}
+        {/* QUICK STATS */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-           <div className="card glass" style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', padding: '1.5rem', borderRadius: '28px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>Category</div>
-              <div style={{ color: 'white', fontSize: '1.3rem', fontWeight: 900 }}>{selectedCustomer.category || 'Guri'}</div>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Category</div>
+              <div style={{ color: '#0f172a', fontSize: '1.25rem', fontWeight: 900 }}>{selectedCustomer.category || 'Guri'}</div>
            </div>
-           <div className="card glass" style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', padding: '1.5rem', borderRadius: '28px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>Monthly Rate</div>
-              <div style={{ color: '#10b981', fontSize: '1.3rem', fontWeight: 900 }}>${parseFloat(selectedCustomer.fee || 0).toFixed(2)}</div>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Monthly Rate</div>
+              <div style={{ color: 'var(--gurmad-green)', fontSize: '1.25rem', fontWeight: 900 }}>${parseFloat(selectedCustomer.fee || 0).toFixed(2)}</div>
            </div>
-           <div className="card glass" style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', padding: '1.5rem', borderRadius: '28px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>Billing Mode</div>
-              <div style={{ color: 'white', fontSize: '1.3rem', fontWeight: 900 }}>{selectedCustomer.collection_mode || 'Daily'}</div>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Billing Mode</div>
+              <div style={{ color: '#0f172a', fontSize: '1.25rem', fontWeight: 900 }}>{selectedCustomer.collection_mode || 'Daily'}</div>
            </div>
-           <div className="card glass" style={{ backgroundColor: 'rgba(15, 23, 42, 0.8)', padding: '1.5rem', borderRadius: '28px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>Collector</div>
-              <div style={{ color: '#f59e0b', fontSize: '1.1rem', fontWeight: 900 }}>{selectedCustomer.collector_id || 'NONE'}</div>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Collector</div>
+              <div style={{ color: '#d97706', fontSize: '1.1rem', fontWeight: 900 }}>{selectedCustomer.collector_id || 'NONE'}</div>
            </div>
         </div>
 
-        {/* MAIN GRID: 2 COLUMNS */}
+        {/* MAIN GRID */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-           
            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
               {/* Location Card */}
-              <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: '2.5rem', borderRadius: '40px', border: '1px solid rgba(255, 255, 255, 0.05)', boxShadow: '0 40px 80px rgba(0,0,0,0.3)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '2rem' }}>
-                    <div style={{ backgroundColor: 'rgba(37, 99, 235, 0.1)', padding: '12px', borderRadius: '16px', color: '#3b82f6' }}><MapPin size={24} /></div>
-                    <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white' }}>Service Location</span>
+              <div style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '24px', border: '1px solid #f1f5f9', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                    <div style={{ backgroundColor: '#eff6ff', padding: '10px', borderRadius: '12px', color: '#3b82f6' }}><MapPin size={20} /></div>
+                    <span style={{ fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>Service Location</span>
                   </div>
                   
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                     <div>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>Physical Address</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white', lineHeight: '1.4' }}>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b', marginBottom: '6px', textTransform: 'uppercase' }}>Physical Address</div>
+                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#1e293b', lineHeight: '1.5' }}>
                         House {selectedCustomer.house_no}<br />
                         {selectedCustomer.neighborhood || selectedCustomer.street}
                       </div>
                     </div>
                     
                     <div style={{ display: 'flex', gap: '12px' }}>
-                       <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', padding: '1.25rem', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '5px' }}>Zone ID</div>
-                          <div style={{ fontWeight: 900, color: '#10b981' }}>{selectedCustomer.zone || 'N/A'}</div>
+                       <div style={{ flex: 1, backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Zone ID</div>
+                          <div style={{ fontWeight: 900, color: '#0f172a' }}>{selectedCustomer.zone || 'N/A'}</div>
                        </div>
-                       <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.03)', padding: '1.25rem', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '5px' }}>Radar Status</div>
-                          <div style={{ fontWeight: 900, color: selectedCustomer.lat ? '#10b981' : '#f43f5e' }}>{selectedCustomer.lat ? 'ACTIVE' : 'OFFLINE'}</div>
+                       <div style={{ flex: 1, backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
+                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Radar Status</div>
+                          <div style={{ fontWeight: 900, color: selectedCustomer.lat ? 'var(--gurmad-green)' : '#e11d48' }}>{selectedCustomer.lat ? 'ACTIVE' : 'OFFLINE'}</div>
                        </div>
                     </div>
 
                     {selectedCustomer.lat && (
-                      <a href={`https://www.google.com/maps/search/?api=1&query=${selectedCustomer.lat},${selectedCustomer.lng}`} target="_blank" rel="noopener noreferrer" style={{ padding: '1.25rem', borderRadius: '24px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', fontWeight: 900, transition: '0.3s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.2)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.1)'}>
-                         <Navigation size={22} /> OPEN IN SATELLITE MAP
+                      <a href={`https://www.google.com/maps/search/?api=1&query=${selectedCustomer.lat},${selectedCustomer.lng}`} target="_blank" rel="noopener noreferrer" style={{ padding: '1rem', borderRadius: '16px', background: '#f0fdf4', border: '1px solid #dcfce7', color: 'var(--gurmad-green)', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 800, transition: '0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#dcfce7'} onMouseLeave={e => e.currentTarget.style.background = '#f0fdf4'}>
+                         <Navigation size={18} /> Open in Maps
                       </a>
                     )}
                   </div>
               </div>
 
               {/* Finance Card */}
-              <div style={{ backgroundColor: '#020617', padding: '2.5rem', borderRadius: '40px', color: 'white', border: '1px solid rgba(255, 255, 255, 0.05)', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '2rem' }}>
-                      <div style={{ backgroundColor: 'rgba(56, 189, 248, 0.1)', padding: '12px', borderRadius: '16px', color: '#38bdf8' }}><Wallet size={24} /></div>
-                      <span style={{ fontSize: '1.3rem', fontWeight: 900 }}>Billing & Collections</span>
+              <div style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '24px', border: '1px solid #f1f5f9', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                      <div style={{ backgroundColor: '#fef3c7', padding: '10px', borderRadius: '12px', color: '#d97706' }}><Wallet size={20} /></div>
+                      <span style={{ fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>Billing & Collections</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                         <button 
                           onClick={handleMarkAsPaid}
                           disabled={selectedCustomer.status === 'Paid'}
                           style={{ 
-                            width: '100%', padding: '1.25rem', borderRadius: '24px', border: 'none', 
-                            backgroundColor: selectedCustomer.status === 'Paid' ? 'rgba(16, 185, 129, 0.15)' : '#10b981', 
-                            color: selectedCustomer.status === 'Paid' ? '#34d399' : 'white', fontWeight: 900, cursor: selectedCustomer.status === 'Paid' ? 'default' : 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', fontSize: '1.1rem', transition: '0.3s'
+                            width: '100%', padding: '1rem', borderRadius: '16px', border: 'none', 
+                            backgroundColor: selectedCustomer.status === 'Paid' ? '#f0fdf4' : 'var(--gurmad-green)', 
+                            color: selectedCustomer.status === 'Paid' ? 'var(--gurmad-green)' : 'white', fontWeight: 800, cursor: selectedCustomer.status === 'Paid' ? 'default' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontSize: '1rem', transition: '0.2s', boxShadow: selectedCustomer.status === 'Paid' ? 'none' : '0 4px 10px rgba(63, 174, 42, 0.2)'
                           }}
                         >
-                          {selectedCustomer.status === 'Paid' ? <CheckCircle2 size={24} /> : <Wallet size={24} />} 
-                          {selectedCustomer.status === 'Paid' ? 'PAID & SETTLED' : 'RECORD PAYMENT NOW'}
+                          {selectedCustomer.status === 'Paid' ? <CheckCircle2 size={20} /> : <Wallet size={20} />} 
+                          {selectedCustomer.status === 'Paid' ? 'PAID & SETTLED' : 'RECORD PAYMENT'}
                         </button>
                         <button 
                           onClick={() => {
@@ -573,27 +558,28 @@ const CustomerView = ({ searchQuery = '' }) => {
                             setIsDebtModalOpen(true);
                           }}
                           style={{ 
-                            width: '100%', padding: '1.25rem', borderRadius: '24px', border: '1px solid rgba(255, 255, 255, 0.05)', 
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)', color: 'white', fontWeight: 800, cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px'
+                            width: '100%', padding: '1rem', borderRadius: '16px', border: '1px solid #e2e8f0', 
+                            backgroundColor: '#f8fafc', color: '#475569', fontWeight: 800, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', transition: '0.2s'
                           }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
                         >
-                          <AlertCircle size={22} color="#94a3b8" /> LOG REVENUE DEBT
+                          <AlertCircle size={20} color="#64748b" /> LOG REVENUE DEBT
                         </button>
                   </div>
               </div>
            </div>
 
            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-              {/* Timeline Card - Full Height */}
               {selectedCustomer.zone && (() => {
                   const z = zones.find(zone => zone.name === selectedCustomer.zone);
                   if (z) {
                     return (
-                      <div style={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: '2.5rem', borderRadius: '40px', border: '1px solid rgba(255, 255, 255, 0.05)', boxShadow: '0 40px 80px rgba(0,0,0,0.3)', flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '2rem' }}>
-                          <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '12px', borderRadius: '16px', color: '#10b981' }}><Calendar size={24} /></div>
-                          <span style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white' }}>Collection Timeline</span>
+                      <div style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '24px', border: '1px solid #f1f5f9', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                          <div style={{ backgroundColor: '#f3e8ff', padding: '10px', borderRadius: '12px', color: '#9333ea' }}><Calendar size={20} /></div>
+                          <span style={{ fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>Collection Timeline</span>
                         </div>
                         <MonthlyCalendar collectionDaysString={z.collection_days} collectionTime={z.collection_time} />
                       </div>
@@ -602,7 +588,6 @@ const CustomerView = ({ searchQuery = '' }) => {
                   return null;
               })()}
            </div>
-
         </div>
 
         <div style={{ textAlign: 'center', marginTop: '3rem', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>
@@ -772,7 +757,7 @@ const CustomerView = ({ searchQuery = '' }) => {
                 </div>
               </div>
 
-                            <div style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '24px', border: '1px solid #f1f5f9' }}>
+              <div style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '24px', border: '1px solid #f1f5f9' }}>
                 <label style={{ display: 'block', marginBottom: '12px', fontSize: '0.85rem', fontWeight: 800, color: '#1e293b', textTransform: 'uppercase' }}>
                   <Search size={16} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
                   Google Maps Location Search
@@ -884,6 +869,16 @@ const CustomerView = ({ searchQuery = '' }) => {
           />
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={() => setIsBroadcastModalOpen(true)}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 1rem', 
+              borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
+              fontWeight: 600, backgroundColor: 'white', color: '#4f46e5'
+            }}
+          >
+            <MessageSquare size={18} /> Broadcast
+          </button>
           <button style={{ 
             display: 'flex', 
             alignItems: 'center', 
@@ -969,6 +964,69 @@ const CustomerView = ({ searchQuery = '' }) => {
               <div style={{ display: 'flex', gap: '12px', marginTop: '0.5rem' }}>
                 <button type="button" onClick={() => setIsDebtModalOpen(false)} style={{ flex: 1, padding: '0.85rem', borderRadius: '12px', border: 'none', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 700 }}>Cancel</button>
                 <button type="submit" style={{ flex: 2, padding: '0.85rem', borderRadius: '12px', border: 'none', backgroundColor: '#f97316', color: 'white', fontWeight: 700, boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}>Save Debt</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Broadcast Modal */}
+      {isBroadcastModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div className="card" style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '24px', width: '100%', maxWidth: '500px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+                  <MessageSquare size={24} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 900, color: '#1e293b' }}>Broadcast Message</h3>
+              </div>
+              <button onClick={() => setIsBroadcastModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><XCircle size={24} color="#94a3b8" /></button>
+            </div>
+
+            <form onSubmit={handleBroadcastSubmit}>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, color: '#475569', fontSize: '0.9rem' }}>Ku socota (Target):</label>
+                <select 
+                  value={broadcastForm.targetType}
+                  onChange={(e) => setBroadcastForm({...broadcastForm, targetType: e.target.value})}
+                  style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '1rem', fontWeight: 600, outline: 'none' }}
+                >
+                  <option value="all">Dhammaan Macaamiisha</option>
+                  <option value="unpaid">Macaamiisha Deynka lagu leeyahay</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, color: '#475569', fontSize: '0.9rem' }}>Nooca Fariinta (Type):</label>
+                <select 
+                  value={broadcastForm.type}
+                  onChange={(e) => setBroadcastForm({...broadcastForm, type: e.target.value})}
+                  style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '1rem', fontWeight: 600, outline: 'none' }}
+                >
+                  <option value="sms">SMS Message</option>
+                  <option value="whatsapp">WhatsApp Message</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, color: '#475569', fontSize: '0.9rem' }}>Fariinta (Message):</label>
+                <textarea 
+                  required
+                  value={broadcastForm.message}
+                  onChange={(e) => setBroadcastForm({...broadcastForm, message: e.target.value})}
+                  placeholder="Maanta ayaa xashiishka la idiinka qaadayaa saacaddaa ee sii diyaar garooba..."
+                  rows="4"
+                  style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '1rem', fontWeight: 500, outline: 'none', resize: 'vertical' }}
+                />
+                <small style={{ color: '#64748b', fontSize: '0.8rem' }}>Waxaad isticmaali kartaa {'{name}'} si loogu badalo magaca macmiilka.</small>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={() => setIsBroadcastModalOpen(false)} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 800, cursor: 'pointer' }}>JOOJI</button>
+                <button type="submit" style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', backgroundColor: '#4f46e5', color: 'white', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <MessageSquare size={18} /> DIR FARIINTA
+                </button>
               </div>
             </form>
           </div>

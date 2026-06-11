@@ -335,13 +335,19 @@ export const api = {
   
   globalSearch: (q) => fetch(`${API_BASE_URL}/search?q=${encodeURIComponent(q)}`, { headers: getAuthHeaders() }).then(handleResponse),
 
-  // Chat
+  // Chat & Messaging
   getMessages: (userId) => fetch(`${API_BASE_URL}/messages?userId=${userId}`, { headers: getAuthHeaders() }).then(handleResponse),
-  sendMessage: (data) => fetch(`${API_BASE_URL}/messages`, {
+  sendCustomerMessage: (data) => fetch(`${API_BASE_URL}/messages/send`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
+  broadcastMessage: (data) => fetch(`${API_BASE_URL}/messages/broadcast`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  optimizeRoute: (taskId) => fetch(`${API_BASE_URL}/optimize-route?task_id=${taskId}`, { headers: getAuthHeaders() }).then(handleResponse),
 
   sendWhatsAppNotification: (data) => fetch(`${API_BASE_URL}/whatsapp/notify`, {
     method: 'POST',
@@ -364,9 +370,12 @@ export const api = {
   }).then(handleResponse),
   
   // Admin & Audit
-  getAuditLogs: () => fetch(`${API_BASE_URL}/admin/audit-logs`, {
-    headers: getAuthHeaders()
-  }).then(handleResponse),
+  getAuditLogs: (params) => {
+    const query = new URLSearchParams(params).toString();
+    return fetch(`${API_BASE_URL}/admin/audit-logs?${query}`, {
+      headers: getAuthHeaders()
+    }).then(res => res.json());
+  },
   generateBackup: () => fetch(`${API_BASE_URL}/admin/backup`, {
     headers: getAuthHeaders()
   }).then(handleResponse),

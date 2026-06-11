@@ -22,7 +22,8 @@ import {
   FolderOpen,
   MessageSquare,
   Sun,
-  Moon
+  Moon,
+  X
 } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
 import { api } from './api';
@@ -63,6 +64,7 @@ const App = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [selectedNotification, setSelectedNotification] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -100,6 +102,12 @@ const App = () => {
           companyName: (data.company_name || 'GURMAD').split(' ')[0].toUpperCase(),
           systemTitle: (data.company_name || 'GURMAD MANAGEMENT').split(' ').slice(1).join(' ').toUpperCase() || 'MANAGEMENT'
         });
+        if (data.primaryColor) {
+          document.documentElement.style.setProperty('--gurmad-green', data.primaryColor);
+        }
+        if (data.dashboardLayout) {
+          document.documentElement.setAttribute('data-layout', data.dashboardLayout.toLowerCase());
+        }
       })
       .catch(console.error);
   }, []);
@@ -806,6 +814,8 @@ const App = () => {
                             await api.markNotificationRead(n.id);
                             setNotifications(notifications.map(xn => xn.id === n.id ? {...xn, is_read: true} : xn));
                           }
+                          setSelectedNotification(n);
+                          setShowNotifications(false);
                         }}
                         style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', backgroundColor: n.is_read ? 'white' : '#f0fdf4', cursor: 'pointer', transition: 'background 0.2s' }}
                       >
@@ -902,6 +912,48 @@ const App = () => {
         {renderContent()}
       </main>
       
+      {/* Notification Modal */}
+      {selectedNotification && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)', zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div style={{
+            backgroundColor: 'white', width: '90%', maxWidth: '500px',
+            borderRadius: '16px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+                  <Bell size={24} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>{selectedNotification.title}</h3>
+                  <span style={{ fontSize: '0.85rem', color: '#64748b' }}>{new Date(selectedNotification.created_at).toLocaleString()}</span>
+                </div>
+              </div>
+              <button onClick={() => setSelectedNotification(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px', borderRadius: '50%' }} onMouseEnter={e => e.currentTarget.style.backgroundColor='#f1f5f9'} onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
+                <X size={24} color="#94a3b8" />
+              </button>
+            </div>
+            
+            <div style={{ backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', color: '#334155', fontSize: '1rem', lineHeight: '1.6', marginBottom: '24px' }}>
+              {selectedNotification.message}
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => setSelectedNotification(null)}
+                style={{ padding: '10px 20px', backgroundColor: 'var(--gurmad-green)', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Close / Xidh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Team Chat Floating Button */}
       <ChatWidget currentUser={currentUser} />
     </div>

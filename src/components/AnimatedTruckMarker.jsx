@@ -4,7 +4,7 @@ import L from 'leaflet';
 import { getRoute, calculateBearing, snapToRoad } from '../utils/routing';
 import { Cpu } from 'lucide-react';
 
-export const AnimatedTruckMarker = ({ task, isSelected, onSelect }) => {
+export const AnimatedTruckMarker = ({ task, isSelected, onSelect, onOptimizeRoute }) => {
   const [currentPos, setCurrentPos] = useState([parseFloat(task.lat), parseFloat(task.lng)]);
   const [bearing, setBearing] = useState(0);
   const markerRef = useRef(null);
@@ -175,6 +175,17 @@ export const AnimatedTruckMarker = ({ task, isSelected, onSelect }) => {
                <div style={{ fontSize: '0.85rem', color: '#14532d', fontStyle: 'italic', lineHeight: 1.5 }}>
                   {task.status === 'In Progress' ? 'Gaadhigu wuxuu ku socdaa si hufan waddada.' : 'Sugaya in la bilaabo hawsha. Dhammaan agabkii waa diyaar.'}
                </div>
+               <button 
+                 onClick={(e) => { e.stopPropagation(); if (onOptimizeRoute) onOptimizeRoute(task.id); }}
+                 style={{
+                   marginTop: '12px', width: '100%', padding: '10px', borderRadius: '12px',
+                   backgroundColor: '#3FAE2A', color: 'white', border: 'none', fontWeight: 800,
+                   cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                   fontSize: '0.85rem', boxShadow: '0 4px 10px rgba(63, 174, 42, 0.3)'
+                 }}
+               >
+                 <Cpu size={16} /> OPTIMIZE ROUTE (AI)
+               </button>
             </div>
           </div>
         </div>

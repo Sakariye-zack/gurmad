@@ -119,6 +119,12 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
             primaryColor: data.primaryColor || '#3FAE2A',
             dashboardLayout: data.dashboardLayout || 'Standard'
           });
+          if (data.primaryColor) {
+            document.documentElement.style.setProperty('--gurmad-green', data.primaryColor);
+          }
+          if (data.dashboardLayout) {
+            document.documentElement.setAttribute('data-layout', data.dashboardLayout.toLowerCase());
+          }
         }
         if (data.company_name || data.system_logo) {
           setGeneralSettings(prev => ({
@@ -601,7 +607,10 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                     {['#3FAE2A', '#2563eb', '#7c3aed', '#db2777', '#ea580c', '#0f172a'].map(color => (
                       <div 
                         key={color}
-                        onClick={() => setPreferences({...preferences, primaryColor: color})}
+                        onClick={() => {
+                          setPreferences({...preferences, primaryColor: color});
+                          document.documentElement.style.setProperty('--gurmad-green', color);
+                        }}
                         style={{ 
                           width: '40px', height: '40px', borderRadius: '10px', backgroundColor: color, 
                           cursor: 'pointer', border: preferences.primaryColor === color ? '3px solid #cbd5e1' : 'none',
@@ -617,7 +626,10 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                   <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '12px' }}>DASHBOARD LAYOUT</label>
                   <div style={{ display: 'flex', gap: '1rem' }}>
                     <div 
-                      onClick={() => setPreferences({...preferences, dashboardLayout: 'Standard'})}
+                      onClick={() => {
+                        setPreferences({...preferences, dashboardLayout: 'Standard'});
+                        document.documentElement.setAttribute('data-layout', 'standard');
+                      }}
                       style={{ 
                         flex: 1, padding: '1rem', borderRadius: '12px', textAlign: 'center', cursor: 'pointer',
                         border: preferences.dashboardLayout === 'Standard' ? '2px solid var(--gurmad-green)' : '1px solid var(--border-color)',
@@ -629,7 +641,10 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                       <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>Standard</div>
                     </div>
                     <div 
-                      onClick={() => setPreferences({...preferences, dashboardLayout: 'Compact'})}
+                      onClick={() => {
+                        setPreferences({...preferences, dashboardLayout: 'Compact'});
+                        document.documentElement.setAttribute('data-layout', 'compact');
+                      }}
                       style={{ 
                         flex: 1, padding: '1rem', borderRadius: '12px', textAlign: 'center', cursor: 'pointer',
                         border: preferences.dashboardLayout === 'Compact' ? '2px solid var(--gurmad-green)' : '1px solid var(--border-color)',
@@ -639,6 +654,21 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                     >
                       <Monitor size={24} style={{ marginBottom: '8px', color: preferences.dashboardLayout === 'Compact' ? 'var(--gurmad-green)' : 'var(--text-muted)' }} />
                       <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Compact</div>
+                    </div>
+                    <div 
+                      onClick={() => {
+                        setPreferences({...preferences, dashboardLayout: 'Boxed'});
+                        document.documentElement.setAttribute('data-layout', 'boxed');
+                      }}
+                      style={{ 
+                        flex: 1, padding: '1rem', borderRadius: '12px', textAlign: 'center', cursor: 'pointer',
+                        border: preferences.dashboardLayout === 'Boxed' ? '2px solid var(--gurmad-green)' : '1px solid var(--border-color)',
+                        backgroundColor: preferences.dashboardLayout === 'Boxed' ? '#f0fdf4' : 'transparent',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <Monitor size={24} style={{ marginBottom: '8px', color: preferences.dashboardLayout === 'Boxed' ? 'var(--gurmad-green)' : 'var(--text-muted)' }} />
+                      <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Boxed</div>
                     </div>
                   </div>
                 </div>
