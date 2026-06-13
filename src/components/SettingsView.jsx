@@ -83,7 +83,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
   const [profImage, setProfImage] = useState(null);
   const [profPreview, setProfPreview] = useState(
     currentUser.profile_image 
-      ? `/uploads/${currentUser.profile_image}` 
+      ? `/api/uploads/${currentUser.profile_image}` 
       : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || currentUser.username)}&background=3FAE2A&color=fff&size=128`
   );
 
@@ -136,7 +136,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
             systemLogo: data.system_logo || ''
           }));
           if (data.system_logo) {
-            setLogoPreview(`/uploads/${data.system_logo}`);
+            setLogoPreview(`/api/uploads/${data.system_logo}`);
           }
         }
       })

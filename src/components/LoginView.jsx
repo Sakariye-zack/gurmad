@@ -100,7 +100,7 @@ const LoginView = ({ onLogin, onBack }) => {
               <Shield size={36} color={systemSettings.logo ? 'var(--gurmad-green)' : 'white'} />
             ) : (
               systemSettings.logo ? (
-                <img src={`/uploads/${systemSettings.logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img src={`/api/uploads/${systemSettings.logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               ) : (
                 <Truck size={36} />
               )

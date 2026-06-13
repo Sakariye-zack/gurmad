@@ -408,7 +408,7 @@ const App = () => {
             boxShadow: systemSettings.logo ? 'var(--shadow-sm)' : 'none'
           }}>
             {systemSettings.logo ? (
-              <img src={`/uploads/${systemSettings.logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              <img src={`/api/uploads/${systemSettings.logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             ) : (
               <Truck size={24} />
             )}
@@ -849,7 +849,7 @@ const App = () => {
                   border: '1px solid var(--border-color)'
                 }}>
                   <img 
-                    src={currentUser.profile_image ? `/uploads/${currentUser.profile_image}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || currentUser.username)}&background=3FAE2A&color=fff&size=128`} 
+                    src={currentUser.profile_image ? `/api/uploads/${currentUser.profile_image}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || currentUser.username)}&background=3FAE2A&color=fff&size=128`} 
                     alt="User" 
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
