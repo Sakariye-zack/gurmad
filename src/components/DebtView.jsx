@@ -613,7 +613,7 @@ const DebtView = ({ searchQuery = '' }) => {
               <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                 <div style={{ marginBottom: '10px' }}>
                   {systemInfo.logo ? (
-                    <img src={`/uploads/${systemInfo.logo}`} alt="Logo" style={{ height: '50px', objectFit: 'contain' }} />
+                    <img src={`/api/uploads/${systemInfo.logo}`} alt="Logo" style={{ height: '50px', objectFit: 'contain' }} />
                   ) : (
                     <div style={{ width: '50px', height: '50px', borderRadius: '12px', background: 'var(--gurmad-green)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', fontSize: '1.5rem', fontWeight: 700 }}>G</div>
                   )}

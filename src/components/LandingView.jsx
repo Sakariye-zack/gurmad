@@ -311,7 +311,7 @@ const LandingView = ({ onLoginClick }) => {
               boxShadow: '0 8px 16px rgba(63, 174, 42, 0.2)',
             }}>
               {settings.system_logo ? (
-                <img src={`/uploads/${settings.system_logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img src={`/api/uploads/${settings.system_logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               ) : (
                 <Truck size={26} />
               )}
@@ -849,7 +849,7 @@ const LandingView = ({ onLoginClick }) => {
                     boxShadow: '0 10px 25px rgba(63, 174, 42, 0.4)', overflow: 'hidden'
                   }}>
                     {settings.system_logo ? (
-                      <img src={`/uploads/${settings.system_logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                      <img src={`/api/uploads/${settings.system_logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                     ) : (
                       <Truck size={30} />
                     )}
