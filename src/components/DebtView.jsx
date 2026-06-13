@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Filter, AlertCircle, CheckCircle2, Copy, Trash2 } from 'lucide-react';
+import { UserPlus, Search, Filter, AlertCircle, CheckCircle2, Copy, Trash2, MessageSquare, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../api';
 
@@ -13,6 +13,8 @@ const DebtView = ({ searchQuery = '' }) => {
   const [collectors, setCollectors] = useState([]);
   const [zones, setZones] = useState([]);
   const [paymentModal, setPaymentModal] = useState({ isOpen: false, debt: null, debtId: null, method: 'Cash', phone: '' });
+  const [isRemindModalOpen, setIsRemindModalOpen] = useState(false);
+  const [remindForm, setRemindForm] = useState({ to: '', message: '', method: 'sms' });
 
   // Form State
   const [newDebt, setNewDebt] = useState({
@@ -155,6 +157,19 @@ const DebtView = ({ searchQuery = '' }) => {
       toast.success('Debt record deleted');
     } catch (err) {
       toast.error('Failed to delete debt record');
+    }
+  };
+
+  const handleSendReminder = async (e) => {
+    e.preventDefault();
+    try {
+      const loadingToast = toast.loading('Sending reminder...');
+      await api.sendCustomerMessage(remindForm);
+      toast.dismiss(loadingToast);
+      toast.success('Reminder sent successfully!', { icon: '🚀' });
+      setIsRemindModalOpen(false);
+    } catch (err) {
+      toast.error(err.message || 'Failed to send reminder');
     }
   };
 
@@ -321,21 +336,48 @@ const DebtView = ({ searchQuery = '' }) => {
                     <td style={{ padding: '1.25rem 1rem', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
                         {debt.status === 'Unpaid' ? (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setPaymentModal({ isOpen: true, debt: debt, debtId: debt.id, method: 'Cash', phone: debt.phone || '' }); }}
-                            className="glass"
-                            style={{ 
-                              backgroundColor: 'var(--gurmad-green)', 
-                              color: 'white', 
-                              padding: '6px 16px', 
-                              fontSize: '0.8rem', 
-                              fontWeight: 600,
-                              borderRadius: '8px',
-                              boxShadow: '0 4px 6px -1px rgba(63, 174, 42, 0.2)'
-                            }}
-                          >
-                            Mark Paid
-                          </button>
+                          <>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setPaymentModal({ isOpen: true, debt: debt, debtId: debt.id, method: 'Cash', phone: debt.phone || '' }); }}
+                              className="glass"
+                              style={{ 
+                                backgroundColor: 'var(--gurmad-green)', 
+                                color: 'white', 
+                                padding: '6px 16px', 
+                                fontSize: '0.8rem', 
+                                fontWeight: 600,
+                                borderRadius: '8px',
+                                boxShadow: '0 4px 6px -1px rgba(63, 174, 42, 0.2)'
+                              }}
+                            >
+                              Mark Paid
+                            </button>
+                            <button 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setRemindForm({ 
+                                  to: debt.phone, 
+                                  message: `Asc ${debt.debtor_name}, waxaan ku xasuusinaynaa in lagugu leeyahay lacag dhan $${debt.amount} oo ah bixinta xashiishka. Fadlan iska soo bixi.`,
+                                  method: 'sms' 
+                                });
+                                setIsRemindModalOpen(true);
+                              }}
+                              style={{ 
+                                backgroundColor: '#fef3c7', 
+                                color: '#d97706', 
+                                padding: '6px 12px', 
+                                fontSize: '0.8rem', 
+                                fontWeight: 600,
+                                borderRadius: '8px',
+                                border: '1px solid #fde68a',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              <MessageSquare size={14} /> Remind
+                            </button>
+                          </>
                         ) : (
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleStatusUpdate(debt.id, 'Unpaid'); }}
@@ -765,6 +807,65 @@ const DebtView = ({ searchQuery = '' }) => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remind Modal */}
+      {isRemindModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div className="card" style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '24px', width: '100%', maxWidth: '500px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '12px', backgroundColor: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ea580c' }}>
+                  <MessageSquare size={24} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 900, color: '#1e293b' }}>Send Reminder</h3>
+              </div>
+              <button onClick={() => setIsRemindModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><AlertCircle size={24} color="#94a3b8" /></button>
+            </div>
+
+            <form onSubmit={handleSendReminder}>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, color: '#475569', fontSize: '0.9rem' }}>Phone Number:</label>
+                <input 
+                  required
+                  value={remindForm.to}
+                  onChange={(e) => setRemindForm({...remindForm, to: e.target.value})}
+                  style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '1rem', fontWeight: 600, outline: 'none' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, color: '#475569', fontSize: '0.9rem' }}>Nooca Fariinta (Method):</label>
+                <select 
+                  value={remindForm.method}
+                  onChange={(e) => setRemindForm({...remindForm, method: e.target.value})}
+                  style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '1rem', fontWeight: 600, outline: 'none' }}
+                >
+                  <option value="sms">SMS Message</option>
+                  <option value="whatsapp">WhatsApp Message</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 700, color: '#475569', fontSize: '0.9rem' }}>Fariinta (Message):</label>
+                <textarea 
+                  required
+                  value={remindForm.message}
+                  onChange={(e) => setRemindForm({...remindForm, message: e.target.value})}
+                  rows="4"
+                  style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '1rem', fontWeight: 500, outline: 'none', resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button type="button" onClick={() => setIsRemindModalOpen(false)} style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: 'none', backgroundColor: '#ea580c', color: 'white', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <Send size={18} /> Send
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

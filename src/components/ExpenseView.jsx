@@ -64,7 +64,7 @@ const ExpenseView = () => {
         formData.append('invoice_image', newExpense.imageFile);
       }
 
-      const resp = await fetch('http://localhost:5000/api/expenses', {
+      const resp = await fetch('/api/expenses', {
         method: 'POST',
         body: formData
       });

@@ -109,6 +109,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Expose uploads directory to frontend
+app.use('/api/uploads', express.static(uploadDir));
 app.use('/uploads', express.static(uploadDir));
 
 // --- Middleware & Utilities ---
@@ -116,16 +117,16 @@ const logAudit = async (req, action, entityType, entityId, oldValues = null, new
   try {
     const userId = req.headers['x-user-id'] || null;
     const ipAddress = req.ip || req.connection.remoteAddress;
-    
+
     await db.query(
       'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values, ip_address) VALUES ($1, $2, $3, $4, $5, $6, $7)',
       [
-        userId, 
-        action, 
-        entityType, 
-        entityId, 
-        oldValues ? JSON.stringify(oldValues) : null, 
-        newValues ? JSON.stringify(newValues) : null, 
+        userId,
+        action,
+        entityType,
+        entityId,
+        oldValues ? JSON.stringify(oldValues) : null,
+        newValues ? JSON.stringify(newValues) : null,
         ipAddress
       ]
     );
@@ -158,7 +159,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (!token) {
           return res.json({ require2FA: true, userId: user.id });
         }
-        
+
         const verified = speakeasy.totp.verify({
           secret: user.two_factor_secret,
           encoding: 'base32',
@@ -170,7 +171,7 @@ app.post('/api/auth/login', async (req, res) => {
           return res.status(401).json({ error: 'Invalid authenticator code' });
         }
       }
-      
+
       const { password, two_factor_secret, ...safeUser } = user;
       res.json(safeUser);
     } else {
@@ -187,7 +188,7 @@ app.post('/api/auth/login/verify-2fa', async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    
+
     const user = result.rows[0];
     console.log(`Stored Secret for Login: ${user.two_factor_secret}`);
     const verified = speakeasy.totp.verify({
@@ -212,27 +213,27 @@ app.post('/api/auth/login/verify-2fa', async (req, res) => {
 app.post('/api/auth/update_profile', upload.single('profile_image'), async (req, res) => {
   const { id, username, password, full_name } = req.body;
   const profile_image = req.file ? req.file.filename : null;
-  
+
   try {
     let query = 'UPDATE users SET username = $1, full_name = $2';
     let values = [username, full_name || ''];
     let idx = 3;
-    
+
     if (password) {
       query += `, password = $${idx}`;
       values.push(password);
       idx++;
     }
-    
+
     if (profile_image) {
       query += `, profile_image = $${idx}`;
       values.push(profile_image);
       idx++;
     }
-    
+
     query += ` WHERE id = $${idx} RETURNING id, username, role, profile_image, full_name`;
     values.push(id);
-    
+
     const result = await db.query(query, values);
     if (result.rows.length > 0) {
       res.json({ success: true, user: result.rows[0] });
@@ -249,8 +250,8 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     filename: req.file.filename,
     url: `/uploads/${req.file.filename}`
   });
@@ -276,8 +277,8 @@ app.post('/api/customers', async (req, res) => {
   try {
     const b = req.body;
     const safeNull = (v) => (v === '' || v === undefined ? null : v);
-    const safeInt  = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10) || null);
-    const safeNum  = (v) => (v === '' || v === undefined || v === null ? null : parseFloat(v) || null);
+    const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10) || null);
+    const safeNum = (v) => (v === '' || v === undefined || v === null ? null : parseFloat(v) || null);
 
     const result = await db.query(
       `INSERT INTO customers 
@@ -311,8 +312,8 @@ app.put('/api/customers/:id', async (req, res) => {
     const b = req.body;
     // Sanitize: convert empty strings to null, parse numbers properly
     const safeNull = (v) => (v === '' || v === undefined ? null : v);
-    const safeInt  = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10) || null);
-    const safeNum  = (v) => (v === '' || v === undefined || v === null ? null : parseFloat(v) || null);
+    const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10) || null);
+    const safeNum = (v) => (v === '' || v === undefined || v === null ? null : parseFloat(v) || null);
 
     const oldRow = await db.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
     const oldValues = oldRow.rows[0];
@@ -371,12 +372,12 @@ app.get('/api/invoices/stats', async (req, res) => {
       FROM invoices 
       WHERE created_at::date = CURRENT_DATE
     `);
-    res.json(stats.rows[0] || { 
-        total_usd: 0, 
-        total_slsh: 0, 
-        total_debt: 0, 
-        total_discount: 0,
-        active_trucks: 0 
+    res.json(stats.rows[0] || {
+      total_usd: 0,
+      total_slsh: 0,
+      total_debt: 0,
+      total_discount: 0,
+      active_trucks: 0
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -407,24 +408,24 @@ app.get('/api/invoices', async (req, res) => {
 app.post('/api/invoices', async (req, res) => {
   const { phone, splitPayments, currency, collector_name, truck_name, zone, house_no, discount_amount = 0 } = req.body;
   const { cash = 0, zaad = 0, edahab = 0, debt = 0, slsh = 0 } = splitPayments || {};
-  
+
   try {
     // Fetch exchange rate for total calculation
     const rateResult = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'exchange_rate'");
     const exchangeRate = parseFloat(rateResult.rows[0]?.setting_value?.replace(/,/g, '')) || 11000;
 
-    const totalAmount = parseFloat(cash) + 
-                       parseFloat(zaad) + 
-                       parseFloat(edahab) + 
-                       parseFloat(debt) + 
-                       (parseFloat(slsh) / exchangeRate) - 
-                       parseFloat(discount_amount);
+    const totalAmount = parseFloat(cash) +
+      parseFloat(zaad) +
+      parseFloat(edahab) +
+      parseFloat(debt) +
+      (parseFloat(slsh) / exchangeRate) -
+      parseFloat(discount_amount);
 
     // Find customer by phone
     let customer = await db.query('SELECT id, name FROM customers WHERE phone = $1', [phone]);
     let customerId = null;
     let customerNameFromReq = req.body.customer_name || 'New Walk-in Customer';
-    
+
     if (customer.rows.length === 0) {
       const newCust = await db.query(
         'INSERT INTO customers (name, phone, area, whatsapp, neighborhood, zone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name',
@@ -434,7 +435,7 @@ app.post('/api/invoices', async (req, res) => {
     } else {
       customerId = customer.rows[0].id;
     }
-    
+
     const invoiceStatus = (parseFloat(debt) > 0) ? 'Unpaid' : 'Paid';
     const mainMethod = parseFloat(zaad) > 0 ? 'ZAAD' : (parseFloat(edahab) > 0 ? 'eDahab' : (parseFloat(cash) > 0 ? 'Cash' : (parseFloat(slsh) > 0 ? 'SLSH' : 'Debt')));
 
@@ -444,18 +445,18 @@ app.post('/api/invoices', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
        RETURNING *`,
       [
-        customerId, 
-        totalAmount, 
-        currency || 'USD', 
-        invoiceStatus, 
-        mainMethod, 
-        collector_name || null, 
-        cash, zaad, edahab, debt, 
-        true, 
-        truck_name || null, 
-        zone || null, 
-        house_no || null, 
-        slsh, 
+        customerId,
+        totalAmount,
+        currency || 'USD',
+        invoiceStatus,
+        mainMethod,
+        collector_name || null,
+        cash, zaad, edahab, debt,
+        true,
+        truck_name || null,
+        zone || null,
+        house_no || null,
+        slsh,
         discount_amount
       ]
     );
@@ -494,7 +495,7 @@ app.get('/api/expenses', async (req, res) => {
 app.post('/api/expenses', upload.single('invoice_image'), async (req, res) => {
   const { category, description, amount, reference_no } = req.body;
   const invoice_image = req.file ? req.file.filename : null;
-  
+
   try {
     const result = await db.query(
       'INSERT INTO expenses (category, description, amount, reference_no, invoice_image) VALUES ($1, $2, $3, $4, $5) RETURNING *',
@@ -609,7 +610,7 @@ app.put('/api/tasks/:taskId/customers/:customerId', async (req, res) => {
     if (collected) {
       const cInf = await db.query('SELECT name FROM customers WHERE id = $1', [customerId]);
       const custName = cInf.rows[0]?.name || 'a customer';
-      
+
       const targetUsers = await db.query("SELECT id FROM users WHERE role IN ('admin', 'cashier')");
       for (const u of targetUsers.rows) {
         await db.query(
@@ -637,10 +638,10 @@ app.put('/api/tasks/:id/status', async (req, res) => {
     res.json(result.rows[0]);
 
     if (status === 'In Progress') {
-       await db.query(
+      await db.query(
         'INSERT INTO notifications (user_id, title, message) VALUES (1, $1, $2)',
         ['Task Started', `Task for ${result.rows[0].route_name} has started.`]
-       );
+      );
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -666,7 +667,7 @@ app.post('/api/tasks/:id/ping', async (req, res) => {
       'INSERT INTO truck_location_history (task_id, lat, lng) VALUES ($1, $2, $3) RETURNING *',
       [req.params.id, lat, lng]
     );
-    
+
     // Emit real-time truck location update
     io.emit('truck_location_updated', {
       taskId: parseInt(req.params.id),
@@ -1011,7 +1012,7 @@ app.get('/api/payroll', async (req, res) => {
       params.push(month);
     }
     query += ' ORDER BY e.name ASC';
-    
+
     const result = await db.query(query, params);
     res.json(result.rows);
   } catch (err) {
@@ -1026,7 +1027,7 @@ app.post('/api/payroll/generate', async (req, res) => {
   try {
     // 1. Get all employees
     const employees = await db.query("SELECT id, name, salary FROM employees WHERE status = 'Active'");
-    
+
     const results = [];
     for (const emp of employees.rows) {
       // 2. Count attendance for this month
@@ -1035,7 +1036,7 @@ app.post('/api/payroll/generate', async (req, res) => {
         [emp.id, month]
       );
       const daysPresent = parseInt(attendance.rows[0].count);
-      
+
       // 3. Insert or update payroll
       // Net salary is now simply the base salary
       const baseSalary = emp.salary || 0;
@@ -1051,10 +1052,10 @@ app.post('/api/payroll/generate', async (req, res) => {
           net_salary = EXCLUDED.net_salary
         RETURNING *
       `, [emp.id, month, baseSalary, daysPresent, netSalary]);
-      
+
       results.push(payrollResult.rows[0]);
     }
-    
+
     res.json({ success: true, count: results.length, data: results });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1068,15 +1069,15 @@ app.put('/api/payroll/:id', async (req, res) => {
     // Get existing payroll to recalculate net_salary
     const existing = await db.query('SELECT base_salary, total_days_present FROM payroll WHERE id = $1', [id]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Payroll record not found' });
-    
+
     const base = parseFloat(existing.rows[0].base_salary);
     const b = parseFloat(bonuses || 0);
     const d = parseFloat(deductions || 0);
-    
+
     const calculatedNet = base + b - d;
-    
+
     const paymentDate = status === 'Paid' ? 'CURRENT_TIMESTAMP' : 'NULL';
-    
+
     const result = await db.query(`
       UPDATE payroll SET 
         bonuses = $1, 
@@ -1088,7 +1089,7 @@ app.put('/api/payroll/:id', async (req, res) => {
         payment_date = ${paymentDate}
       WHERE id = $7 RETURNING *
     `, [b, d, calculatedNet, status, notes, payment_method || null, id]);
-    
+
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1102,7 +1103,7 @@ app.get('/api/stats', async (req, res) => {
     const customersRes = await db.query("SELECT COUNT(*) FROM customers");
     const tasksRes = await db.query("SELECT COUNT(*) FROM tasks WHERE status = 'Completed'");
     const expensesRes = await db.query("SELECT SUM(amount) FROM expenses");
-    
+
     res.json({
       revenue: parseFloat(revenueRes.rows[0].sum || 0),
       customerCount: parseInt(customersRes.rows[0].count || 0),
@@ -1119,14 +1120,14 @@ app.get('/api/stats/history', async (req, res) => {
     const history = [];
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const now = new Date();
-    
+
     // Get last 7 days
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(now.getDate() - i);
       const dateString = date.toISOString().split('T')[0];
       const dayName = days[date.getDay()];
-      
+
       const revRes = await db.query(
         "SELECT SUM(amount) FROM invoices WHERE status = 'Paid' AND DATE(created_at) = $1",
         [dateString]
@@ -1135,14 +1136,14 @@ app.get('/api/stats/history', async (req, res) => {
         "SELECT SUM(amount) FROM expenses WHERE DATE(expense_date) = $1",
         [dateString]
       );
-      
+
       history.push({
         name: dayName,
         revenue: parseFloat(revRes.rows[0].sum || 0),
         expenses: parseFloat(expRes.rows[0].sum || 0)
       });
     }
-    
+
     res.json(history);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1195,10 +1196,10 @@ app.delete('/api/archives/:id', async (req, res) => {
     // Optional: Delete physical file too
     const find = await db.query('SELECT file_name FROM archives WHERE id = $1', [req.params.id]);
     if (find.rows.length > 0) {
-       const filePath = path.join(__dirname, 'uploads', find.rows[0].file_name);
-       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      const filePath = path.join(__dirname, 'uploads', find.rows[0].file_name);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
-    
+
     const result = await db.query('DELETE FROM archives WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
   } catch (err) {
@@ -1298,13 +1299,13 @@ app.post('/api/debts', async (req, res) => {
       'INSERT INTO debts (customer_id, debtor_name, phone, amount, currency, description, status, collector_name, zone, house_no) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
       [customer_id || null, debtor_name, phone, amount, currency || 'USD', description, 'Unpaid', collector_name || null, zone || null, house_no || null]
     );
-    
+
     const debt = result.rows[0];
 
     // Also fetch the customer name right away if it exists
     if (customer_id) {
-        const custResult = await db.query('SELECT name FROM customers WHERE id = $1', [customer_id]);
-        debt.customer_name = custResult.rows[0]?.name;
+      const custResult = await db.query('SELECT name FROM customers WHERE id = $1', [customer_id]);
+      debt.customer_name = custResult.rows[0]?.name;
     }
 
     res.json(debt);
@@ -1420,10 +1421,10 @@ app.post('/api/auth/2fa/setup', async (req, res) => {
   try {
     const secret = speakeasy.generateSecret({ name: `GURMAD` });
     const qrCodeDataUrl = await QRCode.toDataURL(secret.otpauth_url);
-    
+
     // Save secret temporarily (pending verification)
     await db.query('UPDATE users SET two_factor_secret = $1 WHERE id = $2', [secret.base32, userId]);
-    
+
     res.json({ secret: secret.base32, qrCode: qrCodeDataUrl });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1441,7 +1442,7 @@ app.post('/api/auth/2fa/verify', async (req, res) => {
     }
     const secret = result.rows[0].two_factor_secret;
     console.log(`Stored Secret: ${secret}`);
-    
+
     const verified = speakeasy.totp.verify({
       secret: secret,
       encoding: 'base32',
@@ -1651,7 +1652,7 @@ app.put('/api/users/:userId/notifications/read-all', async (req, res) => {
 app.get('/api/admin/audit-logs', checkRole(['admin']), async (req, res) => {
   try {
     const { action, startDate, endDate, search } = req.query;
-    
+
     let queryStr = `
       SELECT a.*, u.username, u.full_name 
       FROM audit_logs a
@@ -1666,13 +1667,13 @@ app.get('/api/admin/audit-logs', checkRole(['admin']), async (req, res) => {
       queryParams.push(action);
       paramCount++;
     }
-    
+
     if (startDate) {
       queryStr += ` AND a.created_at >= $${paramCount}`;
       queryParams.push(`${startDate} 00:00:00`);
       paramCount++;
     }
-    
+
     if (endDate) {
       queryStr += ` AND a.created_at <= $${paramCount}`;
       queryParams.push(`${endDate} 23:59:59`);
@@ -1699,16 +1700,16 @@ app.get('/api/admin/backup', checkRole(['admin']), async (req, res) => {
   try {
     const tables = ['users', 'employees', 'trucks', 'zones', 'customers', 'invoices', 'expenses', 'tasks', 'inventory', 'debts', 'payroll', 'attendance', 'audit_logs', 'truck_fuel_logs', 'truck_maintenance_logs'];
     const backupData = {};
-    
+
     for (const table of tables) {
       const result = await db.query(`SELECT * FROM ${table}`);
       backupData[table] = result.rows;
     }
-    
+
     const backupFileName = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
     const backupPath = path.join(__dirname, 'uploads', backupFileName);
     fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2));
-    
+
     res.json({ success: true, fileName: backupFileName, url: `/uploads/${backupFileName}` });
   } catch (err) {
     res.status(500).json({ error: 'Backup failed: ' + err.message });
@@ -1730,7 +1731,7 @@ app.post('/api/users', async (req, res) => {
   try {
     // Basic validation
     if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
-    
+
     const result = await db.query(
       'INSERT INTO users (username, password, full_name, role) VALUES ($1, $2, $3, $4) RETURNING id, username, full_name, role, created_at',
       [username, password, full_name || '', role || 'collector']
@@ -1785,7 +1786,7 @@ app.post('/api/users/:id/full-reset', async (req, res) => {
 
 app.post('/api/messages/send', async (req, res) => {
   const { phone, message, type = 'sms' } = req.body;
-  
+
   if (!phone || !message) {
     return res.status(400).json({ error: 'Phone and message are required' });
   }
@@ -1799,7 +1800,7 @@ app.post('/api/messages/send', async (req, res) => {
     } else {
       result = await messaging.sendSMS(formattedPhone, message);
     }
-    
+
     // Log this message to the DB for history
     // For now we just return success
     res.json({ success: true, result });
@@ -1811,10 +1812,10 @@ app.post('/api/messages/send', async (req, res) => {
 app.post('/api/messages/broadcast', async (req, res) => {
   const { targetType, targetValue, message, type = 'sms' } = req.body;
   // targetType can be 'zone', 'all', 'unpaid', 'task_id'
-  
+
   try {
     let customersToMessage = [];
-    
+
     if (targetType === 'all') {
       const result = await db.query('SELECT name, phone FROM customers WHERE phone IS NOT NULL');
       customersToMessage = result.rows;
@@ -1845,8 +1846,8 @@ app.post('/api/messages/broadcast', async (req, res) => {
           else await messaging.sendSMS(formattedPhone, personalizedMsg);
           // Add a small delay to prevent rate limits
           await new Promise(resolve => setTimeout(resolve, 200));
-        } catch(e) {
-           console.error(`Failed to broadcast to ${cust.phone}:`, e.message);
+        } catch (e) {
+          console.error(`Failed to broadcast to ${cust.phone}:`, e.message);
         }
       }
     })();
@@ -1885,9 +1886,9 @@ app.get('/api/optimize-route', async (req, res) => {
 
     // Mapbox/OSRM expects: lng,lat;lng,lat
     const coordinatesString = customers.map(c => `${c.lng},${c.lat}`).join(';');
-    
+
     const osrmUrl = `http://router.project-osrm.org/trip/v1/driving/${coordinatesString}?roundtrip=true&source=first&geometries=geojson`;
-    
+
     const osrmResponse = await fetch(osrmUrl);
     const osrmData = await osrmResponse.json();
 
@@ -1924,7 +1925,7 @@ app.post('/api/zaad/pay', async (req, res) => {
   const { phone, amount, invoiceId } = req.body;
   const currency = amount > 1000 ? 'SLSH' : 'USD';
   const waafiEndpoint = 'https://api.waafi.com/asm';
-  
+
   const zaadPayload = {
     schemaVersion: "1.0",
     requestId: Date.now().toString(),
@@ -1955,12 +1956,12 @@ app.post('/api/zaad/pay', async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(zaadPayload)
     });
-    
+
     const data = await response.json();
     console.log("ZAAD Response:", data);
 
     // WAAFI usually returns responseCode '2001' on success or '2000'
-    const successCodes = ['2001', '2000', '0']; 
+    const successCodes = ['2001', '2000', '0'];
     const isSuccess = data.responseCode && successCodes.includes(data.responseCode);
     const isApproved = data.responseMsg === 'RCS_SUCCESS' || isSuccess;
 
@@ -2001,7 +2002,7 @@ app.post('/api/zaad/pay', async (req, res) => {
         [customerId, amount, currency, 'Paid', 'ZAAD (Offline)']
       );
       res.json({ success: true, offline: true, invoice: insertResult.rows[0] });
-    } catch(dbErr) {
+    } catch (dbErr) {
       res.status(500).json({ error: 'Database Fallback Error: ' + dbErr.message });
     }
   }
@@ -2095,11 +2096,11 @@ app.post('/api/messages', async (req, res) => {
       'INSERT INTO messages (sender_id, receiver_id, content) VALUES ($1, $2, $3) RETURNING *',
       [sender_id, receiver_id || null, content]
     );
-    
+
     // Broadcast to notifications for the receiver (if private) or others (if public)
     const sender = await db.query('SELECT full_name FROM users WHERE id = $1', [sender_id]);
     const senderName = sender.rows[0]?.full_name || 'Someone';
-    
+
     if (receiver_id) {
       await db.query(
         'INSERT INTO notifications (user_id, title, message) VALUES ($1, $2, $3)',
@@ -2125,17 +2126,17 @@ const twilio = require('twilio');
 
 app.post('/api/whatsapp/notify', async (req, res) => {
   const { taskId, message, customerIds } = req.body;
-  
+
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const fromNumber = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'; 
+  const fromNumber = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
 
   try {
     const client = twilio(accountSid, authToken);
-    
+
     // Fetch actual customer details
     const customers = await db.query('SELECT name, phone, whatsapp FROM customers WHERE id = ANY($1)', [customerIds || []]);
-    
+
     const results = [];
     for (const customer of customers.rows) {
       let rawPhone = customer.whatsapp || customer.phone;
@@ -2232,6 +2233,148 @@ app.post('/api/payments/zaad', async (req, res) => {
     }
   } catch (err) {
     console.error('ZAAD API Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Messaging Endpoints ---
+
+app.post('/api/messages/send', async (req, res) => {
+  const { to, message, method } = req.body;
+  if (!to || !message) return res.status(400).json({ error: 'Missing to or message' });
+  try {
+    let result;
+    if (method === 'whatsapp') {
+      result = await messaging.sendWhatsApp(to, message);
+    } else {
+      result = await messaging.sendSMS(to, message);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/whatsapp/notify', async (req, res) => {
+  const { taskId, message, customerIds } = req.body;
+  try {
+    let query = 'SELECT phone FROM customers WHERE id = ANY($1)';
+    let params = [customerIds];
+
+    if (!customerIds || customerIds.length === 0) {
+      query = 'SELECT c.phone FROM task_customers tc JOIN customers c ON tc.customer_id = c.id WHERE tc.task_id = $1';
+      params = [taskId];
+    }
+
+    const result = await db.query(query, params);
+    const phones = result.rows.map(r => r.phone).filter(Boolean);
+
+    let sentCount = 0;
+    for (const phone of phones) {
+      try {
+        await messaging.sendWhatsApp(phone, message);
+        sentCount++;
+      } catch (e) {
+        console.error('Failed to notify phone:', phone, e.message);
+      }
+    }
+    res.json({ success: true, sentCount, total: phones.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/messages/broadcast', async (req, res) => {
+  const { targetType, message, type } = req.body;
+  if (!message) return res.status(400).json({ error: 'Missing message' });
+
+  try {
+    let query = 'SELECT phone, name FROM customers WHERE phone IS NOT NULL AND phone != \'\'';
+    if (targetType === 'unpaid') {
+      query += " AND status = 'Unpaid'";
+    }
+
+    const result = await db.query(query);
+    const customers = result.rows;
+
+    let sentCount = 0;
+    for (const c of customers) {
+      try {
+        const personalizedMsg = message.replace(/{name}/g, c.name);
+        if (type === 'whatsapp') {
+          await messaging.sendWhatsApp(c.phone, personalizedMsg);
+        } else {
+          await messaging.sendSMS(c.phone, personalizedMsg);
+        }
+        sentCount++;
+      } catch (e) {
+        console.error('Failed to notify phone:', c.phone, e.message);
+      }
+    }
+    res.json({ success: true, sentCount, total: customers.length, message: `Successfully sent ${sentCount} messages` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Route Optimization Endpoint ---
+app.get('/api/optimize-route', async (req, res) => {
+  const { task_id } = req.query;
+  if (!task_id) return res.status(400).json({ error: 'Missing task_id' });
+
+  try {
+    const result = await db.query(`
+      SELECT c.id, c.lat, c.lng 
+      FROM task_customers tc 
+      JOIN customers c ON tc.customer_id = c.id 
+      WHERE tc.task_id = $1 AND tc.collected = false 
+        AND c.lat IS NOT NULL AND c.lng IS NOT NULL 
+        AND c.lat != 0 AND c.lng != 0
+    `, [task_id]);
+
+    const customers = result.rows;
+    if (customers.length === 0) {
+      return res.json({ success: true, geometry: { type: 'LineString', coordinates: [] } });
+    }
+
+    const points = customers.map(c => ({
+      id: c.id,
+      lat: parseFloat(c.lat),
+      lng: parseFloat(c.lng)
+    }));
+
+    let unvisited = [...points];
+    let current = unvisited.shift();
+    let sortedPoints = [current];
+
+    while (unvisited.length > 0) {
+      let nearestIdx = 0;
+      let minDistance = Infinity;
+
+      for (let i = 0; i < unvisited.length; i++) {
+        const point = unvisited[i];
+        const d2 = Math.pow(current.lat - point.lat, 2) + Math.pow(current.lng - point.lng, 2);
+        if (d2 < minDistance) {
+          minDistance = d2;
+          nearestIdx = i;
+        }
+      }
+
+      current = unvisited[nearestIdx];
+      sortedPoints.push(current);
+      unvisited.splice(nearestIdx, 1);
+    }
+
+    const coordinates = sortedPoints.map(p => [p.lng, p.lat]);
+
+    res.json({
+      success: true,
+      geometry: {
+        type: 'LineString',
+        coordinates
+      }
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
