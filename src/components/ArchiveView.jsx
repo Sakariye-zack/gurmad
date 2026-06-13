@@ -221,7 +221,7 @@ const ArchiveView = ({ searchQuery = '' }) => {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '4px' }}>
-                <a href={`/uploads/${doc.file_name}`} download target="_blank" rel="noreferrer" style={{ padding: '6px', color: 'var(--text-muted)', borderRadius: '8px', cursor: 'pointer' }} title="Download">
+                <a href={`/api/uploads/${doc.file_name}`} download target="_blank" rel="noreferrer" style={{ padding: '6px', color: 'var(--text-muted)', borderRadius: '8px', cursor: 'pointer' }} title="Download">
                   <Download size={18} />
                 </a>
                 {user.role === 'admin' && (

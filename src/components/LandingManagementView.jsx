@@ -396,7 +396,7 @@ const LandingManagementView = () => {
               <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
                 <div style={{ width: '240px', height: '150px', borderRadius: '12px', backgroundColor: '#f1f5f9', overflow: 'hidden', border: '2px dashed var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {content.landing_hero_image ? (
-                    <img src={`/uploads/${content.landing_hero_image}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Hero" />
+                    <img src={`/api/uploads/${content.landing_hero_image}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Hero" />
                   ) : (
                     <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                       <ImageIcon size={32} style={{ opacity: 0.3 }} />
@@ -463,7 +463,7 @@ const LandingManagementView = () => {
                 <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ width: '200px', height: '140px', borderRadius: '12px', backgroundColor: '#fff', overflow: 'hidden', border: '2px dashed var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-sm)' }}>
                     {content.landing_about_image ? (
-                      <img src={`/uploads/${content.landing_about_image}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="About Mission" />
+                      <img src={`/api/uploads/${content.landing_about_image}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="About Mission" />
                     ) : (
                       <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                         <ImageIcon size={32} style={{ opacity: 0.3 }} />
@@ -811,7 +811,7 @@ const LandingManagementView = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '8px', marginBottom: '8px' }}>
                       {item.images && item.images.map((img, imgIdx) => (
                         <div key={imgIdx} style={{ position: 'relative', aspectRatio: '1', borderRadius: '8px', overflow: 'hidden', border: item.coverImage === img ? '3px solid var(--gurmad-green)' : '1px solid var(--border-color)' }}>
-                          <img src={`/uploads/${img}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Gallery" />
+                          <img src={`/api/uploads/${img}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Gallery" />
                           <div style={{ position: 'absolute', top: '2px', right: '2px', display: 'flex', gap: '2px' }}>
                             <button 
                               onClick={() => removeNewsImage(index, imgIdx)}

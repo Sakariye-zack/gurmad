@@ -509,12 +509,12 @@ const LandingView = ({ onLoginClick }) => {
                 position: 'relative'
               }}>
                 <img 
-                  src={settings.landing_hero_image ? `/uploads/${settings.landing_hero_image}` : "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=1200"} 
+                  src={settings.landing_hero_image ? `/api/uploads/${settings.landing_hero_image}` : "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=1200"} 
                   alt="Somaliland Sanitation" 
                   style={{ width: '100%', height: '100%', objectFit: 'cover', mixBlendMode: 'multiply', opacity: 0.9 }} 
                 />
                 <img 
-                  src={settings.landing_hero_image ? `/uploads/${settings.landing_hero_image}` : "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=1200"} 
+                  src={settings.landing_hero_image ? `/api/uploads/${settings.landing_hero_image}` : "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&q=80&w=1200"} 
                   alt="Somaliland Sanitation" 
                   style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', top: 0, left: 0 }} 
                 />
@@ -705,7 +705,7 @@ const LandingView = ({ onLoginClick }) => {
                   >
                     <div style={{ height: '280px', overflow: 'hidden', position: 'relative' }}>
                       {item.coverImage ? (
-                        <img src={`/uploads/${item.coverImage}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="News" />
+                        <img src={`/api/uploads/${item.coverImage}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="News" />
                       ) : (
                         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9', color: '#cbd5e1' }}>
                            <Layout size={100} style={{ opacity: 0.1 }} />
@@ -802,7 +802,7 @@ const LandingView = ({ onLoginClick }) => {
               border: '15px solid white'
             }}>
               <img 
-                src={settings.landing_about_image ? `/uploads/${settings.landing_about_image}` : "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80"} 
+                src={settings.landing_about_image ? `/api/uploads/${settings.landing_about_image}` : "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&q=80"} 
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                 alt="Environmental Excellence" 
               />
@@ -999,7 +999,7 @@ const LandingView = ({ onLoginClick }) => {
 
                 <div style={{ height: '500px', backgroundColor: '#f8fafc', borderRadius: '48px', overflow: 'hidden', marginBottom: '4rem', boxShadow: 'inset 0 0 40px rgba(0,0,0,0.05)' }}>
                    {selectedNews.coverImage ? (
-                     <img src={`/uploads/${selectedNews.coverImage}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Cover" />
+                     <img src={`/api/uploads/${selectedNews.coverImage}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Cover" />
                    ) : (
                      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e2e8f0' }}>
                        <Truck size={150} style={{ opacity: 0.1 }} />

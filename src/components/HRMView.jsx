@@ -262,7 +262,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                   display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', fontSize: '1.5rem', fontWeight: 700
                 }}>
                   {selectedEmployee.photo 
-                    ? <img src={`/uploads/${selectedEmployee.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ? <img src={`/api/uploads/${selectedEmployee.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     : selectedEmployee.name[0].toUpperCase()
                   }
                </div>
@@ -311,7 +311,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                      <FileText size={14} /> ID Card / Passport
                    </div>
                    <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color)', maxHeight: '180px' }}>
-                     <img src={`/uploads/${selectedEmployee.id_document}`} alt="ID Document" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                     <img src={`/api/uploads/${selectedEmployee.id_document}`} alt="ID Document" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                    </div>
                  </div>
                )}
@@ -625,7 +625,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                         overflow: 'hidden'
                       }}>
                         {e.photo 
-                          ? <img src={`/uploads/${e.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ? <img src={`/api/uploads/${e.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : (e.name ? e.name[0].toUpperCase() : 'E')
                         }
                       </div>

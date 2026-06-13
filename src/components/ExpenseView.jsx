@@ -262,7 +262,7 @@ const ExpenseView = () => {
                  <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600, marginBottom: '8px' }}>Attached Invoice / Receipt</div>
                    <img 
-                     src={`/uploads/${selectedExpense.invoice_image}`} 
+                     src={`/api/uploads/${selectedExpense.invoice_image}`} 
                      alt="Invoice receipt" 
                      style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px', border: '1px solid var(--border-color)', backgroundColor: '#f8fafc' }} 
                    />

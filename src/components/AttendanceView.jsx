@@ -276,7 +276,7 @@ const AttendanceView = () => {
                           fontWeight: 600, color: '#3b82f6', border: `2px solid ${empStatus.color}`
                         }}>
                           {emp.photo 
-                            ? <img src={`/uploads/${emp.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ? <img src={`/api/uploads/${emp.photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             : emp.name[0].toUpperCase()
                           }
                         </div>
@@ -365,7 +365,7 @@ const AttendanceView = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, color: '#3b82f6', overflow: 'hidden', fontSize: '0.85rem' }}>
                           {log.employee_photo 
-                            ? <img src={`/uploads/${log.employee_photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ? <img src={`/api/uploads/${log.employee_photo}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             : log.employee_name?.[0]?.toUpperCase()
                           }
                         </div>
@@ -391,12 +391,12 @@ const AttendanceView = () => {
                       <div style={{ display: 'flex', gap: '6px' }}>
                         {log.clock_in_photo && (
                           <div style={{ width: '32px', height: '32px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #22c55e' }}>
-                            <img src={`/uploads/${log.clock_in_photo}`} alt="In" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img src={`/api/uploads/${log.clock_in_photo}`} alt="In" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           </div>
                         )}
                         {log.clock_out_photo && (
                           <div style={{ width: '32px', height: '32px', borderRadius: '6px', overflow: 'hidden', border: '2px solid #ef4444' }}>
-                            <img src={`/uploads/${log.clock_out_photo}`} alt="Out" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img src={`/api/uploads/${log.clock_out_photo}`} alt="Out" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           </div>
                         )}
                         {!log.clock_in_photo && !log.clock_out_photo && (
