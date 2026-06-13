@@ -887,13 +887,13 @@ const LandingView = ({ onLoginClick }) => {
                     <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: 'rgba(63,174,42,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(63,174,42,0.3)' }}>
                        <Phone size={20} style={{ color: '#3FAE2A' }} />
                     </div>
-                    <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{settings.landing_contact_phone || '063-4444444'}</span>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{settings.contact_phone || settings.landing_contact_phone || '063-4444444'}</span>
                   </motion.div>
                   <motion.div whileHover={{ x: 5 }} style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}>
                     <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(59,130,246,0.3)' }}>
                        <Mail size={20} style={{ color: '#60a5fa' }} />
                     </div>
-                    <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{settings.landing_contact_email || 'info@gurmad.so'}</span>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{settings.support_email || settings.landing_contact_email || 'info@gurmad.so'}</span>
                   </motion.div>
                   <motion.div whileHover={{ x: 5 }} style={{ display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}>
                     <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(245,158,11,0.3)' }}>
