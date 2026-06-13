@@ -767,7 +767,7 @@ const LandingManagementView = () => {
                   value={content.landing_footer_bottom_text}
                   onChange={e => setContent({...content, landing_footer_bottom_text: e.target.value})}
                   className="card" style={{ width: '100%', padding: '0.85rem', border: '1px solid var(--border-color)' }}
-                  placeholder="Crafted with passion for a cleaner city ♥"
+                  placeholder="Developed by Qaran Digital Solutions Ltd"
                 />
               </div>
 

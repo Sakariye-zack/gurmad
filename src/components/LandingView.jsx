@@ -954,7 +954,7 @@ const LandingView = ({ onLoginClick }) => {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {settings.landing_footer_bottom_text || (
-                  <>Crafted with passion for a cleaner city <span style={{ color: '#3FAE2A' }}>♥</span></>
+                  <>Developed by <span style={{ color: '#3FAE2A', fontWeight: 800 }}>Qaran Digital Solutions Ltd</span></>
                 )}
               </div>
             </div>
