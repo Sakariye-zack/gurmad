@@ -1362,9 +1362,10 @@ app.post('/api/settings', async (req, res) => {
   try {
     const entries = Object.entries(req.body);
     for (const [key, value] of entries) {
+      const stringValue = value !== null && value !== undefined ? value.toString() : '';
       await db.query(
         'INSERT INTO settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2',
-        [key, value.toString()]
+        [key, stringValue]
       );
     }
     res.json({ success: true });
