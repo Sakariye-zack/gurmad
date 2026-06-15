@@ -100,6 +100,17 @@ a {
   background-color: var(--bg-secondary);
 }
 
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 100;
+  transition: width 0.3s ease;
+  overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Card Style */
 .card {
   background: white;
