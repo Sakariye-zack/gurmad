@@ -216,7 +216,7 @@ const DashboardView = ({ currentUser }) => {
             </div>
             <div style={{ height: 350, width: '100%', position: 'relative' }}>
               {processedChartData.length > 0 ? (
-                <ResponsiveContainer width="99%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <AreaChart data={processedChartData}>
                     <defs>
                       <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -250,7 +250,7 @@ const DashboardView = ({ currentUser }) => {
              <h3 style={{ marginBottom: '1.5rem', fontWeight: 700 }}>Monthly Growth</h3>
              <div style={{ height: 280, width: '100%' }}>
                 {processedChartData.length > 0 ? (
-                  <ResponsiveContainer width="99%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <BarChart data={processedChartData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10}} />
