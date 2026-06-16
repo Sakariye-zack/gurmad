@@ -534,7 +534,21 @@ const App = () => {
           
           {/* Today's Collector Performance Widget */}
           {isSidebarOpen && (currentUser?.role === 'admin' || currentUser?.role === 'cashier') && (
-            <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <div 
+              onClick={() => setActiveTab('tasks')}
+              style={{ 
+                marginTop: '2rem', 
+                padding: '1rem', 
+                backgroundColor: '#f8fafc', 
+                borderRadius: '12px', 
+                border: '1px solid #e2e8f0',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f1f5f9'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+              title="Guji si aad u aragto shaqooyinka Collector-ka"
+            >
                <h4 style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                  <BarChart3 size={12} /> Today's Performance
                </h4>
