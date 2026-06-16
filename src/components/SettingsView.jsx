@@ -330,6 +330,30 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
     }
   };
 
+  const handleToggleStatus = async (userId, currentStatus) => {
+    if (confirm(`Are you sure you want to ${currentStatus ? 'disable' : 'enable'} this user?`)) {
+      try {
+        await api.toggleUserStatus(userId);
+        toast.success(`User ${currentStatus ? 'disabled' : 'enabled'} successfully`);
+        api.getUsers().then(setUsers);
+      } catch (err) {
+        toast.error('Failed to change user status');
+      }
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (confirm('Are you sure you want to DELETE this user permanently? This action cannot be undone!')) {
+      try {
+        await api.deleteUser(userId);
+        toast.success('User deleted successfully');
+        api.getUsers().then(setUsers);
+      } catch (err) {
+        toast.error('Failed to delete user');
+      }
+    }
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (!newUserData.username || !newUserData.password) return toast.error('Username and password are required');
@@ -1050,19 +1074,27 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                   <th style={{ padding: '1rem' }}>USERNAME</th>
                   <th style={{ padding: '1rem' }}>FULL NAME</th>
                   <th style={{ padding: '1rem' }}>ROLE</th>
+                  <th style={{ padding: '1rem' }}>STATUS</th>
                   <th style={{ padding: '1rem' }}>2FA</th>
                   <th style={{ padding: '1rem' }}>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map(user => (
-                  <tr key={user.id} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.9rem' }}>
+                  <tr key={user.id} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.9rem', opacity: user.is_active === false ? 0.6 : 1 }}>
                     <td style={{ padding: '1rem', fontWeight: 600 }}>{user.username}</td>
                     <td style={{ padding: '1rem' }}>{user.full_name}</td>
                     <td style={{ padding: '1rem' }}>
                       <span style={{ padding: '4px 8px', borderRadius: '4px', backgroundColor: '#f1f5f9', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
                         {user.role}
                       </span>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      {user.is_active === false ? (
+                        <span style={{ color: '#ef4444', fontWeight: 600 }}>Inactive</span>
+                      ) : (
+                        <span style={{ color: 'var(--gurmad-green)', fontWeight: 600 }}>Active</span>
+                      )}
                     </td>
                     <td style={{ padding: '1rem' }}>
                       {user.two_factor_enabled ? (
@@ -1074,7 +1106,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                       )}
                     </td>
                     <td style={{ padding: '1rem' }}>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button 
                           onClick={() => setEditingUser(user)}
                           className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
@@ -1091,6 +1123,27 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                           }}
                         >
                           {user.two_factor_enabled ? 'Reset 2FA' : 'Clear Sec'}
+                        </button>
+                        <button 
+                          onClick={() => handleToggleStatus(user.id, user.is_active !== false)}
+                          className="btn-secondary" style={{ 
+                            padding: '0.4rem 0.8rem', 
+                            fontSize: '0.8rem', 
+                            color: user.is_active !== false ? '#f59e0b' : 'var(--gurmad-green)'
+                          }}
+                        >
+                          {user.is_active !== false ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteUser(user.id)}
+                          className="btn-secondary" style={{ 
+                            padding: '0.4rem 0.8rem', 
+                            fontSize: '0.8rem', 
+                            color: '#ef4444',
+                            borderColor: '#ef4444'
+                          }}
+                        >
+                          Delete
                         </button>
                       </div>
                     </td>

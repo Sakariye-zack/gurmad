@@ -215,6 +215,10 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
         return res.status(401).json({ error: 'Invalid username or password' });
       }
 
+      if (user.is_active === false) {
+        return res.status(403).json({ error: 'Kowntigaan waa la xannibay. Fadlan la xidhiidh Maamulka.' });
+      }
+
       if (user.two_factor_enabled) {
         if (!token) {
           return res.json({ require2FA: true, userId: user.id });
@@ -316,6 +320,76 @@ app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_i
     } else {
       res.status(404).json({ error: 'User not found' });
     }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- User Management ---
+app.get('/api/users', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query('SELECT id, username, full_name, role, profile_image, two_factor_enabled, created_at, is_active FROM users ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users', checkRole(['admin']), async (req, res) => {
+  const { username, password, full_name, role } = req.body;
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    const result = await db.query(
+      'INSERT INTO users (username, password, full_name, role) VALUES ($1, $2, $3, $4) RETURNING id, username, full_name, role, created_at, is_active',
+      [username, hashedPassword, full_name, role]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/users/:id', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id', [req.params.id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users/:id/reset-password', checkRole(['admin']), async (req, res) => {
+  const { newPassword } = req.body;
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users/:id/full-reset', checkRole(['admin']), async (req, res) => {
+  const { newPassword } = req.body;
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    await db.query('UPDATE users SET password = $1, two_factor_enabled = false, two_factor_secret = null WHERE id = $2', [hashedPassword, req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/:id/toggle-status', checkRole(['admin']), async (req, res) => {
+  try {
+    const user = await db.query('SELECT is_active FROM users WHERE id = $1', [req.params.id]);
+    if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const newStatus = !user.rows[0].is_active;
+    const result = await db.query('UPDATE users SET is_active = $1 WHERE id = $2 RETURNING id, is_active', [newStatus, req.params.id]);
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

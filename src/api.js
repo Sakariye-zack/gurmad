@@ -290,6 +290,14 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
+  deleteUser: (id) => fetch(`${API_BASE_URL}/users/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+  toggleUserStatus: (id) => fetch(`${API_BASE_URL}/users/${id}/toggle-status`, {
+    method: 'PUT',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
   resetUserPassword: (id, newPassword) => fetch(`${API_BASE_URL}/users/${id}/reset-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
