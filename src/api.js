@@ -6,6 +6,9 @@ const getAuthHeaders = () => {
   if (user.role) {
     headers['x-user-role'] = user.role;
   }
+  if (user.token) {
+    headers['Authorization'] = `Bearer ${user.token}`;
+  }
   return headers;
 };
 

@@ -11,6 +11,12 @@ const QRCode = require('qrcode');
 const messaging = require('./messaging');
 const http = require('http');
 const { Server } = require('socket.io');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'gurmad-super-secret-key-2026';
 
 const app = express();
 const server = http.createServer(app);
@@ -23,8 +29,21 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 5000;
 
+// Security Middlewares
+app.use(helmet({
+  crossOriginResourcePolicy: false, // allow images to be loaded cross-origin
+}));
 app.use(cors());
 app.use(express.json());
+
+// Rate Limiting for Login
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 login requests per `window` (here, per 15 minutes)
+  message: { error: 'Too many login attempts from this IP, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Auto-migrate System Tables
 const runMigrations = async () => {
@@ -83,6 +102,18 @@ const runMigrations = async () => {
       );
     `);
 
+    // HASH EXISTING PLAIN TEXT PASSWORDS (Migration)
+    const usersRes = await db.query('SELECT id, username, password FROM users');
+    for (const u of usersRes.rows) {
+       // If password doesn't start with $2a$ or $2b$ (bcrypt signatures), it's plain text
+       if (!u.password.startsWith('$2a$') && !u.password.startsWith('$2b$')) {
+          const salt = await bcrypt.genSalt(10);
+          const hashed = await bcrypt.hash(u.password, salt);
+          await db.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, u.id]);
+          console.log(`Migrated password for user: ${u.username}`);
+       }
+    }
+
     console.log('Database migrations completed successfully');
   } catch (err) {
     console.error('Migration failed:', err);
@@ -106,7 +137,15 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + path.extname(file.originalname))
   }
 });
-const upload = multer({ storage: storage });
+const fileFilter = (req, file, cb) => {
+  // Only accept image files
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Kaliya faylasha sawirada (images) ayaa la ogol yahay!'), false);
+  }
+};
+const upload = multer({ storage: storage, fileFilter: fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Expose uploads directory to frontend
 app.use('/api/uploads', express.static(uploadDir));
@@ -135,13 +174,28 @@ const logAudit = async (req, action, entityType, entityId, oldValues = null, new
   }
 };
 
-const checkRole = (roles) => (req, res, next) => {
-  const userRole = req.headers['x-user-role']; // Simple role check via header for now (should be JWT in production)
-  if (!userRole || !roles.includes(userRole.toLowerCase())) {
-    return res.status(403).json({ error: 'Access denied: Insufficient permissions' });
-  }
-  next();
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  
+  if (!token) return res.status(401).json({ error: 'Access denied: No token provided' });
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Access denied: Invalid or expired token' });
+    req.user = user; // Set user object on request
+    next();
+  });
 };
+
+const checkRole = (roles) => [
+  authenticateToken,
+  (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role.toLowerCase())) {
+      return res.status(403).json({ error: 'Access denied: Insufficient permissions' });
+    }
+    next();
+  }
+];
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
@@ -149,12 +203,18 @@ app.get('/api/health', (req, res) => {
 });
 
 // --- Authentication ---
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { username, password, token } = req.body;
   try {
-    const result = await db.query('SELECT * FROM users WHERE username = $1 AND password = $2', [username, password]);
+    const result = await db.query('SELECT * FROM users WHERE username = $1', [username]);
     if (result.rows.length > 0) {
       const user = result.rows[0];
+      
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+
       if (user.two_factor_enabled) {
         if (!token) {
           return res.json({ require2FA: true, userId: user.id });
@@ -172,8 +232,14 @@ app.post('/api/auth/login', async (req, res) => {
         }
       }
 
-      const { password, two_factor_secret, ...safeUser } = user;
-      res.json(safeUser);
+      const jwtToken = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      const { password: userPassword, two_factor_secret, ...safeUser } = user;
+      res.json({ ...safeUser, token: jwtToken });
     } else {
       res.status(401).json({ error: 'Invalid username or password' });
     }
@@ -182,26 +248,28 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/login/verify-2fa', async (req, res) => {
+app.post('/api/auth/login/verify-2fa', loginLimiter, async (req, res) => {
   const { userId, token } = req.body;
-  console.log(`Login 2FA Verify: UserID=${userId}, Token=${token}`);
   try {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
 
     const user = result.rows[0];
-    console.log(`Stored Secret for Login: ${user.two_factor_secret}`);
     const verified = speakeasy.totp.verify({
       secret: user.two_factor_secret,
       encoding: 'base32',
       token: token,
       window: 6
     });
-    console.log(`Login Verification Result: ${verified}`);
 
     if (verified) {
+      const jwtToken = jwt.sign(
+        { id: user.id, username: user.username, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
       const { password, two_factor_secret, ...safeUser } = user;
-      res.json(safeUser);
+      res.json({ ...safeUser, token: jwtToken });
     } else {
       res.status(401).json({ error: 'Invalid authentication code' });
     }
@@ -210,8 +278,14 @@ app.post('/api/auth/login/verify-2fa', async (req, res) => {
   }
 });
 
-app.post('/api/auth/update_profile', upload.single('profile_image'), async (req, res) => {
+app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_image'), async (req, res) => {
   const { id, username, password, full_name } = req.body;
+  
+  // Ensure user can only update their own profile
+  if (parseInt(id) !== req.user.id && req.user.role !== 'admin') {
+     return res.status(403).json({ error: 'Unauthorized to update this profile' });
+  }
+
   const profile_image = req.file ? req.file.filename : null;
 
   try {
@@ -220,8 +294,10 @@ app.post('/api/auth/update_profile', upload.single('profile_image'), async (req,
     let idx = 3;
 
     if (password) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
       query += `, password = $${idx}`;
-      values.push(password);
+      values.push(hashedPassword);
       idx++;
     }
 
