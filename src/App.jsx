@@ -446,7 +446,10 @@ const App = () => {
               <li key={node.id}>
                 {node.type === 'item' ? (
                   <button
-                    onClick={() => setActiveTab(node.id)}
+                    onClick={() => {
+                      setActiveTab(node.id);
+                      if (isMobile) setIsSidebarOpen(false);
+                    }}
                     style={{
                       width: '100%',
                       display: 'flex',
@@ -504,7 +507,10 @@ const App = () => {
                         {node.items.map(subItem => (
                           <li key={subItem.id}>
                             <button
-                              onClick={() => setActiveTab(subItem.id)}
+                              onClick={() => {
+                                setActiveTab(subItem.id);
+                                if (isMobile) setIsSidebarOpen(false);
+                              }}
                               style={{
                                 width: '100%',
                                 display: 'flex',
@@ -535,7 +541,10 @@ const App = () => {
           {/* Today's Collector Performance Widget */}
           {isSidebarOpen && (currentUser?.role === 'admin' || currentUser?.role === 'cashier') && (
             <div 
-              onClick={() => setActiveTab('tasks')}
+              onClick={() => {
+                setActiveTab('tasks');
+                if (isMobile) setIsSidebarOpen(false);
+              }}
               style={{ 
                 marginTop: '2rem', 
                 padding: '1rem', 
