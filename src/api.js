@@ -305,18 +305,25 @@ export const api = {
   // Settings
   getSettings: () => fetch(`${API_BASE_URL}/settings`, { headers: getAuthHeaders() }).then(handleResponse),
   updateSettings: (data) => fetch(`${API_BASE_URL}/settings`, {
-    method: 'POST',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
+  }).then(handleResponse),
+  
+  // Reports
+  getCollectorReports: () => fetch(`${API_BASE_URL}/reports/collectors`, { headers: getAuthHeaders() }).then(handleResponse),
+  getCollectorsTodayStats: () => fetch(`${API_BASE_URL}/reports/collectors/today`, { headers: getAuthHeaders() }).then(handleResponse),
+  
+  // Archives
+  getArchives: () => fetch(`${API_BASE_URL}/archives`, { headers: getAuthHeaders() }).then(handleResponse),
+  markAllNotificationsRead: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications/read-all`, { 
+    method: 'PUT',
+    headers: getAuthHeaders()
   }).then(handleResponse),
 
   // Notifications
   getNotifications: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications`, { headers: getAuthHeaders() }).then(handleResponse),
   markNotificationRead: (id) => fetch(`${API_BASE_URL}/notifications/${id}/read`, { 
-    method: 'PUT',
-    headers: getAuthHeaders()
-  }).then(handleResponse),
-  markAllNotificationsRead: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications/read-all`, { 
     method: 'PUT',
     headers: getAuthHeaders()
   }).then(handleResponse),

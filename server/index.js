@@ -1165,6 +1165,54 @@ app.get('/api/reports/collectors', async (req, res) => {
   }
 });
 
+app.get('/api/reports/collectors/today', async (req, res) => {
+  try {
+    const moneyRes = await db.query(`
+      SELECT COALESCE(collector_name, 'Unassigned') as collector, 
+             SUM(amount) as total_collected, 
+             COUNT(id) as transactions
+      FROM invoices
+      WHERE status = 'Paid' AND DATE(created_at) = CURRENT_DATE
+      GROUP BY collector_name
+    `);
+
+    const tasksRes = await db.query(`
+      SELECT COALESCE(t.collector_name, 'Unassigned') as collector,
+             COUNT(tc.id) as houses_collected
+      FROM tasks t
+      JOIN task_customers tc ON t.id = tc.task_id
+      WHERE tc.collected = TRUE AND DATE(t.scheduled_at) = CURRENT_DATE
+      GROUP BY t.collector_name
+    `);
+
+    const collectorsMap = {};
+    moneyRes.rows.forEach(r => {
+       collectorsMap[r.collector] = {
+          collector: r.collector,
+          total_collected: parseFloat(r.total_collected || 0),
+          transactions: parseInt(r.transactions || 0),
+          houses_collected: 0
+       };
+    });
+    
+    tasksRes.rows.forEach(r => {
+       if (!collectorsMap[r.collector]) {
+          collectorsMap[r.collector] = {
+             collector: r.collector,
+             total_collected: 0,
+             transactions: 0,
+             houses_collected: parseInt(r.houses_collected || 0)
+          };
+       } else {
+          collectorsMap[r.collector].houses_collected = parseInt(r.houses_collected || 0);
+       }
+    });
+
+    res.json(Object.values(collectorsMap).sort((a, b) => b.total_collected - a.total_collected));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // --- Archive & Documents ---
 app.get('/api/archives', async (req, res) => {

@@ -75,6 +75,7 @@ const App = () => {
     companyName: 'GURMAD',
     systemTitle: 'MANAGEMENT'
   });
+  const [collectorTodayStats, setCollectorTodayStats] = useState([]);
   const [theme, setTheme] = useState(() => localStorage.getItem('gurmadTheme') || 'light');
 
   useEffect(() => {
@@ -127,6 +128,24 @@ const App = () => {
 
     fetchNotifications(); 
     const interval = setInterval(fetchNotifications, 20000); // 20s poller
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // Collector Today Stats polling
+  useEffect(() => {
+    if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'cashier')) return;
+
+    const fetchCollectorStats = async () => {
+      try {
+        const stats = await api.getCollectorsTodayStats();
+        setCollectorTodayStats(stats);
+      } catch (err) {
+        console.error("Failed to fetch collector today stats");
+      }
+    };
+
+    fetchCollectorStats();
+    const interval = setInterval(fetchCollectorStats, 60000); // 60s poller
     return () => clearInterval(interval);
   }, [currentUser]);
 
@@ -512,6 +531,26 @@ const App = () => {
               </li>
             ))}
           </ul>
+          
+          {/* Today's Collector Performance Widget */}
+          {isSidebarOpen && (currentUser?.role === 'admin' || currentUser?.role === 'cashier') && collectorTodayStats.length > 0 && (
+            <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+               <h4 style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                 <BarChart3 size={12} /> Today's Performance
+               </h4>
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                 {collectorTodayStats.map(c => (
+                    <div key={c.collector} style={{ padding: '8px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #f1f5f9', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                       <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--gurmad-green)', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.collector}</div>
+                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#475569', fontWeight: 500 }}>
+                          <span>💰 ${c.total_collected.toFixed(2)}</span>
+                          <span>🏠 {c.houses_collected} done</span>
+                       </div>
+                    </div>
+                 ))}
+               </div>
+            </div>
+          )}
         </nav>
 
         <div className="sidebar-footer" style={{ padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
