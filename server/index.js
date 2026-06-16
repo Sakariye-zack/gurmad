@@ -1178,7 +1178,7 @@ app.get('/api/reports/collectors/today', async (req, res) => {
 
     const tasksRes = await db.query(`
       SELECT COALESCE(t.collector_name, 'Unassigned') as collector,
-             COUNT(tc.id) as houses_collected
+             COUNT(tc.customer_id) as houses_collected
       FROM tasks t
       JOIN task_customers tc ON t.id = tc.task_id
       WHERE tc.collected = TRUE AND DATE(t.scheduled_at) = CURRENT_DATE
