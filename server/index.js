@@ -983,7 +983,7 @@ app.delete('/api/zones/:id', async (req, res) => {
 });
 
 // --- Employees (HRM) ---
-app.get('/api/employees', checkRole(['admin', 'cashier']), async (req, res) => {
+app.get('/api/employees', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM employees ORDER BY id DESC');
     res.json(result.rows);
