@@ -49,6 +49,7 @@ import ArchiveView from './components/ArchiveView';
 import PayrollView from './components/PayrollView';
 import AuditLogsView from './components/AuditLogsView';
 import ComplaintsView from './components/ComplaintsView';
+import CollectorAssignmentsView from './components/CollectorAssignmentsView';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 
@@ -233,6 +234,7 @@ const App = () => {
       items: [
         { id: 'zones', label: t('manage_zones'), icon: MapIcon, roles: ['admin'] },
         { id: 'fleet', label: t('register_trucks'), icon: Truck, roles: ['admin'] },
+        { id: 'collector_assignments', label: 'Collector Assignments', icon: MapIcon, roles: ['admin'] },
         { id: 'tasks', label: 'Collector Tasks', icon: ClipboardList, roles: ['admin', 'collector', 'cashier'] },
         { id: 'map', label: 'Operations Map', icon: MapIcon, roles: ['admin', 'collector', 'cashier'] }
       ]
@@ -335,6 +337,7 @@ const App = () => {
       case 'customers': return <CustomerView searchQuery={globalSearch} />;
       case 'tasks': return <TaskView searchQuery={globalSearch} />;
       case 'map': return <MapView searchQuery={globalSearch} currentUser={currentUser} />;
+      case 'collector_assignments': return <CollectorAssignmentsView searchQuery={globalSearch} />;
       case 'billing': return <BillingView searchQuery={globalSearch} />;
       case 'payroll': return <PayrollView />;
       case 'expenses': return <ExpenseView searchQuery={globalSearch} />;

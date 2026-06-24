@@ -410,4 +410,21 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ status })
   }).then(handleResponse),
+
+  // Collector Assignments
+  getCollectorAssignments: () => fetch(`${API_BASE_URL}/collector-assignments`, { headers: getAuthHeaders() }).then(handleResponse),
+  addCollectorAssignment: (data) => fetch(`${API_BASE_URL}/collector-assignments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateCollectorAssignment: (id, data) => fetch(`${API_BASE_URL}/collector-assignments/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  deleteCollectorAssignment: (id) => fetch(`${API_BASE_URL}/collector-assignments/${id}`, { 
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
 };

@@ -24,6 +24,7 @@ CREATE TABLE users (
     profile_image VARCHAR(255),
     two_factor_secret TEXT,
     two_factor_enabled BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

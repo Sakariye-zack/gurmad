@@ -114,6 +114,19 @@ const runMigrations = async () => {
        }
     }
 
+    // Collector Assignments
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS collector_assignments (
+        id SERIAL PRIMARY KEY,
+        zone_group VARCHAR(50), 
+        collector_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+        collector_code VARCHAR(50), 
+        zone_id_str VARCHAR(100), 
+        truck_id INTEGER REFERENCES trucks(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     console.log('Database migrations completed successfully');
   } catch (err) {
     console.error('Migration failed:', err);
@@ -626,6 +639,77 @@ app.post('/api/invoices', async (req, res) => {
     );
 
     await logAudit(req, 'CREATE', 'invoices', result.rows[0].id, null, result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Collector Assignments ---
+app.get('/api/collector-assignments', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        ca.id,
+        ca.zone_group,
+        ca.collector_id,
+        e.name as collector_name,
+        ca.collector_code,
+        ca.zone_id_str,
+        ca.truck_id,
+        t.plate_number as assigned_truck,
+        (SELECT COUNT(*) FROM customers c WHERE c.collector_id = ca.collector_id) as total_customers,
+        (SELECT COUNT(*) FROM customers c WHERE c.collector_id = ca.collector_id AND c.status = 'Paid') as total_paid
+      FROM collector_assignments ca
+      LEFT JOIN employees e ON ca.collector_id = e.id
+      LEFT JOIN trucks t ON ca.truck_id = t.id
+      ORDER BY ca.zone_group ASC, ca.id ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/collector-assignments', async (req, res) => {
+  const { zone_group, collector_id, collector_code, zone_id_str, truck_id } = req.body;
+  try {
+    const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10));
+    
+    const result = await db.query(
+      `INSERT INTO collector_assignments 
+        (zone_group, collector_id, collector_code, zone_id_str, truck_id) 
+       VALUES ($1, $2, $3, $4, $5) 
+       RETURNING *`,
+      [zone_group, safeInt(collector_id), collector_code, zone_id_str, safeInt(truck_id)]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/collector-assignments/:id', async (req, res) => {
+  const { id } = req.params;
+  const { zone_group, collector_id, collector_code, zone_id_str, truck_id } = req.body;
+  try {
+    const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10));
+
+    const result = await db.query(
+      `UPDATE collector_assignments SET 
+        zone_group = $1, collector_id = $2, collector_code = $3, zone_id_str = $4, truck_id = $5
+       WHERE id = $6 RETURNING *`,
+      [zone_group, safeInt(collector_id), collector_code, zone_id_str, safeInt(truck_id), id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/collector-assignments/:id', async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM collector_assignments WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
