@@ -569,7 +569,7 @@ app.get('/api/invoices', async (req, res) => {
 });
 
 app.post('/api/invoices', async (req, res) => {
-  const { phone, splitPayments, currency, collector_name, truck_name, zone, house_no, discount_amount = 0 } = req.body;
+  const { customer_id, phone, splitPayments, currency, collector_name, truck_name, zone, house_no, discount_amount = 0 } = req.body;
   const { cash = 0, zaad = 0, edahab = 0, debt = 0, slsh = 0 } = splitPayments || {};
 
   try {
@@ -584,19 +584,22 @@ app.post('/api/invoices', async (req, res) => {
       (parseFloat(slsh) / exchangeRate) -
       parseFloat(discount_amount);
 
-    // Find customer by phone
-    let customer = await db.query('SELECT id, name FROM customers WHERE phone = $1', [phone]);
-    let customerId = null;
+    let customerId = customer_id;
     let customerNameFromReq = req.body.customer_name || 'New Walk-in Customer';
 
-    if (customer.rows.length === 0) {
-      const newCust = await db.query(
-        'INSERT INTO customers (name, phone, area, whatsapp, neighborhood, zone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name',
-        [customerNameFromReq, phone, '-', null, null, zone || null]
-      );
-      customerId = newCust.rows[0].id;
-    } else {
-      customerId = customer.rows[0].id;
+    if (!customerId) {
+      // Find customer by phone if no ID provided
+      let customer = await db.query('SELECT id, name FROM customers WHERE phone = $1', [phone]);
+      
+      if (customer.rows.length === 0) {
+        const newCust = await db.query(
+          'INSERT INTO customers (name, phone, area, whatsapp, neighborhood, zone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name',
+          [customerNameFromReq, phone, '-', null, null, zone || null]
+        );
+        customerId = newCust.rows[0].id;
+      } else {
+        customerId = customer.rows[0].id;
+      }
     }
 
     const invoiceStatus = (parseFloat(debt) > 0) ? 'Unpaid' : 'Paid';
@@ -637,6 +640,13 @@ app.post('/api/invoices', async (req, res) => {
       'UPDATE customers SET payment_status = $1, status = $1 WHERE id = $2',
       [invoiceStatus, customerId]
     );
+
+    // Broadcast events
+    io.emit('invoice_created', result.rows[0]);
+    io.emit('customer_status_updated', {
+      customerId: parseInt(customerId),
+      status: invoiceStatus
+    });
 
     await logAudit(req, 'CREATE', 'invoices', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);

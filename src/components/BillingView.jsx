@@ -49,6 +49,7 @@ const BillingView = ({ searchQuery = '' }) => {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [exchangeRate, setExchangeRate] = useState(11000);
   const [customerName, setCustomerName] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [searchCustomer, setSearchCustomer] = useState('');
@@ -189,6 +190,7 @@ const BillingView = ({ searchQuery = '' }) => {
     
     try {
       const result = await api.addInvoice({
+          customer_id: selectedCustomerId || null,
           phone: phoneNumber,
           splitPayments: {
             cash: currencyMode === 'USD' ? cash : 0,
@@ -310,11 +312,14 @@ const BillingView = ({ searchQuery = '' }) => {
                   onChange={(e) => {
                     const c = customers.find(cust => cust.id === parseInt(e.target.value));
                     if (c) {
+                      setSelectedCustomerId(c.id);
                       setCustomerName(c.name);
                       setPhoneNumber(c.phone);
                       setDistrictZone(c.zone || '');
                       setHouseNo(c.house_no || '');
                       setSearchCustomer(c.name);
+                    } else {
+                      setSelectedCustomerId(null);
                     }
                   }}
                   style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '0.95rem', fontWeight: 600, backgroundColor: '#f8fafc' }}
@@ -339,6 +344,7 @@ const BillingView = ({ searchQuery = '' }) => {
                     onChange={(e) => {
                       setSearchCustomer(e.target.value);
                       setShowCustomerDropdown(true);
+                      setSelectedCustomerId(null); // Reset when typing manually
                     }}
                     onFocus={() => setShowCustomerDropdown(true)}
                     style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2.5rem', borderRadius: '12px', border: '2px solid var(--border-color)', fontWeight: 700, fontSize: '1rem', outline: 'none' }}
@@ -351,6 +357,7 @@ const BillingView = ({ searchQuery = '' }) => {
                       <div 
                         key={c.id} 
                         onClick={() => {
+                          setSelectedCustomerId(c.id);
                           setCustomerName(c.name);
                           setPhoneNumber(c.phone);
                           setDistrictZone(c.zone || '');
