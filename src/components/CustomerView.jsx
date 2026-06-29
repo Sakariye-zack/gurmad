@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api';
+import { socket } from '../socket';
 import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { exportToCSV } from '../utils/exportUtils';
@@ -205,6 +206,22 @@ const CustomerView = ({ searchQuery = '' }) => {
     fetchCustomers();
     fetchZones();
     fetchEmployees();
+
+    socket.on('customer_status_updated', (data) => {
+      setCustomers(prev => prev.map(c => 
+        c.id === data.customerId ? { ...c, status: data.status, payment_status: data.status } : c
+      ));
+      setSelectedCustomer(prev => {
+        if (prev && prev.id === data.customerId) {
+          return { ...prev, status: data.status, payment_status: data.status };
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      socket.off('customer_status_updated');
+    };
   }, []);
 
   const fetchEmployees = () => {

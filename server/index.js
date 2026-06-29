@@ -127,6 +127,12 @@ const runMigrations = async () => {
       );
     `);
 
+    // Add missing columns to tasks table
+    await db.query(`
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS zone_id INTEGER;
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS truck_id INTEGER;
+    `);
+
     console.log('Database migrations completed successfully');
   } catch (err) {
     console.error('Migration failed:', err);
