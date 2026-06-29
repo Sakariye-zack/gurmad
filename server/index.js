@@ -805,8 +805,10 @@ app.post('/api/tasks', async (req, res) => {
       );
     }
 
-    if (driver_name) {
-      const getC = await db.query('SELECT id FROM users WHERE full_name ILIKE $1 OR username ILIKE $1 LIMIT 1', [`%${driver_name}%`]);
+    // Notify Driver and/or Collector
+    const assignees = [driver_name, collector_name].filter(Boolean);
+    for (const name of assignees) {
+      const getC = await db.query('SELECT id FROM users WHERE full_name ILIKE $1 OR username ILIKE $1 LIMIT 1', [`%${name}%`]);
       if (getC.rows.length > 0) {
         await db.query('INSERT INTO notifications (user_id, title, message) VALUES ($1, $2, $3)', [getC.rows[0].id, 'New Task Assigned', `You received a task: ${route_name}`]);
       }
