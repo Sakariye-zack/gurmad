@@ -29,7 +29,15 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
 
   const loadData = async () => {
     try {
-      const [t, e, z, c, u, tr] = await Promise.all([api.getTasks(), api.getEmployees(), api.getZones(), api.getCustomers(), api.getUsers(), api.getTrucks()]);
+      const safeFetch = (promise) => promise.catch(err => { console.error(err); return []; });
+      const [t, e, z, c, u, tr] = await Promise.all([
+        safeFetch(api.getTasks()),
+        safeFetch(api.getEmployees()),
+        safeFetch(api.getZones()),
+        safeFetch(api.getCustomers()),
+        safeFetch(api.getUsers()),
+        safeFetch(api.getTrucks())
+      ]);
       setTasks(t);
       setEmployees(e);
       setDbZones(z);
