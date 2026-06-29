@@ -1399,6 +1399,56 @@ app.get('/api/stats/history', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get('/api/dashboard/extended', async (req, res) => {
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Daily Cashflow
+    const revTodayRes = await db.query("SELECT SUM(amount) FROM invoices WHERE status = 'Paid' AND DATE(created_at) = CURRENT_DATE");
+    const expTodayRes = await db.query("SELECT SUM(amount) FROM expenses WHERE DATE(expense_date) = CURRENT_DATE");
+
+    // Outstanding Debts
+    const totalDebtRes = await db.query("SELECT SUM(amount) FROM debts WHERE status = 'Unpaid'");
+    const topDebtorsRes = await db.query("SELECT debtor_name, amount, phone FROM debts WHERE status = 'Unpaid' ORDER BY amount DESC LIMIT 5");
+
+    // Pending Complaints
+    const pendingComplaintsRes = await db.query("SELECT COUNT(*) FROM complaints WHERE status != 'Resolved'");
+
+    // Employee Attendance
+    const totalEmployeesRes = await db.query("SELECT COUNT(*) FROM employees WHERE status = 'Active'");
+    const clockedInTodayRes = await db.query("SELECT COUNT(DISTINCT employee_id) FROM attendance WHERE DATE(clock_in_time) = CURRENT_DATE");
+
+    // Recent Activities (Union of recent invoices, customers, tasks, complaints)
+    const recentActivitiesQuery = `
+      SELECT 'invoice' as type, 'Payment of $' || amount as description, created_at FROM invoices ORDER BY created_at DESC LIMIT 3
+      UNION ALL
+      SELECT 'customer' as type, 'New customer: ' || name as description, created_at FROM customers ORDER BY created_at DESC LIMIT 3
+      UNION ALL
+      SELECT 'complaint' as type, 'Complaint: ' || subject as description, created_at FROM complaints ORDER BY created_at DESC LIMIT 3
+      ORDER BY created_at DESC LIMIT 5
+    `;
+    const recentActivitiesRes = await db.query(recentActivitiesQuery);
+
+    res.json({
+      dailyCashflow: {
+        revenue: parseFloat(revTodayRes.rows[0].sum || 0),
+        expenses: parseFloat(expTodayRes.rows[0].sum || 0)
+      },
+      outstandingDebts: {
+        total: parseFloat(totalDebtRes.rows[0].sum || 0),
+        topDebtors: topDebtorsRes.rows
+      },
+      pendingComplaints: parseInt(pendingComplaintsRes.rows[0].count || 0),
+      employeeAttendance: {
+        total: parseInt(totalEmployeesRes.rows[0].count || 0),
+        clockedIn: parseInt(clockedInTodayRes.rows[0].count || 0)
+      },
+      recentActivities: recentActivitiesRes.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get('/api/reports/collectors', async (req, res) => {
   try {

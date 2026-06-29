@@ -10,7 +10,15 @@ import {
   ArrowDownRight,
   Activity,
   Truck,
-  Wallet
+  Wallet,
+  AlertTriangle,
+  FileText,
+  MessageSquare,
+  Calendar,
+  CreditCard,
+  PlusCircle,
+  FilePlus,
+  Briefcase
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
@@ -41,6 +49,7 @@ const DashboardView = ({ currentUser }) => {
   const [dbStats, setDbStats] = useState({ revenue: 0, customerCount: 0, tasksCompleted: 0, totalExpenses: 0 });
   const [chartData, setChartData] = useState([]);
   const [settings, setSettings] = useState({ exchange_rate: '8500' });
+  const [extendedStats, setExtendedStats] = useState(null);
   const [currency, setCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
 
@@ -48,12 +57,14 @@ const DashboardView = ({ currentUser }) => {
     Promise.all([
       api.getStats(),
       api.getStatsHistory(),
-      api.getSettings()
+      api.getSettings(),
+      api.getExtendedDashboardStats()
     ])
-      .then(([stats, history, sData]) => {
+      .then(([stats, history, sData, extended]) => {
         setDbStats(stats);
         setChartData(history);
         setSettings(sData);
+        setExtendedStats(extended);
       })
       .catch(err => {
         console.error("Error fetching stats:", err);
@@ -193,6 +204,46 @@ const DashboardView = ({ currentUser }) => {
         ))}
       </div>
 
+      {/* Quick Actions Bar */}
+      {currentUser?.role !== 'collector' && (
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+           <button style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+             <PlusCircle size={18} color="var(--gurmad-green)" /> Add Customer
+           </button>
+           <button style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+             <FilePlus size={18} color="#3b82f6" /> Create Invoice
+           </button>
+           <button style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+             <Briefcase size={18} color="#f97316" /> Assign Task
+           </button>
+           <button style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+             <Wallet size={18} color="#ef4444" /> Log Expense
+           </button>
+        </div>
+      )}
+
+      {/* Extended Stats Row */}
+      {currentUser?.role !== 'collector' && extendedStats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+           <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '4px solid var(--gurmad-green)' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>TODAY'S REVENUE</span>
+              <span style={{ fontSize: '1.2rem', fontWeight: 800 }}>{formatValue(extendedStats.dailyCashflow.revenue)}</span>
+           </div>
+           <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '4px solid #ef4444' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>TODAY'S EXPENSES</span>
+              <span style={{ fontSize: '1.2rem', fontWeight: 800 }}>{formatValue(extendedStats.dailyCashflow.expenses)}</span>
+           </div>
+           <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '4px solid #f97316' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>OUTSTANDING DEBTS</span>
+              <span style={{ fontSize: '1.2rem', fontWeight: 800 }}>{formatValue(extendedStats.outstandingDebts.total)}</span>
+           </div>
+           <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '4px solid #3b82f6' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>STAFF PRESENT</span>
+              <span style={{ fontSize: '1.2rem', fontWeight: 800 }}>{extendedStats.employeeAttendance.clockedIn} / {extendedStats.employeeAttendance.total}</span>
+           </div>
+        </div>
+      )}
+
       {/* Charts Section - Role Based */}
       {currentUser?.role !== 'collector' ? (
         <div style={{ 
@@ -269,7 +320,7 @@ const DashboardView = ({ currentUser }) => {
                   </div>
                 )}
              </div>
-             <div style={{ marginTop: '1.5rem', padding: '1.25rem', backgroundColor: '#f0fdf4', borderRadius: '16px', border: '1px solid #dcfce7' }}>
+              <div style={{ marginTop: '1.5rem', padding: '1.25rem', backgroundColor: '#f0fdf4', borderRadius: '16px', border: '1px solid #dcfce7' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#166534' }}>MONTHLY PROFIT</div>
                    <div style={{ padding: '4px 8px', backgroundColor: '#166534', color: '#fff', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800 }}>+18.4%</div>
@@ -312,6 +363,77 @@ const DashboardView = ({ currentUser }) => {
                  <Users size={20} /> View Team Chat
               </button>
            </div>
+        </div>
+      )}
+
+      {/* New Extended Dashboard Widgets for Admins */}
+      {currentUser?.role !== 'collector' && extendedStats && (
+        <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth <= 1024 ? '1fr' : '1fr 1fr 1fr', gap: '1.5rem', marginTop: '1rem' }}>
+           
+           {/* Recent Activities Panel */}
+           <div className="card" style={{ padding: '1.5rem', gridColumn: window.innerWidth <= 1024 ? 'span 1' : 'span 2' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                 <h3 style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Activity size={20} color="var(--gurmad-green)" /> Recent Activities
+                 </h3>
+                 <button style={{ fontSize: '0.8rem', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>View All</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                 {extendedStats.recentActivities.length > 0 ? extendedStats.recentActivities.map((act, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+                       <div style={{ 
+                          width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: act.type === 'invoice' ? '#dcfce7' : act.type === 'customer' ? '#dbeafe' : '#fee2e2',
+                          color: act.type === 'invoice' ? '#166534' : act.type === 'customer' ? '#1e40af' : '#991b1b'
+                       }}>
+                          {act.type === 'invoice' ? <CreditCard size={18} /> : act.type === 'customer' ? <Users size={18} /> : <AlertTriangle size={18} />}
+                       </div>
+                       <div style={{ flex: 1 }}>
+                          <p style={{ margin: 0, fontWeight: 600, color: '#1e293b', fontSize: '0.9rem' }}>{act.description}</p>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>{new Date(act.created_at).toLocaleString()}</p>
+                       </div>
+                    </div>
+                 )) : (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No recent activities found.</div>
+                 )}
+              </div>
+           </div>
+
+           {/* Top Debtors Panel */}
+           <div className="card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                 <h3 style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertTriangle size={20} color="#f97316" /> Top Debtors
+                 </h3>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+                 {extendedStats.outstandingDebts.topDebtors.length > 0 ? extendedStats.outstandingDebts.topDebtors.map((debtor, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: idx !== extendedStats.outstandingDebts.topDebtors.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                       <div>
+                          <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{debtor.debtor_name}</p>
+                          <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>{debtor.phone}</p>
+                       </div>
+                       <div style={{ fontWeight: 800, color: '#ef4444' }}>
+                          {formatValue(debtor.amount)}
+                       </div>
+                    </div>
+                 )) : (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No outstanding debts!</div>
+                 )}
+              </div>
+              
+              {/* Complaints Widget inside this column to save space */}
+              <div style={{ marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid #e2e8f0' }}>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', backgroundColor: extendedStats.pendingComplaints > 0 ? '#fef2f2' : '#f0fdf4', borderRadius: '12px', border: `1px solid ${extendedStats.pendingComplaints > 0 ? '#fecaca' : '#dcfce7'}` }}>
+                    <MessageSquare size={24} color={extendedStats.pendingComplaints > 0 ? '#ef4444' : '#166534'} />
+                    <div>
+                       <p style={{ margin: 0, fontWeight: 800, color: extendedStats.pendingComplaints > 0 ? '#991b1b' : '#166534' }}>{extendedStats.pendingComplaints} Pending</p>
+                       <p style={{ margin: 0, fontSize: '0.8rem', color: extendedStats.pendingComplaints > 0 ? '#b91c1c' : '#15803d' }}>Customer Complaints</p>
+                    </div>
+                 </div>
+              </div>
+           </div>
+
         </div>
       )}
     </div>
