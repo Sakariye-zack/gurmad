@@ -3,7 +3,7 @@ import { api } from '../api';
 import { Truck, MapPin, Plus, ChevronRight, CheckCircle2, Clock, PlayCircle, XCircle, Navigation, Users, Trash2, ArrowLeft } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-const TaskView = ({ searchQuery = '' }) => {
+const TaskView = ({ searchQuery = '', currentUser }) => {
   const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [dbZones, setDbZones] = useState([]);
