@@ -653,7 +653,7 @@ const CustomerView = ({ searchQuery = '' }) => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>House No</label>
-                  <input required placeholder="H-102" value={newCustomer.house_no} onChange={e => setNewCustomer({...newCustomer, house_no: e.target.value})} style={{ width: '100%', padding: '1rem', borderRadius: '14px', border: '2px solid #f1f5f9', outline: 'none', fontSize: '1rem', fontWeight: 600 }} />
+                  <input required placeholder="C-102" value={newCustomer.house_no} onChange={e => setNewCustomer({...newCustomer, house_no: e.target.value})} style={{ width: '100%', padding: '1rem', borderRadius: '14px', border: '2px solid #f1f5f9', outline: 'none', fontSize: '1rem', fontWeight: 600 }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Xaafada (Neighborhood)</label>
