@@ -1420,11 +1420,11 @@ app.get('/api/dashboard/extended', async (req, res) => {
 
     // Recent Activities (Union of recent invoices, customers, tasks, complaints)
     const recentActivitiesQuery = `
-      SELECT 'invoice' as type, 'Payment of $' || amount as description, created_at FROM invoices ORDER BY created_at DESC LIMIT 3
+      (SELECT 'invoice' as type, 'Payment of $' || amount as description, created_at FROM invoices ORDER BY created_at DESC LIMIT 5)
       UNION ALL
-      SELECT 'customer' as type, 'New customer: ' || name as description, created_at FROM customers ORDER BY created_at DESC LIMIT 3
+      (SELECT 'customer' as type, 'New customer: ' || name as description, created_at FROM customers ORDER BY created_at DESC LIMIT 5)
       UNION ALL
-      SELECT 'complaint' as type, 'Complaint: ' || subject as description, created_at FROM complaints ORDER BY created_at DESC LIMIT 3
+      (SELECT 'complaint' as type, 'Complaint: ' || title as description, created_at FROM complaints ORDER BY created_at DESC LIMIT 5)
       ORDER BY created_at DESC LIMIT 5
     `;
     const recentActivitiesRes = await db.query(recentActivitiesQuery);
