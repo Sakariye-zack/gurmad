@@ -335,7 +335,7 @@ const App = () => {
       case 'zones': return <FleetView searchQuery={globalSearch} initialTab="zones" />;
       case 'fleet': return <FleetView searchQuery={globalSearch} initialTab="trucks" />;
       case 'customers': return <CustomerView searchQuery={globalSearch} />;
-      case 'tasks': return <TaskView searchQuery={globalSearch} />;
+      case 'tasks': return <TaskView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'map': return <MapView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'collector_assignments': return <CollectorAssignmentsView searchQuery={globalSearch} />;
       case 'billing': return <BillingView searchQuery={globalSearch} />;

@@ -195,9 +195,18 @@ const TaskView = ({ searchQuery = '' }) => {
 
   const filteredTasks = tasks.filter(t => {
     const search = searchQuery.toLowerCase();
-    return t.driver_name.toLowerCase().includes(search) ||
-           t.route_name.toLowerCase().includes(search) ||
-           t.status.toLowerCase().includes(search);
+    
+    // Admin sees all, collector sees only their tasks
+    const isAssigned = currentUser?.role === 'collector' 
+      ? (t.collector_name === currentUser.full_name || t.collector_name === currentUser.username || t.driver_name === currentUser.full_name)
+      : true;
+
+    return isAssigned && (
+           (t.driver_name || '').toLowerCase().includes(search) ||
+           (t.collector_name || '').toLowerCase().includes(search) ||
+           (t.route_name || '').toLowerCase().includes(search) ||
+           (t.status || '').toLowerCase().includes(search)
+    );
   });
 
   const getStatusColor = (status) => {
@@ -227,24 +236,26 @@ const TaskView = ({ searchQuery = '' }) => {
         <div style={{ display: 'flex', gap: '1rem' }}>
            <div className="card glass" style={{ padding: '0.75rem 1.25rem', borderLeft: '4px solid #f59e0b' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pending</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{tasks.filter(t => t.status === 'Pending').length}</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{filteredTasks.filter(t => t.status === 'Pending').length}</div>
            </div>
            <div className="card glass" style={{ padding: '0.75rem 1.25rem', borderLeft: '4px solid #3b82f6' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>In Progress</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{tasks.filter(t => t.status === 'In Progress').length}</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{filteredTasks.filter(t => t.status === 'In Progress').length}</div>
            </div>
            <div className="card glass" style={{ padding: '0.75rem 1.25rem', borderLeft: '4px solid var(--gurmad-green)' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Completed</div>
-              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{tasks.filter(t => t.status === 'Completed').length}</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{filteredTasks.filter(t => t.status === 'Completed').length}</div>
            </div>
         </div>
-        <button 
-          onClick={() => setShowAssignModal(true)}
-          className="btn-primary" 
-          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-        >
-          <Plus size={18} /> Assign New Task
-        </button>
+        {currentUser?.role !== 'collector' && (
+          <button 
+            onClick={() => setShowAssignModal(true)}
+            className="btn-primary" 
+            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <Plus size={18} /> Assign New Task
+          </button>
+        )}
       </div>
 
       {/* Assign Task Modal */}
@@ -621,12 +632,14 @@ const TaskView = ({ searchQuery = '' }) => {
                         FINISH & CLOSE TASK
                       </button>
                     )}
-                    <button 
-                      onClick={() => { if(window.confirm('Delete this task?')) { handleDeleteTask(selectedTask.id); setViewMode('list'); } }}
-                      style={{ width: '100%', padding: '1.2rem', borderRadius: '20px', border: 'none', backgroundColor: '#fef2f2', color: '#ef4444', fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: '0.2s' }}
-                    >
-                      DELETE TASK RECORD
-                    </button>
+                    {currentUser?.role !== 'collector' && (
+                      <button 
+                        onClick={() => { if(window.confirm('Delete this task?')) { handleDeleteTask(selectedTask.id); setViewMode('list'); } }}
+                        style={{ width: '100%', padding: '1.2rem', borderRadius: '20px', border: 'none', backgroundColor: '#fef2f2', color: '#ef4444', fontWeight: 900, fontSize: '0.95rem', cursor: 'pointer', transition: '0.2s' }}
+                      >
+                        DELETE TASK RECORD
+                      </button>
+                    )}
                   </div>
                </div>
 
@@ -755,17 +768,19 @@ const TaskView = ({ searchQuery = '' }) => {
                     >
                       <Navigation size={14} /> Notify
                     </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
-                      style={{
-                        padding: '4px', borderRadius: '6px', border: '1px solid #fee2e2', cursor: 'pointer',
-                        backgroundColor: 'transparent', color: '#ef4444',
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
-                      }}
-                      title="Delete Task"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {currentUser?.role !== 'collector' && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
+                        style={{
+                          padding: '4px', borderRadius: '6px', border: '1px solid #fee2e2', cursor: 'pointer',
+                          backgroundColor: 'transparent', color: '#ef4444',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
+                        }}
+                        title="Delete Task"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                     {task.status === 'Completed' && (
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Done ✓</span>
                     )}
