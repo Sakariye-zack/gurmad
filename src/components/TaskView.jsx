@@ -198,7 +198,11 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
     
     // Admin sees all, collector sees only their tasks
     const isAssigned = currentUser?.role === 'collector' 
-      ? (t.collector_name === currentUser.full_name || t.collector_name === currentUser.username || t.driver_name === currentUser.full_name)
+      ? (
+          (t.collector_name || '').toLowerCase().trim() === (currentUser.full_name || '').toLowerCase().trim() || 
+          (t.collector_name || '').toLowerCase().trim() === (currentUser.username || '').toLowerCase().trim() || 
+          (t.driver_name || '').toLowerCase().trim() === (currentUser.full_name || '').toLowerCase().trim()
+        )
       : true;
 
     return isAssigned && (
