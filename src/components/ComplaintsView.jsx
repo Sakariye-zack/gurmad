@@ -20,14 +20,23 @@ const ComplaintsView = ({ searchQuery = '' }) => {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [cData, custData, uData] = await Promise.all([
+      
+      // Fetch complaints and customers
+      const [cData, custData] = await Promise.all([
         api.getComplaints(),
-        api.getCustomers(),
-        api.getUsers()
+        api.getCustomers()
       ]);
       setComplaints(cData);
       setCustomers(custData);
-      setUsers(uData);
+
+      // Fetch users separately and ignore 403 errors (collectors don't have access)
+      try {
+        const uData = await api.getUsers();
+        setUsers(uData);
+      } catch (userErr) {
+        setUsers([]); // Fallback for collectors
+      }
+      
     } catch (err) {
       toast.error('Failed to load data');
     } finally {
