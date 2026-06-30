@@ -50,6 +50,7 @@ import PayrollView from './components/PayrollView';
 import AuditLogsView from './components/AuditLogsView';
 import ComplaintsView from './components/ComplaintsView';
 import CollectorAssignmentsView from './components/CollectorAssignmentsView';
+import CashoutView from './components/CashoutView';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 
@@ -251,6 +252,7 @@ const App = () => {
         { id: 'payroll', label: 'Employee Payroll', icon: Wallet, roles: ['admin', 'cashier'] },
         { id: 'expenses', label: t('expense_tracker'), icon: Wallet, roles: ['admin', 'cashier'] },
         { id: 'debts', label: t('debts'), icon: ClipboardList, roles: ['admin', 'cashier'] },
+        { id: 'cashout', label: 'Collector Cashout', icon: Wallet, roles: ['admin', 'cashier'] },
         { id: 'reports', label: t('financial_reports'), icon: BarChart3, roles: ['admin'] },
       ]
     },
@@ -343,6 +345,8 @@ const App = () => {
       case 'expenses': return <ExpenseView searchQuery={globalSearch} />;
       case 'inventory': return <InventoryView searchQuery={globalSearch} />;
       case 'debts': return <DebtView searchQuery={globalSearch} />;
+      case 'cashout': return <CashoutView currentUser={currentUser} />;
+      case 'reports': return <ReportsView searchQuery={globalSearch} />;
       case 'hrm': return <HRMView searchQuery={globalSearch} />;
       case 'collectors': return <HRMView searchQuery={globalSearch} initialTab="Collectors" />;
       case 'onboard_staff': return <OnboardEmployeeView />;
