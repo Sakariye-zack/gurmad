@@ -192,6 +192,17 @@ const CashoutView = ({ currentUser }) => {
                   value={actualAmountStr}
                   onChange={(e) => setActualAmountStr(e.target.value)}
                   placeholder="Enter total USD received..."
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.75rem 1rem', 
+                    borderRadius: '8px', 
+                    border: '1px solid #cbd5e1', 
+                    fontSize: '1rem', 
+                    backgroundColor: '#ffffff', 
+                    color: '#334155',
+                    outline: 'none',
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                  }}
                 />
               </div>
             )}
@@ -213,7 +224,18 @@ const CashoutView = ({ currentUser }) => {
                   value={justification}
                   onChange={(e) => setJustification(e.target.value)}
                   placeholder="Fadlan cadee sababta lacagtu u dhiman tahay..."
-                  style={{ border: '1px solid #fca5a5' }}
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.75rem 1rem', 
+                    borderRadius: '8px', 
+                    border: '1px solid #fca5a5', 
+                    fontSize: '1rem', 
+                    backgroundColor: '#ffffff', 
+                    color: '#334155',
+                    outline: 'none',
+                    boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                    resize: 'vertical'
+                  }}
                 />
               </div>
             )}
