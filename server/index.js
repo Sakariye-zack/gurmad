@@ -1707,11 +1707,22 @@ app.get('/api/cashouts', async (req, res) => {
 });
 
 app.post('/api/cashouts', async (req, res) => {
-  const { collector_name, expected_amount, actual_amount, shortage, reason, processed_by } = req.body;
+  const { collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by } = req.body;
   try {
     const result = await db.query(
-      'INSERT INTO cashouts (collector_name, expected_amount, actual_amount, shortage, reason, processed_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [collector_name, expected_amount, actual_amount, shortage || 0, reason || null, processed_by || null]
+      'INSERT INTO cashouts (collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
+      [
+        collector_name, 
+        expected_amount, 
+        actual_amount, 
+        zaad_amount || 0,
+        edahab_amount || 0,
+        cash_amount || 0,
+        slsh_amount || 0,
+        shortage || 0, 
+        reason || null, 
+        processed_by || null
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
