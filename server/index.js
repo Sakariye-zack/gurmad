@@ -1696,6 +1696,29 @@ app.put('/api/debts/:id/status', async (req, res) => {
   }
 });
 
+// --- Cashouts (Taariikhda Xisaab-celinta) ---
+app.get('/api/cashouts', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM cashouts ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cashouts', async (req, res) => {
+  const { collector_name, expected_amount, actual_amount, shortage, reason, processed_by } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO cashouts (collector_name, expected_amount, actual_amount, shortage, reason, processed_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [collector_name, expected_amount, actual_amount, shortage || 0, reason || null, processed_by || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Settings ---
 app.get('/api/settings', async (req, res) => {
   try {

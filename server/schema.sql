@@ -146,6 +146,18 @@ CREATE TABLE debts (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Cashouts Table (Taariikhda Xisaab-celinta)
+CREATE TABLE cashouts (
+    id SERIAL PRIMARY KEY,
+    collector_name VARCHAR(100) NOT NULL,
+    expected_amount DECIMAL(15, 2) NOT NULL,
+    actual_amount DECIMAL(15, 2) NOT NULL,
+    shortage DECIMAL(15, 2) DEFAULT 0,
+    reason TEXT,
+    processed_by VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- --- SEED DATA ---
 
 -- Initial Users & Settings

@@ -284,6 +284,14 @@ export const api = {
     headers: getAuthHeaders()
   }).then(handleResponse),
 
+  // Cashouts
+  getCashouts: () => fetch(`${API_BASE_URL}/cashouts`, { headers: getAuthHeaders() }).then(handleResponse),
+  addCashout: (data) => fetch(`${API_BASE_URL}/cashouts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+
   // User Management
   getUsers: () => fetch(`${API_BASE_URL}/users`, { headers: getAuthHeaders() }).then(handleResponse),
   createUser: (data) => fetch(`${API_BASE_URL}/users`, {
