@@ -267,7 +267,7 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
       </div>
 
       {/* Collector Stats Table */}
-      {(currentUser?.role === 'admin' || currentUser?.role === 'collector') && dashboardCollectorStats.length > 0 && (
+      {(currentUser?.role === 'admin' || currentUser?.role === 'collector') && (
         <div className="card" style={{ padding: '1.5rem', marginBottom: '1rem', border: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
@@ -299,7 +299,7 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
                 </tr>
               </thead>
               <tbody>
-                {dashboardCollectorStats.map((stat, idx) => (
+                {dashboardCollectorStats.length > 0 ? dashboardCollectorStats.map((stat, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px', fontWeight: 600 }}>{stat.name}</td>
                     <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>{stat.customers_worked}</td>
@@ -307,7 +307,11 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
                     <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#f97316' }}>{stat.collected_slsh.toLocaleString()} SLSH</td>
                     <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>${stat.debt.toFixed(2)}</td>
                   </tr>
-                ))}
+                )) : (
+                  <tr>
+                    <td colSpan="5" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

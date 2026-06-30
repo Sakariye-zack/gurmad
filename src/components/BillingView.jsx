@@ -349,7 +349,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
       </div>
 
       {/* Collector Performance Today (Admins Only) */}
-      {currentUser?.role === 'admin' && collectorStatsToday.length > 0 && (
+      {currentUser?.role === 'admin' && (
         <div className="card" style={{ padding: '1.5rem', border: '1px solid var(--border-color)' }}>
           <h3 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
              <Users size={18} color="var(--gurmad-green)" />
@@ -367,7 +367,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                 </tr>
               </thead>
               <tbody>
-                {collectorStatsToday.map((stat, idx) => (
+                {collectorStatsToday.length > 0 ? collectorStatsToday.map((stat, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '12px', fontWeight: 600 }}>{stat.name}</td>
                     <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>{stat.customers_worked}</td>
@@ -375,7 +375,11 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                     <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#f97316' }}>{stat.collected_slsh.toLocaleString()} SLSH</td>
                     <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>${stat.debt.toFixed(2)}</td>
                   </tr>
-                ))}
+                )) : (
+                  <tr>
+                    <td colSpan="5" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
