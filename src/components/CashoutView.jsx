@@ -147,6 +147,17 @@ const CashoutView = ({ currentUser }) => {
                   setActualAmountStr('');
                   setJustification('');
                 }}
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem 1rem', 
+                  borderRadius: '8px', 
+                  border: '1px solid #cbd5e1', 
+                  fontSize: '1rem', 
+                  backgroundColor: '#ffffff', 
+                  color: '#334155',
+                  outline: 'none',
+                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                }}
               >
                 <option value="">-- Dooro Collector (Select) --</option>
                 {collectors.map(c => (
