@@ -338,7 +338,7 @@ const App = () => {
       case 'tasks': return <TaskView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'map': return <MapView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'collector_assignments': return <CollectorAssignmentsView searchQuery={globalSearch} />;
-      case 'billing': return <BillingView searchQuery={globalSearch} />;
+      case 'billing': return <BillingView searchQuery={globalSearch} currentUser={currentUser} collectorTodayStats={collectorTodayStats} />;
       case 'payroll': return <PayrollView />;
       case 'expenses': return <ExpenseView searchQuery={globalSearch} />;
       case 'inventory': return <InventoryView searchQuery={globalSearch} />;
@@ -360,7 +360,7 @@ const App = () => {
       case 'archive': return <ArchiveView searchQuery={globalSearch} />;
       case 'complaints': return <ComplaintsView searchQuery={globalSearch} />;
       case 'audit_logs': return <AuditLogsView />;
-      default: return <DashboardView />;
+      default: return <DashboardView currentUser={currentUser} collectorTodayStats={collectorTodayStats} />;
     }
   };
 

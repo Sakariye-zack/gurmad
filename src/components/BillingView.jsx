@@ -28,7 +28,7 @@ import { toast } from 'react-hot-toast';
 import { exportToCSV } from '../utils/exportUtils';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const BillingView = ({ searchQuery = '' }) => {
+const BillingView = ({ searchQuery = '', currentUser }) => {
   const { t } = useLanguage();
   const [invoices, setInvoices] = useState([]);
   const [stats, setStats] = useState({ total_usd: 0, total_slsh: 0, total_debt: 0, total_discount: 0, active_trucks: 0 });
@@ -121,6 +121,16 @@ const BillingView = ({ searchQuery = '' }) => {
   ) - (parseFloat(discount) || 0);
 
   const filteredInvoices = invoices.filter(inv => {
+    // Role-based filtering for collectors
+    if (currentUser?.role === 'collector') {
+      const invCollector = (inv.collector_name || '').toLowerCase().trim();
+      const currName1 = (currentUser.full_name || '').toLowerCase().trim();
+      const currName2 = (currentUser.username || '').toLowerCase().trim();
+      if (invCollector !== currName1 && invCollector !== currName2) {
+         return false; // Skip if it doesn't belong to them
+      }
+    }
+
     const query = searchQuery.toLowerCase();
     return (
       inv.id.toString().includes(query) ||
@@ -131,6 +141,54 @@ const BillingView = ({ searchQuery = '' }) => {
       (inv.truck_name && inv.truck_name.toLowerCase().includes(query))
     );
   });
+
+  const collectorStatsToday = React.useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const statsMap = {};
+    
+    invoices.forEach(inv => {
+      // Check if invoice is today
+      if (!inv.created_at) return;
+      const invDate = new Date(inv.created_at).toISOString().split('T')[0];
+      if (invDate !== today) return;
+
+      const collName = inv.collector_name || 'Unassigned / Office';
+      if (!statsMap[collName]) {
+        statsMap[collName] = { collected_usd: 0, collected_slsh: 0, debt: 0, customers_worked: 0 };
+      }
+      
+      statsMap[collName].customers_worked += 1;
+
+      // Add payments
+      if (inv.is_split) {
+         const cash = parseFloat(inv.cash_amount) || 0;
+         const zaad = parseFloat(inv.zaad_amount) || 0;
+         const edahab = parseFloat(inv.edahab_amount) || 0;
+         const slsh = parseFloat(inv.slsh_amount) || 0;
+         const debt = parseFloat(inv.debt_amount) || 0;
+
+         if (inv.currency === 'USD') {
+             statsMap[collName].collected_usd += (cash + zaad + edahab);
+         } else {
+             statsMap[collName].collected_slsh += (slsh); 
+         }
+         statsMap[collName].debt += debt;
+      } else {
+         const amount = parseFloat(inv.amount) || 0;
+         if (inv.payment_method === 'Debt') {
+             statsMap[collName].debt += amount;
+         } else {
+             if (inv.currency === 'USD') statsMap[collName].collected_usd += amount;
+             else statsMap[collName].collected_slsh += amount;
+         }
+      }
+    });
+
+    return Object.keys(statsMap).map(k => ({
+      name: k,
+      ...statsMap[k]
+    })).sort((a, b) => b.collected_usd - a.collected_usd);
+  }, [invoices]);
 
   const handlePaymentRequest = async (e) => {
     e.preventDefault();
@@ -289,6 +347,40 @@ const BillingView = ({ searchQuery = '' }) => {
            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Reporting today</div>
         </div>
       </div>
+
+      {/* Collector Performance Today (Admins Only) */}
+      {currentUser?.role === 'admin' && collectorStatsToday.length > 0 && (
+        <div className="card" style={{ padding: '1.5rem', border: '1px solid var(--border-color)' }}>
+          <h3 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
+             <Users size={18} color="var(--gurmad-green)" />
+             Xisaabta Collectors-ka Maanta
+          </h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="table" style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse' }}>
+              <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Magaca (Collector)</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Lashaqeeyay (Tirada)</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>La Qabtay (USD)</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>La Qabtay (SLSH)</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Dayn (Debt)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {collectorStatsToday.map((stat, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '12px', fontWeight: 600 }}>{stat.name}</td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>{stat.customers_worked}</td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#10b981' }}>${stat.collected_usd.toFixed(2)}</td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#f97316' }}>{stat.collected_slsh.toLocaleString()} SLSH</td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>${stat.debt.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '2rem' }}>
         {/* Left Form */}
