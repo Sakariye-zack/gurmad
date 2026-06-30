@@ -22,6 +22,8 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [isNotifying, setIsNotifying] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'details'
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
 
   useEffect(() => {
     loadData();
@@ -405,31 +407,55 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
 
                    {remaining > 0 && (
                      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '10px', flexWrap: 'wrap' }}>
-                       <span style={{ fontSize: '0.8rem', alignSelf: 'center', fontWeight: 600 }}>Quick Select Unpaid:</span>
-                       {[50, 100, 200, 300, 500].filter(n => n <= remaining || n === 50).map(num => (
-                         <button 
-                           key={num}
-                           type="button" 
-                           onClick={() => {
-                             const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
-                             const chunk = unpaid.slice(0, num).map(c => c.id);
-                             setSelectedCustomerIds(chunk);
-                           }}
-                           style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid var(--gurmad-green)', backgroundColor: 'white', color: 'var(--gurmad-green)', cursor: 'pointer', fontWeight: 600 }}
-                         >
-                           {num}
-                         </button>
-                       ))}
-                       <button 
-                         type="button" 
-                         onClick={() => {
-                           const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
-                           setSelectedCustomerIds(unpaid.map(c => c.id));
-                         }}
-                         style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid var(--gurmad-green)', backgroundColor: 'var(--gurmad-green)', color: 'white', cursor: 'pointer', fontWeight: 600 }}
-                       >
-                         All Unpaid
-                       </button>
+                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+                         <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>Select Specific Range (e.g. 1 to 100):</span>
+                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                           <input 
+                             type="number" 
+                             placeholder="From (e.g. 1)" 
+                             value={rangeStart} 
+                             onChange={(e) => setRangeStart(e.target.value)}
+                             style={{ padding: '6px', fontSize: '0.8rem', width: '110px', borderRadius: '4px', border: '1px solid var(--border-color)' }}
+                           />
+                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>to</span>
+                           <input 
+                             type="number" 
+                             placeholder={`To (Max ${remaining})`} 
+                             value={rangeEnd} 
+                             onChange={(e) => setRangeEnd(e.target.value)}
+                             style={{ padding: '6px', fontSize: '0.8rem', width: '110px', borderRadius: '4px', border: '1px solid var(--border-color)' }}
+                           />
+                           <button 
+                             type="button" 
+                             onClick={() => {
+                               const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
+                               let start = parseInt(rangeStart) || 1;
+                               let end = parseInt(rangeEnd) || remaining;
+                               if (start < 1) start = 1;
+                               if (end > remaining) end = remaining;
+                               if (start > end) return toast.error('Start range cannot be greater than end range');
+                               
+                               const chunk = unpaid.slice(start - 1, end).map(c => c.id);
+                               setSelectedCustomerIds(chunk);
+                               toast.success(`Selected customers ${start} to ${end}`);
+                             }}
+                             style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '4px', border: 'none', backgroundColor: 'var(--gurmad-green)', color: 'white', cursor: 'pointer', fontWeight: 600 }}
+                           >
+                             Select Range
+                           </button>
+                           
+                           <button 
+                             type="button" 
+                             onClick={() => {
+                               const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
+                               setSelectedCustomerIds(unpaid.map(c => c.id));
+                             }}
+                             style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid var(--gurmad-green)', backgroundColor: 'transparent', color: 'var(--gurmad-green)', cursor: 'pointer', fontWeight: 600 }}
+                           >
+                             Select All Remaining
+                           </button>
+                         </div>
+                       </div>
                      </div>
                    )}
 
