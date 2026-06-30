@@ -385,15 +385,55 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                    </select>
                   </div>
                </div>
-               {modalCustomers.length > 0 && (
-                 <div style={{ marginTop: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem', maxHeight: '180px', overflowY: 'auto', backgroundColor: '#f8fafc' }}>
+               {modalCustomers.length > 0 && (() => {
+                 const workedOn = modalCustomers.filter(c => c.status === 'Paid' || c.payment_status === 'Paid').length;
+                 const remaining = modalCustomers.length - workedOn;
+                 
+                 return (
+                 <div style={{ marginTop: '0.5rem', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem', backgroundColor: '#f8fafc' }}>
                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Select Customers ({selectedCustomerIds.length}/{modalCustomers.length})</label>
+                      <label style={{ fontSize: '0.85rem', fontWeight: 600 }}>Customers in Zone ({modalCustomers.length})</label>
                       <button type="button" onClick={() => setSelectedCustomerIds(selectedCustomerIds.length === modalCustomers.length ? [] : modalCustomers.map(c => c.id))} style={{ fontSize: '0.75rem', color: 'var(--gurmad-green)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
                         {selectedCustomerIds.length === modalCustomers.length ? 'Deselect All' : 'Select All'}
                       </button>
                    </div>
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                   
+                   <div style={{ display: 'flex', gap: '1rem', marginBottom: '10px', fontSize: '0.8rem' }}>
+                      <span style={{ color: '#22c55e', fontWeight: 600 }}>Worked On (Paid): {workedOn}</span>
+                      <span style={{ color: '#ef4444', fontWeight: 600 }}>Remaining (Unpaid): {remaining}</span>
+                   </div>
+
+                   {remaining > 0 && (
+                     <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '10px', flexWrap: 'wrap' }}>
+                       <span style={{ fontSize: '0.8rem', alignSelf: 'center', fontWeight: 600 }}>Quick Select Unpaid:</span>
+                       {[50, 100, 200, 300, 500].filter(n => n <= remaining || n === 50).map(num => (
+                         <button 
+                           key={num}
+                           type="button" 
+                           onClick={() => {
+                             const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
+                             const chunk = unpaid.slice(0, num).map(c => c.id);
+                             setSelectedCustomerIds(chunk);
+                           }}
+                           style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid var(--gurmad-green)', backgroundColor: 'white', color: 'var(--gurmad-green)', cursor: 'pointer', fontWeight: 600 }}
+                         >
+                           {num}
+                         </button>
+                       ))}
+                       <button 
+                         type="button" 
+                         onClick={() => {
+                           const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
+                           setSelectedCustomerIds(unpaid.map(c => c.id));
+                         }}
+                         style={{ padding: '4px 8px', fontSize: '0.75rem', borderRadius: '4px', border: '1px solid var(--gurmad-green)', backgroundColor: 'var(--gurmad-green)', color: 'white', cursor: 'pointer', fontWeight: 600 }}
+                       >
+                         All Unpaid
+                       </button>
+                     </div>
+                   )}
+
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto', paddingRight: '5px' }}>
                      {modalCustomers.map(c => (
                        <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.8rem', cursor: 'pointer', padding: '4px' }}>
                          <input 
@@ -404,12 +444,16 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                              else setSelectedCustomerIds(selectedCustomerIds.filter(id => id !== c.id));
                            }}
                          />
-                         {c.name} <span style={{ color: 'var(--text-muted)' }}>({c.phone})</span>
+                         {c.name} <span style={{ color: 'var(--text-muted)' }}>({c.phone}) - {c.status || c.payment_status || 'Unpaid'}</span>
                        </label>
                      ))}
                    </div>
+                   <div style={{ marginTop: '10px', fontSize: '0.85rem', fontWeight: 700, color: '#1e40af', textAlign: 'right' }}>
+                     Total Selected: {selectedCustomerIds.length}
+                   </div>
                  </div>
-               )}
+                 );
+               })()}
                 <div style={{ padding: '1rem', backgroundColor: '#eff6ff', borderRadius: '12px', border: '1px solid #dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
