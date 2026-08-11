@@ -180,7 +180,7 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
         <div className="card" style={{ padding: 0, borderRadius: '24px', overflow: 'hidden' }}>
           <div style={{ padding: '1.5rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ fontWeight: 800, margin: 0 }}>Operational Zones</h3>
-            <button onClick={() => { setEditingZone(null); setNewZone({ name: '', truck_id: '', area: '', neighborhood: '' }); setIsModalOpen(true); }} className="btn-primary" style={{ padding: '0.6rem 1.2rem', borderRadius: '10px' }}>+ New Zone</button>
+            <button onClick={() => { setEditingZone(null); setNewZone({ name: '', truck_id: '', area: '', neighborhood: '', collection_days: '', collection_time: '' }); setIsModalOpen(true); }} className="btn-primary" style={{ padding: '0.6rem 1.2rem', borderRadius: '10px' }}>+ New Zone</button>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead style={{ backgroundColor: '#f8fafc', fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase' }}>
@@ -429,6 +429,36 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                   <option value="">Assign Truck...</option>
                   {trucks.map(t => <option key={t.id} value={t.id}>{t.plate_number}</option>)}
                 </select>
+
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 700, color: '#64748b' }}>Collection Days</label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => {
+                      const selectedDays = (newZone.collection_days || '').split(',').map(d => d.trim()).filter(Boolean);
+                      const isSelected = selectedDays.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            const next = isSelected ? selectedDays.filter(d => d !== day) : [...selectedDays, day];
+                            setNewZone({ ...newZone, collection_days: next.join(',') });
+                          }}
+                          style={{
+                            padding: '0.5rem 0.8rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer',
+                            border: isSelected ? '1px solid var(--gurmad-green)' : '1px solid #e2e8f0',
+                            backgroundColor: isSelected ? 'var(--gurmad-green)' : 'white',
+                            color: isSelected ? 'white' : '#475569'
+                          }}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <input placeholder="Collection Time (e.g. 8:00 AM)" value={newZone.collection_time || ''} onChange={e => setNewZone({...newZone, collection_time: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
+
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                   <button type="button" onClick={() => setIsModalOpen(false)} style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: 'none', background: '#f1f5f9' }}>Cancel</button>
                   <button type="submit" className="btn-primary" style={{ flex: 1, padding: '0.8rem', borderRadius: '10px' }}>Save Zone</button>

@@ -50,6 +50,8 @@ import PayrollView from './components/PayrollView';
 import AuditLogsView from './components/AuditLogsView';
 import ComplaintsView from './components/ComplaintsView';
 import CollectorAssignmentsView from './components/CollectorAssignmentsView';
+import TodaysCollectionsView from './components/TodaysCollectionsView';
+import MyRouteTodayView from './components/MyRouteTodayView';
 import CashoutView from './components/CashoutView';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
@@ -78,7 +80,13 @@ const App = () => {
     systemTitle: 'MANAGEMENT'
   });
   const [collectorTodayStats, setCollectorTodayStats] = useState([]);
+  const [billingPrefillPhone, setBillingPrefillPhone] = useState(null);
+  const [myTodayRoute, setMyTodayRoute] = useState([]);
   const [theme, setTheme] = useState(() => localStorage.getItem('gurmadTheme') || 'light');
+  const [logoError, setLogoError] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
+  useEffect(() => { setLogoError(false); }, [systemSettings.logo]);
+  useEffect(() => { setAvatarError(false); }, [currentUser?.profile_image]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -88,11 +96,22 @@ const App = () => {
   useEffect(() => {
     const handleClearSearch = () => setGlobalSearch('');
     const handleSwitchTab = (e) => setActiveTab(e.detail);
+    
+    const handleTokenExpired = () => {
+      setCurrentUser(null);
+      localStorage.removeItem('gurmadUser');
+      toast.error('Session expired. Please log in again.');
+      setShowLogin(true);
+    };
+
     window.addEventListener('clearSearch', handleClearSearch);
     window.addEventListener('switchTab', handleSwitchTab);
+    window.addEventListener('token_expired', handleTokenExpired);
+    
     return () => {
       window.removeEventListener('clearSearch', handleClearSearch);
       window.removeEventListener('switchTab', handleSwitchTab);
+      window.removeEventListener('token_expired', handleTokenExpired);
     };
   }, []);
 
@@ -148,6 +167,24 @@ const App = () => {
 
     fetchCollectorStats();
     const interval = setInterval(fetchCollectorStats, 60000); // 60s poller
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // A collector's own today's route - every customer on their assigned task, so they can go collect one by one
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'collector') return;
+
+    const fetchMyTodayRoute = async () => {
+      try {
+        const data = await api.getMyTodayRoute();
+        setMyTodayRoute(data.customers || []);
+      } catch (err) {
+        console.error("Failed to fetch today's route");
+      }
+    };
+
+    fetchMyTodayRoute();
+    const interval = setInterval(fetchMyTodayRoute, 60000);
     return () => clearInterval(interval);
   }, [currentUser]);
 
@@ -210,34 +247,37 @@ const App = () => {
       id: 'dashboard', 
       label: t('dashboard'), 
       icon: LayoutDashboard, 
-      roles: ['admin', 'cashier', 'collector'] 
+      roles: ['admin', 'cashier', 'collector', 'gudoomiye']
     },
-    { 
+    {
       type: 'item',
-      id: 'customers', 
-      label: t('customers'), 
-      icon: Users, 
-      roles: ['admin', 'cashier', 'collector'] 
+      id: 'customers',
+      label: t('customers'),
+      icon: Users,
+      roles: ['admin', 'cashier', 'collector', 'gudoomiye']
     },
-    { 
+    {
       type: 'item',
-      id: 'complaints', 
-      label: t('complaints'), 
-      icon: MessageSquare, 
-      roles: ['admin', 'cashier'] 
+      id: 'complaints',
+      label: t('complaints'),
+      icon: MessageSquare,
+      roles: ['admin', 'cashier', 'gudoomiye']
     },
     {
       type: 'group',
       id: 'operations',
       label: t('operations'),
       icon: Truck,
-      roles: ['admin', 'collector', 'cashier'],
+      roles: ['admin', 'collector', 'cashier', 'gudoomiye'],
       items: [
         { id: 'zones', label: t('manage_zones'), icon: MapIcon, roles: ['admin'] },
         { id: 'fleet', label: t('register_trucks'), icon: Truck, roles: ['admin'] },
-        { id: 'collector_assignments', label: 'Collector Assignments', icon: MapIcon, roles: ['admin'] },
-        { id: 'tasks', label: 'Collector Tasks', icon: ClipboardList, roles: ['admin', 'collector', 'cashier'] },
-        { id: 'map', label: 'Operations Map', icon: MapIcon, roles: ['admin', 'collector', 'cashier'] }
+        { id: 'collector_assignments', label: 'Collector Assignments', icon: MapIcon, roles: ['admin', 'gudoomiye'] },
+        { id: 'cashier_assignments', label: 'Cashier Assignments', icon: Wallet, roles: ['admin', 'gudoomiye'] },
+        { id: 'tasks', label: 'Collector Tasks', icon: ClipboardList, roles: ['admin', 'collector', 'gudoomiye'] },
+        { id: 'todays_collections', label: "Today's Collections", icon: Users, roles: ['cashier'] },
+        { id: 'my_route_today', label: 'My Route Today', icon: MapIcon, roles: ['collector'] },
+        { id: 'map', label: 'Operations Map', icon: MapIcon, roles: ['admin', 'collector', 'cashier', 'gudoomiye'] }
       ]
     },
 
@@ -246,13 +286,13 @@ const App = () => {
       id: 'accounting',
       label: t('accounting'),
       icon: Receipt,
-      roles: ['admin', 'cashier', 'collector'],
+      roles: ['admin', 'cashier', 'collector', 'gudoomiye'],
       items: [
-        { id: 'billing', label: t('billing_invoices'), icon: Receipt, roles: ['admin', 'cashier', 'collector'] },
+        { id: 'billing', label: t('billing_invoices'), icon: Receipt, roles: ['admin', 'cashier', 'gudoomiye'] },
         { id: 'payroll', label: 'Employee Payroll', icon: Wallet, roles: ['admin', 'cashier'] },
         { id: 'expenses', label: t('expense_tracker'), icon: Wallet, roles: ['admin', 'cashier'] },
-        { id: 'debts', label: t('debts'), icon: ClipboardList, roles: ['admin', 'cashier'] },
-        { id: 'cashout', label: 'Collector Cashout', icon: Wallet, roles: ['admin', 'cashier'] },
+        { id: 'debts', label: t('debts'), icon: ClipboardList, roles: ['admin', 'cashier', 'gudoomiye'] },
+        { id: 'cashout', label: 'Cashier Cashout', icon: Wallet, roles: ['admin', 'cashier', 'gudoomiye'] },
         { id: 'reports', label: t('financial_reports'), icon: BarChart3, roles: ['admin'] },
       ]
     },
@@ -333,14 +373,17 @@ const App = () => {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'dashboard': return <DashboardView searchQuery={globalSearch} currentUser={currentUser} />;
+      case 'dashboard': return <DashboardView searchQuery={globalSearch} currentUser={currentUser} myTodayRoute={myTodayRoute} />;
       case 'zones': return <FleetView searchQuery={globalSearch} initialTab="zones" />;
       case 'fleet': return <FleetView searchQuery={globalSearch} initialTab="trucks" />;
-      case 'customers': return <CustomerView searchQuery={globalSearch} />;
+      case 'customers': return <CustomerView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'tasks': return <TaskView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'map': return <MapView searchQuery={globalSearch} currentUser={currentUser} />;
-      case 'collector_assignments': return <CollectorAssignmentsView searchQuery={globalSearch} />;
-      case 'billing': return <BillingView searchQuery={globalSearch} currentUser={currentUser} collectorTodayStats={collectorTodayStats} />;
+      case 'todays_collections': return <TodaysCollectionsView searchQuery={globalSearch} currentUser={currentUser} onCollectPayment={(phone) => { setActiveTab('billing'); setBillingPrefillPhone(phone); }} />;
+      case 'my_route_today': return <MyRouteTodayView searchQuery={globalSearch} />;
+      case 'collector_assignments': return <CollectorAssignmentsView key="collector_assignments" searchQuery={globalSearch} />;
+      case 'cashier_assignments': return <CollectorAssignmentsView key="cashier_assignments" searchQuery={globalSearch} initialTab="cashier" />;
+      case 'billing': return <BillingView searchQuery={globalSearch} currentUser={currentUser} collectorTodayStats={collectorTodayStats} prefillCustomerPhone={billingPrefillPhone} onPrefillHandled={() => setBillingPrefillPhone(null)} />;
       case 'payroll': return <PayrollView />;
       case 'expenses': return <ExpenseView searchQuery={globalSearch} />;
       case 'inventory': return <InventoryView searchQuery={globalSearch} />;
@@ -424,17 +467,17 @@ const App = () => {
           <div style={{
             width: '40px',
             height: '40px',
-            backgroundColor: systemSettings.logo ? 'white' : 'var(--gurmad-green)',
+            backgroundColor: systemSettings.logo && !logoError ? 'white' : 'var(--gurmad-green)',
             borderRadius: '10px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'white',
             overflow: 'hidden',
-            boxShadow: systemSettings.logo ? 'var(--shadow-sm)' : 'none'
+            boxShadow: systemSettings.logo && !logoError ? 'var(--shadow-sm)' : 'none'
           }}>
-            {systemSettings.logo ? (
-              <img src={`/api/uploads/${systemSettings.logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            {systemSettings.logo && !logoError ? (
+              <img src={`/api/uploads/${systemSettings.logo}`} alt="Logo" onError={() => setLogoError(true)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             ) : (
               <Truck size={24} />
             )}
@@ -545,18 +588,18 @@ const App = () => {
             ))}
           </ul>
           
-          {/* Today's Collector Performance Widget */}
-          {isSidebarOpen && (currentUser?.role === 'admin' || currentUser?.role === 'cashier') && (
-            <div 
+          {/* Today's Collector Performance Widget (Admin only) */}
+          {isSidebarOpen && currentUser?.role === 'admin' && (
+            <div
               onClick={() => {
                 setActiveTab('tasks');
                 if (isMobile) setIsSidebarOpen(false);
               }}
-              style={{ 
-                marginTop: '2rem', 
-                padding: '1rem', 
-                backgroundColor: '#f8fafc', 
-                borderRadius: '12px', 
+              style={{
+                marginTop: '2rem',
+                padding: '1rem',
+                backgroundColor: '#f8fafc',
+                borderRadius: '12px',
                 border: '1px solid #e2e8f0',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
@@ -587,6 +630,8 @@ const App = () => {
                </div>
             </div>
           )}
+
+          {/* Cashier's Paired-Collector Customer List - who to go collect money from */}
         </nav>
 
         <div className="sidebar-footer" style={{ padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
@@ -923,9 +968,10 @@ const App = () => {
                   justifyContent: 'center',
                   border: '1px solid var(--border-color)'
                 }}>
-                  <img 
-                    src={currentUser.profile_image ? `/api/uploads/${currentUser.profile_image}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || currentUser.username)}&background=3FAE2A&color=fff&size=128`} 
-                    alt="User" 
+                  <img
+                    src={currentUser.profile_image && !avatarError ? `/api/uploads/${currentUser.profile_image}` : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name || currentUser.username)}&background=3FAE2A&color=fff&size=128`}
+                    alt="User"
+                    onError={() => setAvatarError(true)}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 </div>

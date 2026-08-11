@@ -15,6 +15,11 @@ const getAuthHeaders = () => {
 const handleResponse = async (res) => {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      if (data.error && data.error.toLowerCase().includes('token')) {
+        window.dispatchEvent(new Event('token_expired'));
+      }
+    }
     throw new Error(data.error || `Request failed with status ${res.status}`);
   }
   return data;
@@ -138,6 +143,11 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
+  bulkImportCustomers: (customers) => fetch(`${API_BASE_URL}/customers/bulk-import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ customers })
+  }).then(handleResponse),
   updateCustomer: (id, data) => fetch(`${API_BASE_URL}/customers/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
@@ -240,10 +250,19 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ collected })
   }).then(handleResponse),
-  deleteTask: (id) => fetch(`${API_BASE_URL}/tasks/${id}`, { 
+  deleteTask: (id) => fetch(`${API_BASE_URL}/tasks/${id}`, {
     method: 'DELETE',
     headers: getAuthHeaders()
   }).then(handleResponse),
+  markCustomerServiced: (taskId, customerId, location = {}) => fetch(`${API_BASE_URL}/tasks/${taskId}/customers/${customerId}/service`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(location)
+  }).then(handleResponse),
+  getServiceLog: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return fetch(`${API_BASE_URL}/reports/service-log${qs ? `?${qs}` : ''}`, { headers: getAuthHeaders() }).then(handleResponse);
+  },
 
   // Inventory
   getInventory: () => fetch(`${API_BASE_URL}/inventory`, { headers: getAuthHeaders() }).then(handleResponse),
@@ -299,6 +318,11 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
+  updateUser: (id, data) => fetch(`${API_BASE_URL}/users/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
   deleteUser: (id) => fetch(`${API_BASE_URL}/users/${id}`, {
     method: 'DELETE',
     headers: getAuthHeaders()
@@ -333,7 +357,8 @@ export const api = {
   // Reports
   getCollectorReports: () => fetch(`${API_BASE_URL}/reports/collectors`, { headers: getAuthHeaders() }).then(handleResponse),
   getCollectorsTodayStats: () => fetch(`${API_BASE_URL}/reports/collectors/today`, { headers: getAuthHeaders() }).then(handleResponse),
-  
+  getCollectorDailyReport: (collectorName, date) => fetch(`${API_BASE_URL}/reports/collector-daily?collector_name=${encodeURIComponent(collectorName)}&date=${encodeURIComponent(date)}`, { headers: getAuthHeaders() }).then(handleResponse),
+
   // Archives
   getArchives: () => fetch(`${API_BASE_URL}/archives`, { headers: getAuthHeaders() }).then(handleResponse),
   markAllNotificationsRead: (userId) => fetch(`${API_BASE_URL}/users/${userId}/notifications/read-all`, { 
@@ -432,7 +457,25 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  deleteCollectorAssignment: (id) => fetch(`${API_BASE_URL}/collector-assignments/${id}`, { 
+  deleteCollectorAssignment: (id) => fetch(`${API_BASE_URL}/collector-assignments/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+
+  getCashierAssignments: () => fetch(`${API_BASE_URL}/cashier-assignments`, { headers: getAuthHeaders() }).then(handleResponse),
+  getMyCollectorCustomers: () => fetch(`${API_BASE_URL}/cashier/my-collector-customers`, { headers: getAuthHeaders() }).then(handleResponse),
+  getMyTodayRoute: () => fetch(`${API_BASE_URL}/collector/my-today-route`, { headers: getAuthHeaders() }).then(handleResponse),
+  addCashierAssignment: (data) => fetch(`${API_BASE_URL}/cashier-assignments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateCashierAssignment: (id, data) => fetch(`${API_BASE_URL}/cashier-assignments/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  deleteCashierAssignment: (id) => fetch(`${API_BASE_URL}/cashier-assignments/${id}`, {
     method: 'DELETE',
     headers: getAuthHeaders()
   }).then(handleResponse),

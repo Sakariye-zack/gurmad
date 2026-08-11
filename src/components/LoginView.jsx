@@ -11,6 +11,7 @@ const LoginView = ({ onLogin, onBack }) => {
   const [pendingUserId, setPendingUserId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [systemSettings, setSystemSettings] = useState({ logo: '', companyName: 'GURMAD' });
+  const [logoError, setLogoError] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -85,7 +86,7 @@ const LoginView = ({ onLogin, onBack }) => {
           <div style={{
             width: '64px',
             height: '64px',
-            backgroundColor: systemSettings.logo ? 'white' : 'var(--gurmad-green)',
+            backgroundColor: systemSettings.logo && !logoError ? 'white' : 'var(--gurmad-green)',
             borderRadius: '16px',
             display: 'flex',
             alignItems: 'center',
@@ -94,13 +95,13 @@ const LoginView = ({ onLogin, onBack }) => {
             margin: '0 auto 1.5rem auto',
             boxShadow: '0 10px 20px -5px rgba(63, 174, 42, 0.4)',
             overflow: 'hidden',
-            border: systemSettings.logo ? '1px solid var(--border-color)' : 'none'
+            border: systemSettings.logo && !logoError ? '1px solid var(--border-color)' : 'none'
           }}>
             {require2FA ? (
-              <Shield size={36} color={systemSettings.logo ? 'var(--gurmad-green)' : 'white'} />
+              <Shield size={36} color={systemSettings.logo && !logoError ? 'var(--gurmad-green)' : 'white'} />
             ) : (
-              systemSettings.logo ? (
-                <img src={`/api/uploads/${systemSettings.logo}`} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              systemSettings.logo && !logoError ? (
+                <img src={`/api/uploads/${systemSettings.logo}`} alt="Logo" onError={() => setLogoError(true)} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               ) : (
                 <Truck size={36} />
               )

@@ -74,7 +74,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
   const [editingUser, setEditingUser] = useState(null);
   const [newPass, setNewPass] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newUserData, setNewUserData] = useState({ username: '', full_name: '', password: '', role: 'collector' });
+  const [newUserData, setNewUserData] = useState({ username: '', full_name: '', password: '', role: 'collector', zone: '' });
   
   // User Profile States
   const [profUsername, setProfUsername] = useState(currentUser.username || '');
@@ -362,7 +362,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
       await api.createUser(newUserData);
       toast.success('User created successfully!');
       setShowCreateModal(false);
-      setNewUserData({ username: '', full_name: '', password: '', role: 'collector' });
+      setNewUserData({ username: '', full_name: '', password: '', role: 'collector', zone: '' });
       api.getUsers().then(setUsers);
     } catch (err) {
       toast.error(err.message || 'Failed to create user');
@@ -1242,11 +1242,26 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                           className="card" style={{ width: '100%', padding: '0.85rem', borderRadius: '8px' }}
                         >
                           <option value="admin">System Administrator</option>
+                          <option value="gudoomiye">Gudoomiye (Zone Chairman)</option>
                           <option value="collector">Collector (Field App)</option>
                           <option value="cashier">Cashier (Accounting)</option>
                           <option value="manager">Operations Manager</option>
                         </select>
                       </div>
+                      {newUserData.role === 'gudoomiye' && (
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>ZONE / GROUP (their office)</label>
+                          <input
+                            type="text"
+                            required
+                            value={newUserData.zone || ''}
+                            onChange={e => setNewUserData({...newUserData, zone: e.target.value})}
+                            className="card" style={{ width: '100%', padding: '0.85rem', borderRadius: '8px' }}
+                            placeholder="e.g. Group1"
+                          />
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>Must exactly match the Zone/Group name used elsewhere (e.g. collector assignments).</p>
+                        </div>
+                      )}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
                         <button type="button" onClick={() => setShowCreateModal(false)} className="btn-secondary">Cancel</button>
                         <button type="submit" disabled={isUpdating} className="btn-primary">
@@ -1276,11 +1291,17 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                   onClick={async () => {
                     setIsUpdating(true);
                     try {
-                      const res = await api.generateBackup(currentUser.role);
-                      if (res.url) {
-                        window.open(res.url, '_blank');
-                        toast.success('Backup generated successfully!');
-                      }
+                      const backupData = await api.generateBackup();
+                      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+                      const blobUrl = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = blobUrl;
+                      link.download = `gurmad-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(blobUrl);
+                      toast.success('Backup generated successfully!');
                     } catch (err) {
                       toast.error('Backup failed: Admin access required');
                     } finally {

@@ -35,6 +35,7 @@ export const translations = {
     // Dashboard
     system_overview: "System Overview",
     total_revenue: "Total Revenue",
+    daily_collections: "Today's Collections",
     active_customers: "Active Customers",
     tasks_completed: "Tasks Completed",
     total_expenses: "Total Expenses",
@@ -126,6 +127,7 @@ export const translations = {
     // Dashboard
     system_overview: "Guud ahaan System-ka",
     total_revenue: "Wadarta Dakhliga",
+    daily_collections: "Maanta La Qabtay",
     active_customers: "Macmiisha Firfircoon",
     tasks_completed: "Shaqooyinka Dhamaaday",
     total_expenses: "Wadarta Kharashka",

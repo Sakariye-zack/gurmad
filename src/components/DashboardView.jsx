@@ -44,7 +44,13 @@ const data = [
   { name: 'Sun', revenue: 4900, expenses: 1900 },
 ];
 
-const DashboardView = ({ currentUser, collectorTodayStats }) => {
+const formatHouseNo = (raw) => {
+  if (!raw) return 'C-----';
+  const stripped = String(raw).replace(/^[hc]-?/i, '');
+  return `C-${stripped}`;
+};
+
+const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) => {
   const { t } = useLanguage();
   const [dbStats, setDbStats] = useState({ revenue: 0, customerCount: 0, tasksCompleted: 0, totalExpenses: 0 });
   const [chartData, setChartData] = useState([]);
@@ -56,12 +62,13 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
   const [selectedGroup, setSelectedGroup] = useState('');
 
   useEffect(() => {
+    const needsInvoices = currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye';
     Promise.all([
       api.getStats(),
       api.getStatsHistory(),
       api.getSettings(),
       api.getExtendedDashboardStats(),
-      api.getInvoices() // Add invoices to calculate collector stats
+      needsInvoices ? api.getInvoices() : Promise.resolve([])
     ])
       .then(([stats, history, sData, extended, invs]) => {
         setDbStats(stats);
@@ -76,7 +83,7 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
       .finally(() => {
         setLoading(false);
       });
-  }, []);
+  }, [currentUser]);
 
   const rate = parseFloat(settings.exchange_rate || '8500');
 
@@ -87,63 +94,30 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
     return '$' + val.toLocaleString();
   };
 
-  const dashboardCollectorStats = React.useMemo(() => {
+  const todaysTransactions = React.useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const statsMap = {};
-    
-    invoices.forEach(inv => {
+
+    return invoices.filter(inv => {
       if (currentUser?.role === 'collector') {
         const invCollector = (inv.collector_name || '').toLowerCase().trim();
         const currName1 = (currentUser.full_name || '').toLowerCase().trim();
         const currName2 = (currentUser.username || '').toLowerCase().trim();
-        if (invCollector !== currName1 && invCollector !== currName2) return;
+        if (invCollector !== currName1 && invCollector !== currName2) return false;
       }
 
       if (selectedGroup) {
-         const invGroup = (inv.invoice_zone || '').toLowerCase().trim();
-         if (!invGroup.includes(selectedGroup.toLowerCase().trim())) return;
+        const invGroup = (inv.invoice_zone || '').toLowerCase().trim();
+        if (!invGroup.includes(selectedGroup.toLowerCase().trim())) return false;
       }
 
-      if (!inv.created_at) return;
+      if (!inv.created_at) return false;
       const invDate = new Date(inv.created_at).toISOString().split('T')[0];
-      if (invDate !== today) return;
-
-      const collName = inv.collector_name || 'Unassigned / Office';
-      if (!statsMap[collName]) {
-        statsMap[collName] = { collected_usd: 0, collected_slsh: 0, debt: 0, customers_worked: 0 };
-      }
-      
-      statsMap[collName].customers_worked += 1;
-
-      if (inv.is_split) {
-         const cash = parseFloat(inv.cash_amount) || 0;
-         const zaad = parseFloat(inv.zaad_amount) || 0;
-         const edahab = parseFloat(inv.edahab_amount) || 0;
-         const slsh = parseFloat(inv.slsh_amount) || 0;
-         const debt = parseFloat(inv.debt_amount) || 0;
-
-         if (inv.currency === 'USD') {
-             statsMap[collName].collected_usd += (cash + zaad + edahab);
-         } else {
-             statsMap[collName].collected_slsh += (slsh); 
-         }
-         statsMap[collName].debt += debt;
-      } else {
-         const amount = parseFloat(inv.amount) || 0;
-         if (inv.payment_method === 'Debt') {
-             statsMap[collName].debt += amount;
-         } else {
-             if (inv.currency === 'USD') statsMap[collName].collected_usd += amount;
-             else statsMap[collName].collected_slsh += amount;
-         }
-      }
-    });
-
-    return Object.keys(statsMap).map(k => ({
-      name: k,
-      ...statsMap[k]
-    })).sort((a, b) => b.collected_usd - a.collected_usd);
+      return invDate === today;
+    }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [invoices, currentUser, selectedGroup]);
+
+  const todaysCollectedTotal = todaysTransactions.reduce((sum, inv) => sum + (parseFloat(inv.amount) || 0), 0);
+  const pendingInvoicesCount = invoices.filter(inv => inv.status === 'Unpaid').length;
 
   // Define stats based on role
   const getStats = () => {
@@ -157,16 +131,26 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
     } else if (currentUser?.role === 'cashier') {
       return [
         { label: t('total_revenue'), value: formatValue(dbStats.revenue), sub: '+12.5%', icon: DollarSign, color: 'var(--gurmad-green)', bg: '#dcfce7' },
-        { label: t('daily_collections'), value: formatValue(dbStats.revenue / 30), sub: 'Today', icon: Activity, color: '#3b82f6', bg: '#dbeafe' },
+        { label: t('daily_collections'), value: formatValue(todaysCollectedTotal), sub: 'Today', icon: Activity, color: '#3b82f6', bg: '#dbeafe' },
         { label: t('total_expenses'), value: formatValue(dbStats.totalExpenses), sub: t('optimal'), icon: Wallet, color: '#ef4444', bg: '#fee2e2' },
-        { label: 'Pending Invoices', value: '12', sub: 'Action required', icon: Clock, color: '#f97316', bg: '#ffedd5' },
+        { label: 'Pending Invoices', value: pendingInvoicesCount.toString(), sub: pendingInvoicesCount > 0 ? 'Action required' : 'All clear', icon: Clock, color: '#f97316', bg: '#ffedd5' },
+      ];
+    } else if (currentUser?.role === 'gudoomiye') {
+      return [
+        { label: 'Zone Revenue', value: formatValue(dbStats.revenue), sub: currentUser.zone || '', icon: DollarSign, color: 'var(--gurmad-green)', bg: '#dcfce7' },
+        { label: t('active_customers'), value: dbStats.customerCount.toString(), sub: currentUser.zone || '', icon: Users, color: 'var(--gurmad-orange)', bg: '#fef3c7' },
+        { label: t('tasks_completed'), value: dbStats.tasksCompleted.toString(), sub: 'This month', icon: CheckCircle2, color: '#3b82f6', bg: '#dbeafe' },
+        { label: t('total_expenses'), value: formatValue(dbStats.totalExpenses), sub: t('optimal'), icon: Clock, color: '#f97316', bg: '#ffedd5' },
       ];
     } else { // collector
+      const collectedToday = myTodayRoute.filter(c => c.collected).length;
+      const pendingToday = myTodayRoute.length - collectedToday;
+      const routeZone = myTodayRoute[0]?.zone || 'None';
       return [
         { label: t('tasks_completed'), value: dbStats.tasksCompleted.toString(), sub: 'This month', icon: CheckCircle2, color: 'var(--gurmad-green)', bg: '#dcfce7' },
-        { label: 'My Collections', value: '45', sub: 'Today', icon: Activity, color: '#3b82f6', bg: '#dbeafe' },
-        { label: 'Active Route', value: 'Zone A', sub: 'In progress', icon: TrendingUp, color: 'var(--gurmad-orange)', bg: '#fef3c7' },
-        { label: 'Vehicle Status', value: 'Optimal', sub: 'SL-4555', icon: Activity, color: '#8b5cf6', bg: '#f3e8ff' },
+        { label: 'My Collections', value: collectedToday.toString(), sub: 'Today', icon: Activity, color: '#3b82f6', bg: '#dbeafe' },
+        { label: 'Active Route', value: myTodayRoute.length > 0 ? routeZone : 'No route today', sub: myTodayRoute.length > 0 ? 'In progress' : '', icon: TrendingUp, color: 'var(--gurmad-orange)', bg: '#fef3c7' },
+        { label: 'Pending Stops', value: pendingToday.toString(), sub: 'Today', icon: Clock, color: '#8b5cf6', bg: '#f3e8ff' },
       ];
     }
   };
@@ -266,13 +250,13 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
         ))}
       </div>
 
-      {/* Collector Stats Table */}
-      {(currentUser?.role === 'admin' || currentUser?.role === 'collector') && (
+      {/* Cashier Stats Table (money collected, broken down by which collector it was for) */}
+      {(currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye') && (
         <div className="card" style={{ padding: '1.5rem', marginBottom: '1rem', border: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
                <Users size={18} color="var(--gurmad-green)" />
-               Xisaabta Collectors-ka Maanta
+               Xisaabta Cashier-ka Maanta
             </h3>
             {currentUser?.role === 'admin' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -288,28 +272,37 @@ const DashboardView = ({ currentUser, collectorTodayStats }) => {
             )}
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table className="table" style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse' }}>
+            <table className="table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse' }}>
               <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Magaca (Collector)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Lashaqeeyay (Tirada)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>La Qabtay (USD)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>La Qabtay (SLSH)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Dayn (Debt)</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Customer</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Phone</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>House / Zone</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Collector</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Amount</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Method</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Date / Time</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Cashier</th>
                 </tr>
               </thead>
               <tbody>
-                {dashboardCollectorStats.length > 0 ? dashboardCollectorStats.map((stat, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px', fontWeight: 600 }}>{stat.name}</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>{stat.customers_worked}</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#10b981' }}>${stat.collected_usd.toFixed(2)}</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#f97316' }}>{stat.collected_slsh.toLocaleString()} SLSH</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>${stat.debt.toFixed(2)}</td>
+                {todaysTransactions.length > 0 ? todaysTransactions.map((inv) => (
+                  <tr key={inv.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '12px', fontWeight: 600 }}>{inv.customer_name}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{inv.customer_phone}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{formatHouseNo(inv.invoice_house_no)} &middot; {inv.invoice_zone || inv.zone || 'N/A'}</td>
+                    <td style={{ padding: '12px', color: '#0ea5e9', fontWeight: 600 }}>{inv.collector_name || 'Unassigned'}</td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#10b981' }}>
+                      ${parseFloat(inv.amount).toFixed(2)}
+                      {parseFloat(inv.slsh_amount) > 0 && <div style={{ fontSize: '0.75rem', color: '#f97316' }}>{parseFloat(inv.slsh_amount).toLocaleString()} SLSH</div>}
+                    </td>
+                    <td style={{ padding: '12px' }}>{inv.payment_method}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(inv.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td style={{ padding: '12px', fontWeight: 600, color: '#059669' }}>{inv.cashier_name || 'System'}</td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="5" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
+                    <td colSpan="8" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
                   </tr>
                 )}
               </tbody>

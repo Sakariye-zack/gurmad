@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api';
 import { socket } from '../socket';
-import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet } from 'lucide-react';
+import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet, Tag, Repeat, DollarSign } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { exportToCSV } from '../utils/exportUtils';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -95,6 +95,11 @@ const MonthlyCalendar = ({ collectionDaysString, collectionTime }) => {
         {daysOfWeekNames.map(d => <div key={d}>{d.substring(0, 3).toUpperCase()}</div>)}
       </div>
       
+      {collectionDays.length === 0 && (
+        <div style={{ marginBottom: '10px', padding: '8px 12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', fontSize: '0.75rem', color: '#92400e', fontWeight: 600 }}>
+          No collection days set for this zone yet. Set them in Manage Zones.
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {grid.map((week, wIdx) => (
           <div key={wIdx} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}>
@@ -144,7 +149,7 @@ const MonthlyCalendar = ({ collectionDaysString, collectionTime }) => {
 };
 
 
-const CustomerView = ({ searchQuery = '' }) => {
+const CustomerView = ({ searchQuery = '', currentUser }) => {
   const { t } = useLanguage();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -161,6 +166,43 @@ const CustomerView = ({ searchQuery = '' }) => {
   const [viewMode, setViewMode] = useState('list'); // 'list', 'details', or 'register'
   const [employees, setEmployees] = useState([]);
   const [localSearch, setLocalSearch] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const importInputRef = React.useRef(null);
+
+  const parseCustomerCsv = (text) => {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    return lines.slice(1).map(line => {
+      const cells = line.split(',').map(c => c.trim());
+      const row = {};
+      headers.forEach((h, i) => { row[h] = cells[i] || ''; });
+      return row;
+    });
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setIsImporting(true);
+      const text = await file.text();
+      const rows = parseCustomerCsv(text);
+      if (rows.length === 0) {
+        toast.error('No rows found. Expected a header row: name,phone,house_no,street,area,zone,category');
+        return;
+      }
+      const result = await api.bulkImportCustomers(rows);
+      toast.success(`Imported ${result.created} customer(s)${result.failed ? `, ${result.failed} failed` : ''}`);
+      if (result.errors?.length) console.warn('Bulk import errors:', result.errors);
+      fetchCustomers();
+    } catch (err) {
+      toast.error(err.message || 'Import failed');
+    } finally {
+      setIsImporting(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768);
@@ -400,6 +442,60 @@ const CustomerView = ({ searchQuery = '' }) => {
 
   if (loading) return <div className="card glass">Loading customers from database...</div>;
 
+  // Shared between both the list view and the details view, so it must not live inside either view's own early return.
+  const debtModal = isDebtModalOpen && (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: 'rgba(15, 23, 42, 0.7)', display: 'flex',
+      alignItems: 'center', justifyContent: 'center',
+      zIndex: 1100, backdropFilter: 'blur(8px)', padding: '20px'
+    }}>
+      <div className="card scale-in" style={{ width: '100%', maxWidth: '400px', padding: '2rem', borderRadius: '24px', backgroundColor: 'white' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h3 style={{ margin: 0, fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertCircle color="#f97316" size={24} /> Record Debt
+          </h3>
+          <button onClick={() => setIsDebtModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+            <XCircle size={24} />
+          </button>
+        </div>
+
+        <form onSubmit={handleRecordDebt} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 700, color: '#64748b' }}>Debt Amount</label>
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: '#94a3b8' }}>$</span>
+              <input
+                required
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={debtForm.amount}
+                onChange={e => setDebtForm({...debtForm, amount: e.target.value})}
+                style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2rem', borderRadius: '12px', border: '2px solid #f1f5f9', outline: 'none', fontSize: '1.1rem', fontWeight: 700 }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 700, color: '#64748b' }}>Reason / Description</label>
+            <textarea
+              placeholder="e.g. Unpaid April garbage collection"
+              value={debtForm.description}
+              onChange={e => setDebtForm({...debtForm, description: e.target.value})}
+              style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '2px solid #f1f5f9', outline: 'none', minHeight: '80px', fontFamily: 'inherit' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '0.5rem' }}>
+            <button type="button" onClick={() => setIsDebtModalOpen(false)} style={{ flex: 1, padding: '0.85rem', borderRadius: '12px', border: 'none', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 700 }}>Cancel</button>
+            <button type="submit" style={{ flex: 2, padding: '0.85rem', borderRadius: '12px', border: 'none', backgroundColor: '#f97316', color: 'white', fontWeight: 700, boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}>Save Debt</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
   if (viewMode === 'details' && selectedCustomer) {
     return (
       <div style={{ animation: 'fadeIn 0.3s ease-out', maxWidth: '1000px', margin: '0 auto', padding: '1rem' }}>
@@ -416,7 +512,7 @@ const CustomerView = ({ searchQuery = '' }) => {
             onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.color = '#0f172a'; }}
             onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white'; e.currentTarget.style.color = '#475569'; }}
           >
-            <XCircle size={20} /> Back to Dashboard
+            <XCircle size={20} /> Back to Customers
           </button>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: 'white', padding: '10px 20px', borderRadius: '100px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
@@ -465,9 +561,11 @@ const CustomerView = ({ searchQuery = '' }) => {
                  <h2 style={{ fontSize: '2.2rem', fontWeight: 900, color: '#0f172a', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>{selectedCustomer.name}</h2>
                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ backgroundColor: '#f0fdf4', padding: '6px 14px', borderRadius: '100px', fontSize: '0.85rem', fontWeight: 800, color: 'var(--gurmad-green)', border: '1px solid #dcfce7' }}>#GUR-{selectedCustomer.id}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontWeight: 700, fontSize: '0.95rem' }}>
-                       <MapPin size={16} /> {selectedCustomer.area}
-                    </div>
+                    {selectedCustomer.area && selectedCustomer.area !== '-' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontWeight: 700, fontSize: '0.95rem' }}>
+                         <MapPin size={16} /> {selectedCustomer.area}
+                      </div>
+                    )}
                  </div>
               </div>
            </div>
@@ -492,22 +590,36 @@ const CustomerView = ({ searchQuery = '' }) => {
         </div>
 
         {/* QUICK STATS */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '2rem' }}>
-           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Category</div>
-              <div style={{ color: '#0f172a', fontSize: '1.25rem', fontWeight: 900 }}>{selectedCustomer.category || 'Guri'}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.25rem 1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', borderLeftWidth: '4px', borderLeftColor: '#3b82f6', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ backgroundColor: '#eff6ff', padding: '10px', borderRadius: '12px', color: '#3b82f6', flexShrink: 0 }}><Tag size={20} /></div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.5px' }}>Category</div>
+                <div style={{ color: '#0f172a', fontSize: '1.15rem', fontWeight: 900 }}>{selectedCustomer.category || 'Guri'}</div>
+              </div>
            </div>
-           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Monthly Rate</div>
-              <div style={{ color: 'var(--gurmad-green)', fontSize: '1.25rem', fontWeight: 900 }}>${parseFloat(selectedCustomer.fee || 0).toFixed(2)}</div>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.25rem 1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', borderLeftWidth: '4px', borderLeftColor: 'var(--gurmad-green)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ backgroundColor: '#f0fdf4', padding: '10px', borderRadius: '12px', color: 'var(--gurmad-green)', flexShrink: 0 }}><DollarSign size={20} /></div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.5px' }}>Monthly Rate</div>
+                <div style={{ color: 'var(--gurmad-green)', fontSize: '1.15rem', fontWeight: 900 }}>${parseFloat(selectedCustomer.fee || 0).toFixed(2)}</div>
+              </div>
            </div>
-           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Billing Mode</div>
-              <div style={{ color: '#0f172a', fontSize: '1.25rem', fontWeight: 900 }}>{selectedCustomer.collection_mode || 'Daily'}</div>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.25rem 1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', borderLeftWidth: '4px', borderLeftColor: '#9333ea', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ backgroundColor: '#f3e8ff', padding: '10px', borderRadius: '12px', color: '#9333ea', flexShrink: 0 }}><Repeat size={20} /></div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.5px' }}>Billing Mode</div>
+                <div style={{ color: '#0f172a', fontSize: '1.15rem', fontWeight: 900 }}>{selectedCustomer.collection_mode || 'Daily'}</div>
+              </div>
            </div>
-           <div className="card" style={{ backgroundColor: 'white', padding: '1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' }}>Collector</div>
-              <div style={{ color: '#d97706', fontSize: '1.1rem', fontWeight: 900 }}>{selectedCustomer.collector_id || 'NONE'}</div>
+           <div className="card" style={{ backgroundColor: 'white', padding: '1.25rem 1.5rem', borderRadius: '20px', border: '1px solid #f1f5f9', borderLeftWidth: '4px', borderLeftColor: '#d97706', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ backgroundColor: '#fef3c7', padding: '10px', borderRadius: '12px', color: '#d97706', flexShrink: 0 }}><User size={20} /></div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '2px', letterSpacing: '0.5px' }}>Collector</div>
+                <div style={{ color: '#d97706', fontSize: '1.05rem', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {employees.find(e => e.id === selectedCustomer.collector_id)?.name || 'Unassigned'}
+                </div>
+              </div>
            </div>
         </div>
 
@@ -524,10 +636,14 @@ const CustomerView = ({ searchQuery = '' }) => {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                     <div>
                       <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b', marginBottom: '6px', textTransform: 'uppercase' }}>Physical Address</div>
-                      <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#1e293b', lineHeight: '1.5' }}>
-                        House {selectedCustomer.house_no}<br />
-                        {selectedCustomer.neighborhood || selectedCustomer.street}
-                      </div>
+                      {selectedCustomer.house_no || selectedCustomer.neighborhood || selectedCustomer.street ? (
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#1e293b', lineHeight: '1.5' }}>
+                          {selectedCustomer.house_no && <>House {selectedCustomer.house_no}<br /></>}
+                          {selectedCustomer.neighborhood || selectedCustomer.street}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '1rem', fontWeight: 600, color: '#94a3b8', fontStyle: 'italic' }}>No address on file</div>
+                      )}
                     </div>
                     
                     <div style={{ display: 'flex', gap: '12px' }}>
@@ -536,8 +652,8 @@ const CustomerView = ({ searchQuery = '' }) => {
                           <div style={{ fontWeight: 900, color: '#0f172a' }}>{selectedCustomer.zone || 'N/A'}</div>
                        </div>
                        <div style={{ flex: 1, backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '16px', border: '1px solid #f1f5f9' }}>
-                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Radar Status</div>
-                          <div style={{ fontWeight: 900, color: selectedCustomer.lat ? 'var(--gurmad-green)' : '#e11d48' }}>{selectedCustomer.lat ? 'ACTIVE' : 'OFFLINE'}</div>
+                          <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Location Pin</div>
+                          <div style={{ fontWeight: 900, color: selectedCustomer.lat ? 'var(--gurmad-green)' : '#94a3b8' }}>{selectedCustomer.lat ? 'SET' : 'NOT SET'}</div>
                        </div>
                     </div>
 
@@ -589,20 +705,25 @@ const CustomerView = ({ searchQuery = '' }) => {
            </div>
 
            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-              {selectedCustomer.zone && (() => {
-                  const z = zones.find(zone => zone.name === selectedCustomer.zone);
-                  if (z) {
-                    return (
-                      <div style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '24px', border: '1px solid #f1f5f9', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
-                          <div style={{ backgroundColor: '#f3e8ff', padding: '10px', borderRadius: '12px', color: '#9333ea' }}><Calendar size={20} /></div>
-                          <span style={{ fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>Collection Timeline</span>
-                        </div>
-                        <MonthlyCalendar collectionDaysString={z.collection_days} collectionTime={z.collection_time} />
+              {(() => {
+                  const z = selectedCustomer.zone ? zones.find(zone => zone.name === selectedCustomer.zone) : null;
+                  return (
+                    <div style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '24px', border: '1px solid #f1f5f9', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '1.5rem' }}>
+                        <div style={{ backgroundColor: '#f3e8ff', padding: '10px', borderRadius: '12px', color: '#9333ea' }}><Calendar size={20} /></div>
+                        <span style={{ fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>Collection Timeline</span>
                       </div>
-                    );
-                  }
-                  return null;
+                      {z ? (
+                        <MonthlyCalendar collectionDaysString={z.collection_days} collectionTime={z.collection_time} />
+                      ) : (
+                        <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem', fontWeight: 600 }}>
+                          {selectedCustomer.zone
+                            ? `Zone "${selectedCustomer.zone}" not found in Manage Zones.`
+                            : 'No zone assigned to this customer yet.'}
+                        </div>
+                      )}
+                    </div>
+                  );
               })()}
            </div>
         </div>
@@ -610,6 +731,8 @@ const CustomerView = ({ searchQuery = '' }) => {
         <div style={{ textAlign: 'center', marginTop: '3rem', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600 }}>
           Customer record created on {new Date(selectedCustomer.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
         </div>
+
+        {debtModal}
       </div>
     );
   }
@@ -770,11 +893,16 @@ const CustomerView = ({ searchQuery = '' }) => {
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Payment Status</label>
-                  <select value={newCustomer.payment_status} onChange={e => setNewCustomer({...newCustomer, payment_status: e.target.value})} style={{ width: '100%', padding: '1rem', borderRadius: '14px', border: '2px solid #f1f5f9', outline: 'none', fontSize: '1rem', fontWeight: 600, color: newCustomer.payment_status === 'Paid' ? '#10b981' : '#f43f5e' }}>
-                    <option value="Paid">Paid</option>
-                    <option value="Unpaid">Unpaid</option>
-                    <option value="Pending">Pending</option>
-                  </select>
+                  <div style={{
+                    width: '100%', padding: '1rem', borderRadius: '14px', border: '2px solid #f1f5f9',
+                    fontSize: '1rem', fontWeight: 700, backgroundColor: '#f8fafc',
+                    color: newCustomer.payment_status === 'Paid' ? '#10b981' : '#f43f5e'
+                  }}>
+                    {newCustomer.payment_status || 'Unpaid'}
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>
+                    Set automatically when the cashier records a real payment - not editable here.
+                  </p>
                 </div>
               </div>
 
@@ -913,9 +1041,9 @@ const CustomerView = ({ searchQuery = '' }) => {
             <Filter size={18} />
             Filter
           </button>
-          <button 
+          <button
             onClick={() => exportToCSV(filteredCustomers, 'Gurmad_Customers')}
-            style={{ 
+            style={{
               display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 1.25rem',
               backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0',
               borderRadius: 'var(--radius-md)', fontWeight: 600, cursor: 'pointer'
@@ -924,7 +1052,31 @@ const CustomerView = ({ searchQuery = '' }) => {
             <FileSpreadsheet size={18} />
             {t('export_excel')}
           </button>
-          <button 
+          {(currentUser?.role === 'admin' || currentUser?.role === 'gudoomiye') && (
+            <>
+              <input
+                type="file"
+                accept=".csv"
+                ref={importInputRef}
+                onChange={handleImportFile}
+                style={{ display: 'none' }}
+              />
+              <button
+                onClick={() => importInputRef.current?.click()}
+                disabled={isImporting}
+                title="CSV columns: name,phone,house_no,street,area,zone,category"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 1.25rem',
+                  backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0',
+                  borderRadius: 'var(--radius-md)', fontWeight: 600, cursor: 'pointer'
+                }}
+              >
+                <FileSpreadsheet size={18} />
+                {isImporting ? 'Importing...' : 'Import CSV'}
+              </button>
+            </>
+          )}
+          <button
             onClick={openAddModal}
             className="btn-primary" 
             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.6rem 1.25rem' }}
@@ -938,58 +1090,7 @@ const CustomerView = ({ searchQuery = '' }) => {
       {/* Customer Modal is now handled by viewMode page */}
 
       {/* Record Debt Modal */}
-      {isDebtModalOpen && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.7)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-          zIndex: 1100, backdropFilter: 'blur(8px)', padding: '20px'
-        }}>
-          <div className="card scale-in" style={{ width: '100%', maxWidth: '400px', padding: '2rem', borderRadius: '24px', backgroundColor: 'white' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0, fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <AlertCircle color="#f97316" size={24} /> Record Debt
-              </h3>
-              <button onClick={() => setIsDebtModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
-                <XCircle size={24} />
-              </button>
-            </div>
-            
-            <form onSubmit={handleRecordDebt} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 700, color: '#64748b' }}>Debt Amount</label>
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: 700, color: '#94a3b8' }}>$</span>
-                  <input 
-                    required 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0.00" 
-                    value={debtForm.amount} 
-                    onChange={e => setDebtForm({...debtForm, amount: e.target.value})} 
-                    style={{ width: '100%', padding: '0.75rem 0.75rem 0.75rem 2rem', borderRadius: '12px', border: '2px solid #f1f5f9', outline: 'none', fontSize: '1.1rem', fontWeight: 700 }} 
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 700, color: '#64748b' }}>Reason / Description</label>
-                <textarea 
-                  placeholder="e.g. Unpaid April garbage collection" 
-                  value={debtForm.description} 
-                  onChange={e => setDebtForm({...debtForm, description: e.target.value})} 
-                  style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '2px solid #f1f5f9', outline: 'none', minHeight: '80px', fontFamily: 'inherit' }} 
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginTop: '0.5rem' }}>
-                <button type="button" onClick={() => setIsDebtModalOpen(false)} style={{ flex: 1, padding: '0.85rem', borderRadius: '12px', border: 'none', backgroundColor: '#f1f5f9', color: '#64748b', fontWeight: 700 }}>Cancel</button>
-                <button type="submit" style={{ flex: 2, padding: '0.85rem', borderRadius: '12px', border: 'none', backgroundColor: '#f97316', color: 'white', fontWeight: 700, boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)' }}>Save Debt</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {debtModal}
 
       {/* Broadcast Modal */}
       {isBroadcastModalOpen && (

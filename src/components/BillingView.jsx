@@ -28,7 +28,15 @@ import { toast } from 'react-hot-toast';
 import { exportToCSV } from '../utils/exportUtils';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const BillingView = ({ searchQuery = '', currentUser }) => {
+// Normalize house numbers so they always display with a single "C-" prefix,
+// regardless of whether the stored value already has "H-", "c", "C-", etc.
+const formatHouseNo = (raw) => {
+  if (!raw) return 'C-----';
+  const stripped = String(raw).replace(/^[hc]-?/i, '');
+  return `C-${stripped}`;
+};
+
+const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPrefillHandled }) => {
   const { t } = useLanguage();
   const [invoices, setInvoices] = useState([]);
   const [stats, setStats] = useState({ total_usd: 0, total_slsh: 0, total_debt: 0, total_discount: 0, active_trucks: 0 });
@@ -70,6 +78,22 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
     refreshInterval.current = setInterval(fetchAllData, 30000); // Auto-refresh every 30s
     return () => clearInterval(refreshInterval.current);
   }, []);
+
+  // Jumped here from the sidebar's "customer to collect from" list - preselect them in the payment form
+  useEffect(() => {
+    if (!prefillCustomerPhone || customers.length === 0) return;
+    const c = customers.find(cust => cust.phone === prefillCustomerPhone);
+    if (c) {
+      setSelectedCustomerId(c.id);
+      setCustomerName(c.name);
+      setPhoneNumber(c.phone);
+      setDistrictZone(c.zone || '');
+      setHouseNo(c.house_no || '');
+      setCollectorName(c.collector_name || '');
+      setSearchCustomer(c.name);
+    }
+    if (onPrefillHandled) onPrefillHandled();
+  }, [prefillCustomerPhone, customers]);
 
   const fetchAllData = async () => {
     try {
@@ -142,52 +166,11 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
     );
   });
 
-  const collectorStatsToday = React.useMemo(() => {
+  const todaysTransactions = React.useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const statsMap = {};
-    
-    invoices.forEach(inv => {
-      // Check if invoice is today
-      if (!inv.created_at) return;
-      const invDate = new Date(inv.created_at).toISOString().split('T')[0];
-      if (invDate !== today) return;
-
-      const collName = inv.collector_name || 'Unassigned / Office';
-      if (!statsMap[collName]) {
-        statsMap[collName] = { collected_usd: 0, collected_slsh: 0, debt: 0, customers_worked: 0 };
-      }
-      
-      statsMap[collName].customers_worked += 1;
-
-      // Add payments
-      if (inv.is_split) {
-         const cash = parseFloat(inv.cash_amount) || 0;
-         const zaad = parseFloat(inv.zaad_amount) || 0;
-         const edahab = parseFloat(inv.edahab_amount) || 0;
-         const slsh = parseFloat(inv.slsh_amount) || 0;
-         const debt = parseFloat(inv.debt_amount) || 0;
-
-         if (inv.currency === 'USD') {
-             statsMap[collName].collected_usd += (cash + zaad + edahab);
-         } else {
-             statsMap[collName].collected_slsh += (slsh); 
-         }
-         statsMap[collName].debt += debt;
-      } else {
-         const amount = parseFloat(inv.amount) || 0;
-         if (inv.payment_method === 'Debt') {
-             statsMap[collName].debt += amount;
-         } else {
-             if (inv.currency === 'USD') statsMap[collName].collected_usd += amount;
-             else statsMap[collName].collected_slsh += amount;
-         }
-      }
-    });
-
-    return Object.keys(statsMap).map(k => ({
-      name: k,
-      ...statsMap[k]
-    })).sort((a, b) => b.collected_usd - a.collected_usd);
+    return invoices
+      .filter(inv => inv.created_at && new Date(inv.created_at).toISOString().split('T')[0] === today)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [invoices]);
 
   const handlePaymentRequest = async (e) => {
@@ -238,13 +221,13 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
          toast.success('Lacag bixinta Zaad way guulaysatay!', { id: 'zaad-process' });
        } catch (err) {
          toast.dismiss(loadingZaad);
-         toast.error(err.message || 'Cilad ayaa ka dhacday Zaad API', { id: 'zaad-process' });
+         toast.error(err.message || 'Zaad API error', { id: 'zaad-process' });
          setIsProcessing(false);
          return;
        }
     }
 
-    toast.loading('Diiwaangelinta lacag bixinta...', { id: 'payment-request' });
+    toast.loading('Recording payment...', { id: 'payment-request' });
     
     try {
       const result = await api.addInvoice({
@@ -348,36 +331,45 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
         </div>
       </div>
 
-      {/* Collector Performance Today (Admins Only) */}
+      {/* Today's Cashier Collections (Admins Only) - one row per transaction */}
       {currentUser?.role === 'admin' && (
         <div className="card" style={{ padding: '1.5rem', border: '1px solid var(--border-color)' }}>
           <h3 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
              <Users size={18} color="var(--gurmad-green)" />
-             Xisaabta Collectors-ka Maanta
+             Xisaabta Cashier-ka Maanta
           </h3>
           <div style={{ overflowX: 'auto' }}>
-            <table className="table" style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse' }}>
+            <table className="table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse' }}>
               <thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Magaca (Collector)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Lashaqeeyay (Tirada)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>La Qabtay (USD)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>La Qabtay (SLSH)</th>
-                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Dayn (Debt)</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Customer</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Phone</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>House / Zone</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Collector</th>
+                  <th style={{ textAlign: 'right', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Amount</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Method</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Date / Time</th>
+                  <th style={{ textAlign: 'left', padding: '12px', fontSize: '0.8rem', color: '#64748b' }}>Cashier</th>
                 </tr>
               </thead>
               <tbody>
-                {collectorStatsToday.length > 0 ? collectorStatsToday.map((stat, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px', fontWeight: 600 }}>{stat.name}</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#3b82f6' }}>{stat.customers_worked}</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#10b981' }}>${stat.collected_usd.toFixed(2)}</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#f97316' }}>{stat.collected_slsh.toLocaleString()} SLSH</td>
-                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>${stat.debt.toFixed(2)}</td>
+                {todaysTransactions.length > 0 ? todaysTransactions.map((inv) => (
+                  <tr key={inv.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '12px', fontWeight: 600 }}>{inv.customer_name}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{inv.customer_phone}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{formatHouseNo(inv.invoice_house_no)} &middot; {inv.invoice_zone || inv.zone || 'N/A'}</td>
+                    <td style={{ padding: '12px', color: '#0ea5e9', fontWeight: 600 }}>{inv.collector_name || 'Unassigned'}</td>
+                    <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#10b981' }}>
+                      ${parseFloat(inv.amount).toFixed(2)}
+                      {parseFloat(inv.slsh_amount) > 0 && <div style={{ fontSize: '0.75rem', color: '#f97316' }}>{parseFloat(inv.slsh_amount).toLocaleString()} SLSH</div>}
+                    </td>
+                    <td style={{ padding: '12px' }}>{inv.payment_method}</td>
+                    <td style={{ padding: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(inv.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td style={{ padding: '12px', fontWeight: 600, color: '#059669' }}>{inv.cashier_name || 'System'}</td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="5" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
+                    <td colSpan="8" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
                   </tr>
                 )}
               </tbody>
@@ -394,17 +386,26 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
               <div style={{ padding: '8px', backgroundColor: 'var(--bg-secondary)', borderRadius: '12px' }}>
                 <DollarSign color="var(--gurmad-green)" size={20} />
               </div>
-              Diwaangeli Lacag
+              Record Payment
             </h3>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
+              backgroundColor: '#eff6ff', borderRadius: '999px', border: '1px solid #bfdbfe'
+            }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3b82f6' }} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1d4ed8' }}>
+                Cashier: {currentUser?.full_name || currentUser?.username || 'System'}
+              </span>
+            </div>
           </div>
-          
+
           <form onSubmit={handlePaymentRequest} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.25rem' }}>
               <div className="input-group">
                 <label style={{ display: 'flex', gap: '6px', marginBottom: '8px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                   <Users size={14} /> DOORO MACMIILKA
+                   <Users size={14} /> SELECT CUSTOMER
                 </label>
-                <select 
+                <select
                   onChange={(e) => {
                     const c = customers.find(cust => cust.id === parseInt(e.target.value));
                     if (c) {
@@ -413,6 +414,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                       setPhoneNumber(c.phone);
                       setDistrictZone(c.zone || '');
                       setHouseNo(c.house_no || '');
+                      setCollectorName(c.collector_name || '');
                       setSearchCustomer(c.name);
                     } else {
                       setSelectedCustomerId(null);
@@ -420,7 +422,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                   }}
                   style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '2px solid #e2e8f0', fontSize: '0.95rem', fontWeight: 600, backgroundColor: '#f8fafc' }}
                 >
-                  <option value="">-- Ka dooro liiska --</option>
+                  <option value="">-- Choose from list --</option>
                   {customers.map(c => (
                     <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>
                   ))}
@@ -429,13 +431,13 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
 
               <div className="input-group" style={{ position: 'relative' }}>
                 <label style={{ display: 'flex', gap: '6px', marginBottom: '8px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                   <Search size={14} /> AMA MACMIILKA BAADH
+                   <Search size={14} /> OR SEARCH CUSTOMER
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input 
-                    type="text" 
-                    placeholder="Magaca ama Taleefanka..." 
+                  <input
+                    type="text"
+                    placeholder="Name or phone..."
                     value={searchCustomer}
                     onChange={(e) => {
                       setSearchCustomer(e.target.value);
@@ -458,6 +460,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                           setPhoneNumber(c.phone);
                           setDistrictZone(c.zone || '');
                           setHouseNo(c.house_no || '');
+                          setCollectorName(c.collector_name || '');
                           setSearchCustomer(c.name);
                           setShowCustomerDropdown(false);
                         }}
@@ -477,7 +480,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="input-group">
                 <label style={{ display: 'flex', gap: '6px', marginBottom: '8px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                   <Smartphone size={14} /> TALEEFANKA
+                   <Smartphone size={14} /> PHONE
                 </label>
                 <input 
                   type="text" 
@@ -489,22 +492,23 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
               </div>
               <div className="input-group">
                 <label style={{ display: 'flex', gap: '6px', marginBottom: '8px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                   <Users size={14} /> QABAHA
+                   <Users size={14} /> CUSTOMER'S COLLECTOR
                 </label>
-                <select 
+                <select
                   value={collectorName}
                   onChange={(e) => setCollectorName(e.target.value)}
                   style={{ width: '100%', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)', fontSize: '0.9rem', fontWeight: 600 }}
                 >
-                  <option value="">-- Dooro Collector --</option>
+                  <option value="">-- Select Collector --</option>
                   {employees.map(emp => <option key={emp.id} value={emp.name}>{emp.name}</option>)}
                 </select>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: '4px 0 0 2px' }}>Which collector this customer belongs to</p>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>LACAGTA</label>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>CURRENCY</label>
                   <select 
                     value={currencyMode}
                     onChange={(e) => {
@@ -524,7 +528,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                     onChange={(e) => setDistrictZone(e.target.value)}
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}
                   >
-                    <option value="">Choose</option>
+                    <option value="">-- Zone --</option>
                     {zones.map(z => <option key={z.id} value={z.name}>{z.name}</option>)}
                   </select>
                </div>
@@ -532,7 +536,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                   <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>HOUSE</label>
                   <input 
                     type="text"
-                    placeholder="H-"
+                    placeholder="e.g. C-12"
                     value={houseNo}
                     onChange={(e) => setHouseNo(e.target.value)}
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}
@@ -545,7 +549,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                     onChange={(e) => setSelectedTruck(e.target.value)}
                     style={{ width: '100%', padding: '0.65rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}
                   >
-                    <option value="">Truck</option>
+                    <option value="">-- Truck --</option>
                     {trucks.map(t => <option key={t.id} value={t.plate_number}>{t.plate_number}</option>)}
                   </select>
                </div>
@@ -553,8 +557,8 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
 
             <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '1.25rem', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Lacag Bixinta (Payment)</label>
-                <select 
+                <label style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Payment</label>
+                <select
                   value={paymentMethod}
                   onChange={(e) => {
                     setPaymentMethod(e.target.value);
@@ -562,11 +566,11 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                   }}
                   style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.85rem', fontWeight: 700, backgroundColor: '#fff' }}
                 >
-                  <option value="Cash">Cash (Caddaan)</option>
+                  <option value="Cash">Cash</option>
                   <option value="Zaad">Zaad Service</option>
                   <option value="eDahab">eDahab</option>
-                  <option value="Debt">Amaah (Debt)</option>
-                  <option value="Split">Split (Isku-jir)</option>
+                  <option value="Debt">Debt</option>
+                  <option value="Split">Split</option>
                 </select>
               </div>
 
@@ -616,7 +620,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                     />
                   </div>
                   <div style={{ backgroundColor: '#fff', padding: '0.75rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>AMAAH ({currencyMode})</div>
+                    <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: '0.7rem', marginBottom: '4px' }}>DEBT ({currencyMode})</div>
                     <input 
                       type="number" 
                       placeholder="0.00"
@@ -661,7 +665,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
 
             <button type="submit" disabled={isProcessing} className="btn-primary" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '10px', padding: '1.25rem', borderRadius: '16px', fontSize: '1.1rem', fontWeight: 800, transition: 'all 0.2s' }}>
               <Send size={20} />
-              {isProcessing ? 'Diiwaangelin...' : 'Diiwaangeli Lacagta'}
+              {isProcessing ? 'Recording...' : 'Record Payment'}
             </button>
           </form>
         </div>
@@ -707,7 +711,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                 <tr>
                   <th style={{ padding: '1rem', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>ID / Time</th>
                   <th style={{ padding: '1rem', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Customer Details</th>
-                  <th style={{ padding: '1rem', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Location & Collector</th>
+                  <th style={{ padding: '1rem', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Location & Collector's Zone</th>
                   <th style={{ padding: '1rem', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Method</th>
                   <th style={{ padding: '1rem', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Amount</th>
                   <th style={{ padding: '1rem', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'center' }}>Status</th>
@@ -741,9 +745,12 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                           <MapPin size={14} color="var(--gurmad-green)" />
                           {inv.invoice_zone || inv.zone || 'N/A'}
                        </div>
-                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>H-{inv.invoice_house_no || '---'}</span>
-                          <span style={{ color: '#0ea5e9', fontWeight: 600 }}>By: {inv.collector_name || 'System'}</span>
+                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>{formatHouseNo(inv.invoice_house_no)}</span>
+                          <span style={{ color: '#0ea5e9', fontWeight: 600 }}>For: {inv.collector_name || 'Unassigned'}</span>
+                       </div>
+                       <div style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600, marginTop: '4px' }}>
+                          Cashier: {inv.cashier_name || 'Unknown'}
                        </div>
                     </td>
                     <td style={{ padding: '1.2rem 1rem' }}>
@@ -814,7 +821,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
                       <p style={{ fontWeight: 800, color: '#1e293b', margin: '0 0 4px 0', fontSize: '1.1rem' }}>{selectedInvoice.customer_name}</p>
                       <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>{selectedInvoice.customer_phone}</p>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#475569', fontWeight: 700, marginTop: '8px' }}>
-                         <MapPin size={14} color="var(--gurmad-green)" /> {selectedInvoice.invoice_zone || selectedInvoice.zone || 'N/A'}, H-{selectedInvoice.invoice_house_no || '---'}
+                         <MapPin size={14} color="var(--gurmad-green)" /> {selectedInvoice.invoice_zone || selectedInvoice.zone || 'N/A'}, {formatHouseNo(selectedInvoice.invoice_house_no)}
                       </div>
                    </div>
                    <div style={{ textAlign: 'right' }}>
@@ -880,7 +887,7 @@ const BillingView = ({ searchQuery = '', currentUser }) => {
              </div>
              
              <div style={{ textAlign: 'center', padding: '0 0 1rem 0', fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600 }}>
-                Processed by: {selectedInvoice.collector_name || 'System Auto'}
+                Collected for: {selectedInvoice.collector_name || 'Unassigned'} · Cashier: {selectedInvoice.cashier_name || 'Unknown'}
              </div>
           </div>
         </div>

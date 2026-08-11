@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { Truck, MapPin, Plus, ChevronRight, CheckCircle2, Clock, PlayCircle, XCircle, Navigation, Users, Trash2, ArrowLeft } from 'lucide-react';
+import { Truck, MapPin, Plus, ChevronRight, CheckCircle2, Clock, PlayCircle, XCircle, Navigation, Users, Trash2, ArrowLeft, Calendar, ClipboardList, Filter, PackageCheck } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const TaskView = ({ searchQuery = '', currentUser }) => {
@@ -16,14 +16,24 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
   const [modalCustomers, setModalCustomers] = useState([]);
   const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [collectionModal, setCollectionModal] = useState(null);
-  const [payForm, setPayForm] = useState({ isPaid: true, amount: '15.00', currency: 'USD', method: 'Cash' });
   const [newTask, setNewTask] = useState({ driver_name: '', collector_name: '', vehicle_plate: '', route_name: '', zone_id: '', truck_id: '' });
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [isNotifying, setIsNotifying] = useState(false);
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'details'
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
+  const [servicedIds, setServicedIds] = useState(new Set()); // customers already serviced this cycle (for zone split logic)
+  const [markingServiceId, setMarkingServiceId] = useState(null);
+
+  // Work Log (cashier follow-up report)
+  const [mainTab, setMainTab] = useState('tasks'); // 'tasks' or 'worklog'
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [workLogFilters, setWorkLogFilters] = useState({ collector: '', from: todayStr, to: todayStr });
+  const [workLogResults, setWorkLogResults] = useState([]);
+  const [workLogLoading, setWorkLogLoading] = useState(false);
+  const [paymentModal, setPaymentModal] = useState(null); // work log row being paid by the cashier
+  const [paymentForm, setPaymentForm] = useState({ amount: '15.00', currency: 'USD', method: 'Cash' });
+  const [isSavingPayment, setIsSavingPayment] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -149,15 +159,8 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
     }
   };
 
-  const toggleCustomerCollection = async (customerId, currentStatus) => {
+  const undoServiced = async (customerId) => {
     if (!selectedTask) return;
-    if (!currentStatus) {
-       const cust = taskCustomers.find(c => c.id === customerId);
-       setCollectionModal(cust);
-       setPayForm({ isPaid: true, amount: '15.00', currency: 'USD', method: 'Cash' });
-       return;
-    }
-    // Unchecking
     try {
       await api.markCustomerCollected(selectedTask.id, customerId, false);
       loadTaskCustomers(selectedTask.id);
@@ -166,42 +169,109 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
     }
   };
 
-  const handleCollectionSubmit = async (e) => {
-    e.preventDefault();
-    if (!collectionModal || !selectedTask) return;
-    
+  const handleMarkServiced = async (customerId) => {
+    if (!selectedTask) return;
+    setMarkingServiceId(customerId);
     try {
-      await api.addInvoice({
-        phone: collectionModal.phone,
-        amount: parseFloat(payForm.amount),
-        currency: payForm.currency,
-        method: payForm.isPaid ? payForm.method : 'Debt',
-        collector_name: selectedTask.collector_name || selectedTask.driver_name
-      });
-      await api.markCustomerCollected(selectedTask.id, collectionModal.id, true);
-      toast.success(payForm.isPaid ? 'Payment recorded & Collected!' : 'Debt recorded & Collected!', { icon: '💰' });
-      setCollectionModal(null);
+      await api.markCustomerServiced(selectedTask.id, customerId);
+      toast.success('Waa la calaamadeeyay: Qashinka waa la qaaday (Lacag lama qaadin)', { icon: '🧹' });
       loadTaskCustomers(selectedTask.id);
     } catch (err) {
-      toast.error('Failed to save collection detail');
+      toast.error('Failed to mark as serviced');
+    } finally {
+      setMarkingServiceId(null);
     }
   };
-  // Simulated active tracking for "In Progress" tasks
+
+  // Which customers in this zone have already been serviced this billing cycle (this month),
+  // regardless of whether they were paid - used to split remaining houses across days.
+  const fetchServicedForZone = async (zoneName) => {
+    if (!zoneName) { setServicedIds(new Set()); return; }
+    try {
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      const from = monthStart.toISOString().split('T')[0];
+      const rows = await api.getServiceLog({ zone: zoneName, from });
+      setServicedIds(new Set(rows.map(r => r.customer_id)));
+    } catch (err) {
+      setServicedIds(new Set());
+    }
+  };
+
+  const runWorkLogSearch = async () => {
+    setWorkLogLoading(true);
+    try {
+      const rows = await api.getServiceLog(workLogFilters);
+      setWorkLogResults(rows);
+    } catch (err) {
+      toast.error('Failed to load work log');
+    } finally {
+      setWorkLogLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const activeTasks = tasks.filter(t => t.status === 'In Progress');
-    if (activeTasks.length === 0) return;
+    if (mainTab === 'worklog') runWorkLogSearch();
+  }, [mainTab]);
 
-    const interval = setInterval(() => {
-      activeTasks.forEach(task => {
-        // Simulate a small movement near Burao center
-        const lat = 9.524 + (Math.random() - 0.5) * 0.01;
-        const lng = 45.535 + (Math.random() - 0.5) * 0.01;
-        api.pingTaskLocation(task.id, { lat, lng });
+  const handleRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!paymentModal) return;
+
+    const amount = parseFloat(paymentForm.amount) || 0;
+    const splitPayments = { cash: 0, zaad: 0, edahab: 0, slsh: 0, debt: 0 };
+    if (paymentForm.method === 'Cash') splitPayments.cash = amount;
+    else if (paymentForm.method === 'ZAAD') splitPayments.zaad = amount;
+    else if (paymentForm.method === 'eDahab') splitPayments.edahab = amount;
+    else if (paymentForm.method === 'SLSH') splitPayments.slsh = amount;
+
+    setIsSavingPayment(true);
+    try {
+      await api.addInvoice({
+        customer_id: paymentModal.customer_id,
+        phone: paymentModal.phone,
+        currency: paymentForm.currency,
+        collector_name: paymentModal.collector_name,
+        zone: paymentModal.zone,
+        house_no: paymentModal.house_no,
+        splitPayments
       });
-    }, 10000); // Ping every 10 seconds
+      toast.success('Lacagta waa la xaqiijiyay!', { icon: '💰' });
+      setPaymentModal(null);
+      runWorkLogSearch();
+    } catch (err) {
+      toast.error('Failed to record payment');
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
+  // Live GPS reporting: only the collector actually assigned to an "In Progress" task
+  // sends their real device location, at intervals, while that task is active.
+  useEffect(() => {
+    if (currentUser?.role !== 'collector') return;
+    if (!navigator.geolocation) return;
 
+    const myTask = tasks.find(t =>
+      t.status === 'In Progress' &&
+      ((t.collector_name || '').toLowerCase().trim() === (currentUser.full_name || '').toLowerCase().trim() ||
+       (t.collector_name || '').toLowerCase().trim() === (currentUser.username || '').toLowerCase().trim())
+    );
+    if (!myTask) return;
+
+    const sendPing = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          api.pingTaskLocation(myTask.id, { lat: pos.coords.latitude, lng: pos.coords.longitude }).catch(() => {});
+        },
+        () => {}, // silently skip if location is unavailable/denied this cycle
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 5000 }
+      );
+    };
+
+    sendPing();
+    const interval = setInterval(sendPing, 15000); // Report every 15 seconds while the task is active
     return () => clearInterval(interval);
-  }, [tasks]);
+  }, [tasks, currentUser]);
 
   const filteredTasks = tasks.filter(t => {
     const search = searchQuery.toLowerCase();
@@ -245,6 +315,161 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      {/* Main Tabs */}
+      {viewMode === 'list' && (
+        <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '2px solid var(--border-color)' }}>
+          <button
+            onClick={() => setMainTab('tasks')}
+            style={{
+              padding: '0.75rem 1.25rem', border: 'none', background: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px',
+              color: mainTab === 'tasks' ? 'var(--gurmad-green)' : 'var(--text-muted)',
+              borderBottom: mainTab === 'tasks' ? '2px solid var(--gurmad-green)' : '2px solid transparent',
+              marginBottom: '-2px'
+            }}
+          >
+            <Truck size={18} /> Hawlaha (Tasks)
+          </button>
+          <button
+            onClick={() => setMainTab('worklog')}
+            style={{
+              padding: '0.75rem 1.25rem', border: 'none', background: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px',
+              color: mainTab === 'worklog' ? 'var(--gurmad-green)' : 'var(--text-muted)',
+              borderBottom: mainTab === 'worklog' ? '2px solid var(--gurmad-green)' : '2px solid transparent',
+              marginBottom: '-2px'
+            }}
+          >
+            <ClipboardList size={18} /> Diiwaanka Shaqada (Work Log)
+          </button>
+        </div>
+      )}
+
+      {mainTab === 'worklog' && viewMode === 'list' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', animation: 'fadeIn 0.3s ease-out' }}>
+          <div className="card glass" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem', fontWeight: 700 }}>
+              <Filter size={18} /> Filter
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.8rem', fontWeight: 600 }}>Collector</label>
+                <select
+                  value={workLogFilters.collector}
+                  onChange={e => setWorkLogFilters({ ...workLogFilters, collector: e.target.value })}
+                  style={{ padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: '200px' }}
+                >
+                  <option value="">— Dhammaan Collectors —</option>
+                  {employees.filter(emp => emp.role?.trim().toLowerCase() === 'collector').map(emp => (
+                    <option key={emp.id} value={emp.name}>{emp.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.8rem', fontWeight: 600 }}>Laga bilaabo (From)</label>
+                <input
+                  type="date"
+                  value={workLogFilters.from}
+                  onChange={e => setWorkLogFilters({ ...workLogFilters, from: e.target.value })}
+                  style={{ padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.8rem', fontWeight: 600 }}>Ilaa (To)</label>
+                <input
+                  type="date"
+                  value={workLogFilters.to}
+                  onChange={e => setWorkLogFilters({ ...workLogFilters, to: e.target.value })}
+                  style={{ padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button type="button" onClick={() => setWorkLogFilters({ ...workLogFilters, from: todayStr, to: todayStr })} style={{ padding: '0.5rem 0.9rem', fontSize: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'white', cursor: 'pointer', fontWeight: 600 }}>Maanta</button>
+                <button type="button" onClick={() => { const y = new Date(); y.setDate(y.getDate() - 1); const s = y.toISOString().split('T')[0]; setWorkLogFilters({ ...workLogFilters, from: s, to: s }); }} style={{ padding: '0.5rem 0.9rem', fontSize: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'white', cursor: 'pointer', fontWeight: 600 }}>Shalay</button>
+                <button type="button" onClick={() => { const m = new Date(); m.setDate(1); setWorkLogFilters({ ...workLogFilters, from: m.toISOString().split('T')[0], to: todayStr }); }} style={{ padding: '0.5rem 0.9rem', fontSize: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'white', cursor: 'pointer', fontWeight: 600 }}>Bishan</button>
+              </div>
+              <button
+                onClick={runWorkLogSearch}
+                className="btn-primary"
+                style={{ padding: '0.6rem 1.25rem' }}
+              >
+                Raadi
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <div className="card glass" style={{ padding: '0.75rem 1.25rem', borderLeft: '4px solid var(--gurmad-green)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Wadarta Guryaha</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{workLogResults.length}</div>
+            </div>
+            <div className="card glass" style={{ padding: '0.75rem 1.25rem', borderLeft: '4px solid #22c55e' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>La Bixiyay (Paid)</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{workLogResults.filter(r => r.payment_status === 'Paid').length}</div>
+            </div>
+            <div className="card glass" style={{ padding: '0.75rem 1.25rem', borderLeft: '4px solid #ef4444' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Aan La Bixin (Cashier ha ka guro)</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{workLogResults.filter(r => r.payment_status !== 'Paid').length}</div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>TAARIIKHDA</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>CUSTOMER / GURI</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>COLLECTOR</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>ZONE</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>XAALADDA LACAGTA</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>FALKA (ACTION)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workLogLoading ? (
+                  <tr><td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
+                ) : workLogResults.length === 0 ? (
+                  <tr><td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Diiwaan lama helin taariikhdaan.</td></tr>
+                ) : workLogResults.map((r, idx) => (
+                  <tr key={`${r.customer_id}-${r.task_id}-${idx}`} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '1rem', fontSize: '0.9rem' }}>
+                      {r.collected_at ? new Date(r.collected_at).toLocaleDateString() : '—'}
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{ fontWeight: 600 }}>{r.name}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.house_no ? `House ${r.house_no} • ` : ''}{r.phone}</div>
+                    </td>
+                    <td style={{ padding: '1rem', fontSize: '0.9rem' }}>{r.collector_name || r.driver_name || '—'}</td>
+                    <td style={{ padding: '1rem', fontSize: '0.9rem' }}>{r.zone || r.route_name || '—'}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <span style={{
+                        padding: '4px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600,
+                        backgroundColor: r.payment_status === 'Paid' ? '#22c55e15' : '#ef444415',
+                        color: r.payment_status === 'Paid' ? '#22c55e' : '#ef4444'
+                      }}>
+                        {r.payment_status === 'Paid' ? 'La Bixiyay' : 'Aan La Bixin'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '1rem' }}>
+                      {r.payment_status !== 'Paid' && (
+                        <button
+                          onClick={() => { setPaymentModal(r); setPaymentForm({ amount: '15.00', currency: 'USD', method: 'Cash' }); }}
+                          style={{ padding: '6px 14px', fontSize: '0.8rem', borderRadius: '8px', border: 'none', backgroundColor: 'var(--gurmad-green)', color: 'white', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                          Xaqiiji Lacag
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {mainTab === 'tasks' && (
+      <>
       {/* Stats + Assign */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: '1rem' }}>
@@ -317,9 +542,11 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                       });
                       setModalCustomers(matched);
                       setSelectedCustomerIds(matched.map(c => c.id));
+                      fetchServicedForZone(selZoneName);
                     } else {
                       setModalCustomers([]);
                       setSelectedCustomerIds([]);
+                      setServicedIds(new Set());
                     }
                   }}
                   style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', backgroundColor: '#f0fdf4' }}
@@ -388,7 +615,7 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                   </div>
                </div>
                {modalCustomers.length > 0 && (() => {
-                 const workedOn = modalCustomers.filter(c => c.status === 'Paid' || c.payment_status === 'Paid').length;
+                 const workedOn = modalCustomers.filter(c => servicedIds.has(c.id)).length;
                  const remaining = modalCustomers.length - workedOn;
                  
                  return (
@@ -401,8 +628,8 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                    </div>
                    
                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '10px', fontSize: '0.8rem' }}>
-                      <span style={{ color: '#22c55e', fontWeight: 600 }}>Worked On (Paid): {workedOn}</span>
-                      <span style={{ color: '#ef4444', fontWeight: 600 }}>Remaining (Unpaid): {remaining}</span>
+                      <span style={{ color: '#22c55e', fontWeight: 600 }}>La Adeegay Bishan (Serviced): {workedOn}</span>
+                      <span style={{ color: '#ef4444', fontWeight: 600 }}>Hadhay (Remaining): {remaining}</span>
                    </div>
 
                    {remaining > 0 && (
@@ -428,14 +655,14 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                            <button 
                              type="button" 
                              onClick={() => {
-                               const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
+                               const notServiced = modalCustomers.filter(c => !servicedIds.has(c.id));
                                let start = parseInt(rangeStart) || 1;
                                let end = parseInt(rangeEnd) || remaining;
                                if (start < 1) start = 1;
                                if (end > remaining) end = remaining;
                                if (start > end) return toast.error('Start range cannot be greater than end range');
-                               
-                               const chunk = unpaid.slice(start - 1, end).map(c => c.id);
+
+                               const chunk = notServiced.slice(start - 1, end).map(c => c.id);
                                setSelectedCustomerIds(chunk);
                                toast.success(`Selected customers ${start} to ${end}`);
                              }}
@@ -447,8 +674,8 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                            <button 
                              type="button" 
                              onClick={() => {
-                               const unpaid = modalCustomers.filter(c => c.status !== 'Paid' && c.payment_status !== 'Paid');
-                               setSelectedCustomerIds(unpaid.map(c => c.id));
+                               const notServiced = modalCustomers.filter(c => !servicedIds.has(c.id));
+                               setSelectedCustomerIds(notServiced.map(c => c.id));
                              }}
                              style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid var(--gurmad-green)', backgroundColor: 'transparent', color: 'var(--gurmad-green)', cursor: 'pointer', fontWeight: 600 }}
                            >
@@ -470,7 +697,7 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                              else setSelectedCustomerIds(selectedCustomerIds.filter(id => id !== c.id));
                            }}
                          />
-                         {c.name} <span style={{ color: 'var(--text-muted)' }}>({c.phone}) - {c.status || c.payment_status || 'Unpaid'}</span>
+                         {c.name} <span style={{ color: servicedIds.has(c.id) ? '#22c55e' : 'var(--text-muted)' }}>({c.phone}) - {servicedIds.has(c.id) ? 'La Adeegay' : 'Hadhay'}</span>
                        </label>
                      ))}
                    </div>
@@ -634,18 +861,39 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                                 <Navigation size={20} />
                               </a>
                            )}
-                           <button 
-                             onClick={() => toggleCustomerCollection(c.id, c.collected)}
-                             style={{ 
-                               padding: '0 1.5rem', height: '44px', borderRadius: '14px', border: 'none', 
-                               backgroundColor: c.collected ? '#3FAE2A' : '#64748b', color: 'white',
-                               fontWeight: 900, fontSize: '0.9rem', cursor: 'pointer', transition: '0.2s',
-                               display: 'flex', alignItems: 'center', gap: '10px'
-                             }}
-                           >
-                             {c.collected ? 'Collected' : 'Collect Fee'}
-                           </button>
-                           <button 
+                           {c.collected ? (
+                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                               <span style={{
+                                 padding: '0 1.25rem', height: '44px', borderRadius: '14px',
+                                 backgroundColor: '#3FAE2A', color: 'white',
+                                 fontWeight: 900, fontSize: '0.9rem',
+                                 display: 'flex', alignItems: 'center', gap: '8px'
+                               }}>
+                                 <CheckCircle2 size={18} /> La Adeegay
+                               </span>
+                               <button
+                                 onClick={() => undoServiced(c.id)}
+                                 style={{ border: 'none', background: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
+                               >
+                                 Ka noqo (Undo)
+                               </button>
+                             </div>
+                           ) : (
+                             <button
+                               onClick={() => handleMarkServiced(c.id)}
+                               disabled={markingServiceId === c.id}
+                               title="Qashinka waa la qaaday - Cashier Office ayaa gadaal ka bixin doona"
+                               style={{
+                                 padding: '0 1.5rem', height: '44px', borderRadius: '14px', border: 'none',
+                                 backgroundColor: 'var(--gurmad-green)', color: 'white',
+                                 fontWeight: 900, fontSize: '0.9rem', cursor: markingServiceId === c.id ? 'wait' : 'pointer', transition: '0.2s',
+                                 display: 'flex', alignItems: 'center', gap: '10px'
+                               }}
+                             >
+                               <PackageCheck size={18} /> {markingServiceId === c.id ? '...' : 'Adeeg Kaliya (Qashinka waa la qaaday)'}
+                             </button>
+                           )}
+                           <button
                              onClick={() => captureGPS(c.id)}
                              style={{ width: '44px', height: '44px', borderRadius: '14px', border: '1px solid #e2e8f0', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', transition: '0.2s' }}
                            >
@@ -875,7 +1123,9 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
       </div>
         </div>
       )}
-      {collectionModal && (
+      </>
+      )}
+      {paymentModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
@@ -883,40 +1133,30 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
           zIndex: 1000, backdropFilter: 'blur(4px)'
         }}>
           <div className="card glass" style={{ width: '400px', animation: 'slideIn 0.3s ease-out' }}>
-            <h3 style={{ fontWeight: 700, marginBottom: '1.5rem' }}>House: {collectionModal.name}</h3>
-            <form onSubmit={handleCollectionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              
-              <div style={{ display: 'flex', gap: '1rem', backgroundColor: '#f8fafc', padding: '1rem', borderRadius: '8px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600 }}>
-                  <input type="radio" checked={payForm.isPaid} onChange={() => setPayForm({...payForm, isPaid: true})} />
-                  Paid Now
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontWeight: 600 }}>
-                  <input type="radio" checked={!payForm.isPaid} onChange={() => setPayForm({...payForm, isPaid: false})} />
-                  Did NOT Pay (Add Debt)
-                </label>
+            <h3 style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Xaqiiji Lacag: {paymentModal.name}</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+              La adeegay: {paymentModal.collected_at ? new Date(paymentModal.collected_at).toLocaleDateString() : '—'} • {paymentModal.collector_name || '—'}
+            </p>
+            <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Amount</label>
+                <input required type="number" step="0.01" value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none' }} />
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Amount</label>
-                <input required type="number" step="0.01" value={payForm.amount} onChange={e => setPayForm({...payForm, amount: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none' }} />
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Payment Method</label>
+                <select value={paymentForm.method} onChange={e => setPaymentForm({...paymentForm, method: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', backgroundColor: '#fff' }}>
+                  <option value="Cash">Cash</option>
+                  <option value="ZAAD">ZAAD</option>
+                  <option value="eDahab">eDahab</option>
+                  <option value="SLSH">SLSH</option>
+                </select>
               </div>
 
-              {payForm.isPaid && (
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Payment Method</label>
-                  <select value={payForm.method} onChange={e => setPayForm({...payForm, method: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', backgroundColor: '#fff' }}>
-                    <option value="Cash">Cash</option>
-                    <option value="ZAAD">ZAAD</option>
-                    <option value="eDahab">eDahab</option>
-                  </select>
-                </div>
-              )}
-
               <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setCollectionModal(null)} style={{ padding: '0.75rem.5rem', fontWeight: 600, color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" className="btn-primary" style={{ backgroundColor: payForm.isPaid ? 'var(--gurmad-green)' : 'var(--gurmad-orange)' }}>
-                  {payForm.isPaid ? 'Record Payment & Collect' : 'Record Debt & Collect'}
+                <button type="button" onClick={() => setPaymentModal(null)} style={{ padding: '0.75rem 1.5rem', fontWeight: 600, color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={isSavingPayment}>
+                  {isSavingPayment ? 'Saving...' : 'Xaqiiji Lacag'}
                 </button>
               </div>
             </form>

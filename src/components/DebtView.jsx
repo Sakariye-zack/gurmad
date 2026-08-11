@@ -295,7 +295,7 @@ const DebtView = ({ searchQuery = '' }) => {
                     </td>
                     <td style={{ padding: '1.25rem 1rem' }}>
                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                         {debt.house_no ? `H: ${debt.house_no}` : ''}
+                         {debt.house_no ? `C: ${String(debt.house_no).replace(/^[hc]-?/i, '')}` : ''}
                          {debt.neighborhood ? ` ${debt.neighborhood}` : ''}
                          {!debt.house_no && !debt.neighborhood && '-'}
                        </div>

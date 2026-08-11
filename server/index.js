@@ -16,13 +16,34 @@ const jwt = require('jsonwebtoken');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'gurmad-super-secret-key-2026';
+if (!process.env.JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET is not set. Refusing to start with an insecure fallback secret.');
+  process.exit(1);
+}
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// Comma-separated list of allowed frontend origins, e.g. "https://gurmadwaste.com,https://gurmad.vercel.app"
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser requests (no Origin header, e.g. curl/mobile) and any configured origin
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST", "PUT", "DELETE"]
   }
 });
@@ -33,7 +54,7 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet({
   crossOriginResourcePolicy: false, // allow images to be loaded cross-origin
 }));
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Rate Limiting for Login
@@ -127,10 +148,59 @@ const runMigrations = async () => {
       );
     `);
 
+    // Cashier Assignments (which zone/group a cashier collects money for)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS cashier_assignments (
+        id SERIAL PRIMARY KEY,
+        zone_group VARCHAR(50),
+        cashier_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        zone_id_str VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Add missing columns to tasks table
     await db.query(`
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS zone_id INTEGER;
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS truck_id INTEGER;
+    `);
+
+    // Track which cashier actually processed each invoice (separate from which collector's customer it was)
+    await db.query(`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cashier_id INTEGER REFERENCES users(id);
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cashier_name VARCHAR(100);
+    `);
+
+    // Gudoomiye (zone chairman) support: a user with role='gudoomiye' is scoped to one zone
+    await db.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS zone VARCHAR(100);
+    `);
+
+    // Collector who registered a customer + when (traceability)
+    await db.query(`
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS registered_by INTEGER REFERENCES users(id);
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    `);
+
+    // True 1-to-1 cashier <-> collector pairing (in addition to the existing zone-level cashier_assignments)
+    await db.query(`
+      ALTER TABLE cashier_assignments ADD COLUMN IF NOT EXISTS collector_id INTEGER REFERENCES employees(id) ON DELETE CASCADE;
+    `);
+
+    // Cashout now records which zone/gudoomiye finalized it
+    await db.query(`
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS zone VARCHAR(100);
+    `);
+
+    // Track exactly when a customer was serviced (independent of payment)
+    await db.query(`
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS collected_at TIMESTAMP;
+    `);
+
+    // Track exactly where the collector was standing when they marked a customer serviced
+    await db.query(`
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS collected_lat DECIMAL(10, 8);
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS collected_lng DECIMAL(11, 8);
     `);
 
     console.log('Database migrations completed successfully');
@@ -166,7 +236,14 @@ const fileFilter = (req, file, cb) => {
 };
 const upload = multer({ storage: storage, fileFilter: fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
-// Expose uploads directory to frontend
+// Expose uploads directory to frontend.
+// KNOWN RESIDUAL RISK: this stays unauthenticated because ~15 frontend components load
+// these files via plain <img src="/api/uploads/...">, which cannot send an Authorization
+// header. Filenames are unguessable (timestamp+random), but anyone with a filename can
+// still fetch it with no login. The one concretely-proven leak (full DB backups) was
+// removed by no longer writing backups into this folder at all (see /api/admin/backup).
+// Fully closing this for ID documents/guarantor photos/attendance selfies needs a proper
+// signed-URL or authenticated-image-proxy redesign — tracked as follow-up work, not done here.
 app.use('/api/uploads', express.static(uploadDir));
 app.use('/uploads', express.static(uploadDir));
 
@@ -256,7 +333,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       }
 
       const jwtToken = jwt.sign(
-        { id: user.id, username: user.username, role: user.role },
+        { id: user.id, username: user.username, role: user.role, zone: user.zone },
         JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -287,7 +364,7 @@ app.post('/api/auth/login/verify-2fa', loginLimiter, async (req, res) => {
 
     if (verified) {
       const jwtToken = jwt.sign(
-        { id: user.id, username: user.username, role: user.role },
+        { id: user.id, username: user.username, role: user.role, zone: user.zone },
         JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -345,7 +422,7 @@ app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_i
 });
 
 // --- User Management ---
-app.get('/api/users', checkRole(['admin']), async (req, res) => {
+app.get('/api/users', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query('SELECT id, username, full_name, role, profile_image, two_factor_enabled, created_at, is_active FROM users ORDER BY created_at DESC');
     res.json(result.rows);
@@ -355,13 +432,13 @@ app.get('/api/users', checkRole(['admin']), async (req, res) => {
 });
 
 app.post('/api/users', checkRole(['admin']), async (req, res) => {
-  const { username, password, full_name, role } = req.body;
+  const { username, password, full_name, role, zone } = req.body;
   try {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const result = await db.query(
-      'INSERT INTO users (username, password, full_name, role) VALUES ($1, $2, $3, $4) RETURNING id, username, full_name, role, created_at, is_active',
-      [username, hashedPassword, full_name, role]
+      'INSERT INTO users (username, password, full_name, role, zone) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, full_name, role, zone, created_at, is_active',
+      [username, hashedPassword, full_name, role, zone || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -402,6 +479,20 @@ app.post('/api/users/:id/full-reset', checkRole(['admin']), async (req, res) => 
   }
 });
 
+app.put('/api/users/:id', checkRole(['admin']), async (req, res) => {
+  const { full_name, role, zone } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE users SET full_name = COALESCE($1, full_name), role = COALESCE($2, role), zone = $3 WHERE id = $4 RETURNING id, username, full_name, role, zone',
+      [full_name || null, role || null, zone || null, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/users/:id/toggle-status', checkRole(['admin']), async (req, res) => {
   try {
     const user = await db.query('SELECT is_active FROM users WHERE id = $1', [req.params.id]);
@@ -415,7 +506,7 @@ app.put('/api/users/:id/toggle-status', checkRole(['admin']), async (req, res) =
 });
 
 // Generic Upload for Landing Page & Assets
-app.post('/api/upload', upload.single('image'), (req, res) => {
+app.post('/api/upload', checkRole(['admin', 'cashier', 'collector']), upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -427,14 +518,16 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 });
 
 // --- Customers ---
-app.get('/api/customers', async (req, res) => {
+app.get('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
+    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
     const result = await db.query(`
-      SELECT c.*, e.name as collector_name 
+      SELECT c.*, e.name as collector_name
       FROM customers c
       LEFT JOIN employees e ON c.collector_id = e.id
+      ${isGudoomiye ? 'WHERE c.zone = $1' : ''}
       ORDER BY c.route_order ASC NULLS LAST, c.created_at DESC
-    `);
+    `, isGudoomiye ? [req.user.zone] : []);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -442,29 +535,42 @@ app.get('/api/customers', async (req, res) => {
 });
 
 
-app.post('/api/customers', async (req, res) => {
+app.post('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const b = req.body;
     const safeNull = (v) => (v === '' || v === undefined ? null : v);
     const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10) || null);
     const safeNum = (v) => (v === '' || v === undefined || v === null ? null : parseFloat(v) || null);
 
+    // A collector cannot pick a different zone than their own - it is auto-attached and traced.
+    let zoneValue = safeNull(b.zone);
+    if (req.user.role.toLowerCase() === 'collector') {
+      const userRow = await db.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+      const fullName = userRow.rows[0]?.full_name;
+      const assignment = await db.query(
+        `SELECT ca.zone_group FROM collector_assignments ca JOIN employees e ON ca.collector_id = e.id WHERE e.name ILIKE $1 LIMIT 1`,
+        [fullName]
+      );
+      zoneValue = assignment.rows[0]?.zone_group || zoneValue;
+    }
+
     const result = await db.query(
-      `INSERT INTO customers 
-        (name, phone, house_no, street, area, lat, lng, whatsapp, neighborhood, zone, category, fee, 
-         collector_id, route_order, collection_frequency, collection_mode, payment_status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) 
+      `INSERT INTO customers
+        (name, phone, house_no, street, area, lat, lng, whatsapp, neighborhood, zone, category, fee,
+         collector_id, route_order, collection_frequency, collection_mode, payment_status, registered_by, registered_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
        RETURNING *`,
       [
         safeNull(b.name), safeNull(b.phone), safeNull(b.house_no), safeNull(b.street), safeNull(b.area),
         safeNum(b.lat), safeNum(b.lng),
-        safeNull(b.whatsapp), safeNull(b.neighborhood), safeNull(b.zone),
+        safeNull(b.whatsapp), safeNull(b.neighborhood), zoneValue,
         b.category || 'Guri', safeNum(b.fee) || 10,
         safeInt(b.collector_id),
         safeInt(b.route_order),
         b.collection_frequency || 'Weekly',
         b.collection_mode || 'Monthly',
-        b.payment_status || 'Unpaid'
+        b.payment_status || 'Unpaid',
+        req.user.id
       ]
     );
     await logAudit(req, 'CREATE', 'customers', result.rows[0].id, null, result.rows[0]);
@@ -476,7 +582,43 @@ app.post('/api/customers', async (req, res) => {
 });
 
 
-app.put('/api/customers/:id', async (req, res) => {
+// One-time bulk import of already-existing customers (spreadsheet/CSV upload), each tagged Household or Business
+app.post('/api/customers/bulk-import', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  const { customers } = req.body;
+  if (!Array.isArray(customers) || customers.length === 0) {
+    return res.status(400).json({ error: 'customers must be a non-empty array' });
+  }
+  const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+
+  let created = 0;
+  const errors = [];
+  for (let i = 0; i < customers.length; i++) {
+    const b = customers[i];
+    try {
+      if (!b.name || !b.phone) {
+        errors.push({ row: i + 1, error: 'name and phone are required' });
+        continue;
+      }
+      const category = (b.category || '').toLowerCase().startsWith('bus') || (b.category || '').toLowerCase() === 'meherad'
+        ? 'Meherad' : 'Guri';
+      const zone = isGudoomiye ? req.user.zone : (b.zone || null);
+
+      await db.query(
+        `INSERT INTO customers
+          (name, phone, house_no, street, area, zone, category, fee, payment_status, registered_by, registered_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Unpaid', $9, NOW())`,
+        [b.name, b.phone, b.house_no || null, b.street || null, b.area || null, zone, category, parseFloat(b.fee) || 10, req.user.id]
+      );
+      created++;
+    } catch (err) {
+      errors.push({ row: i + 1, error: err.message });
+    }
+  }
+
+  res.json({ success: true, created, failed: errors.length, errors });
+});
+
+app.put('/api/customers/:id', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   try {
     const b = req.body;
     // Sanitize: convert empty strings to null, parse numbers properly
@@ -517,7 +659,7 @@ app.put('/api/customers/:id', async (req, res) => {
 });
 
 
-app.delete('/api/customers/:id', async (req, res) => {
+app.delete('/api/customers/:id', checkRole(['admin']), async (req, res) => {
   try {
     const oldRow = await db.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
     const result = await db.query('DELETE FROM customers WHERE id = $1 RETURNING *', [req.params.id]);
@@ -529,31 +671,32 @@ app.delete('/api/customers/:id', async (req, res) => {
 });
 
 // --- Invoices ---
-app.get('/api/invoices/stats', async (req, res) => {
+app.get('/api/invoices/stats', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
     const stats = await db.query(`
-      SELECT 
+      SELECT
         SUM(amount) as total_usd,
         SUM(slsh_amount) as total_slsh,
         SUM(debt_amount) as total_debt,
-        SUM(discount_amount) as total_discount,
-        COUNT(DISTINCT truck_name) as active_trucks
-      FROM invoices 
+        SUM(discount_amount) as total_discount
+      FROM invoices
       WHERE created_at::date = CURRENT_DATE
     `);
-    res.json(stats.rows[0] || {
+    const trucksRes = await db.query(`SELECT COUNT(*) as active_trucks FROM trucks WHERE status = 'Active'`);
+    res.json({
       total_usd: 0,
       total_slsh: 0,
       total_debt: 0,
       total_discount: 0,
-      active_trucks: 0
+      ...stats.rows[0],
+      active_trucks: parseInt(trucksRes.rows[0].active_trucks || 0)
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/api/invoices', async (req, res) => {
+app.get('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT 
@@ -574,21 +717,34 @@ app.get('/api/invoices', async (req, res) => {
   }
 });
 
-app.post('/api/invoices', async (req, res) => {
+app.post('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   const { customer_id, phone, splitPayments, currency, collector_name, truck_name, zone, house_no, discount_amount = 0 } = req.body;
   const { cash = 0, zaad = 0, edahab = 0, debt = 0, slsh = 0 } = splitPayments || {};
+
+  const amountFields = { cash, zaad, edahab, debt, slsh, discount_amount };
+  for (const [key, val] of Object.entries(amountFields)) {
+    const n = parseFloat(val);
+    if (val !== undefined && val !== null && (isNaN(n) || n < 0)) {
+      return res.status(400).json({ error: `Invalid amount for ${key}: must be a non-negative number` });
+    }
+  }
 
   try {
     // Fetch exchange rate for total calculation
     const rateResult = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'exchange_rate'");
     const exchangeRate = parseFloat(rateResult.rows[0]?.setting_value?.replace(/,/g, '')) || 11000;
 
-    const totalAmount = parseFloat(cash) +
+    const grossAmount = parseFloat(cash) +
       parseFloat(zaad) +
       parseFloat(edahab) +
       parseFloat(debt) +
-      (parseFloat(slsh) / exchangeRate) -
-      parseFloat(discount_amount);
+      (parseFloat(slsh) / exchangeRate);
+
+    if (parseFloat(discount_amount) > grossAmount) {
+      return res.status(400).json({ error: 'Discount amount cannot exceed the total invoice amount' });
+    }
+
+    const totalAmount = grossAmount - parseFloat(discount_amount);
 
     let customerId = customer_id;
     let customerNameFromReq = req.body.customer_name || 'New Walk-in Customer';
@@ -611,10 +767,13 @@ app.post('/api/invoices', async (req, res) => {
     const invoiceStatus = (parseFloat(debt) > 0) ? 'Unpaid' : 'Paid';
     const mainMethod = parseFloat(zaad) > 0 ? 'ZAAD' : (parseFloat(edahab) > 0 ? 'eDahab' : (parseFloat(cash) > 0 ? 'Cash' : (parseFloat(slsh) > 0 ? 'SLSH' : 'Debt')));
 
+    const cashierRes = await db.query('SELECT full_name, username FROM users WHERE id = $1', [req.user.id]);
+    const cashierDisplayName = cashierRes.rows[0]?.full_name || cashierRes.rows[0]?.username || req.user.username;
+
     const result = await db.query(
-      `INSERT INTO invoices 
-        (customer_id, amount, currency, status, payment_method, collector_name, cash_amount, zaad_amount, edahab_amount, debt_amount, is_split, truck_name, invoice_zone, invoice_house_no, slsh_amount, discount_amount) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) 
+      `INSERT INTO invoices
+        (customer_id, amount, currency, status, payment_method, collector_name, cash_amount, zaad_amount, edahab_amount, debt_amount, is_split, truck_name, invoice_zone, invoice_house_no, slsh_amount, discount_amount, cashier_id, cashier_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        RETURNING *`,
       [
         customerId,
@@ -629,7 +788,9 @@ app.post('/api/invoices', async (req, res) => {
         zone || null,
         house_no || null,
         slsh,
-        discount_amount
+        discount_amount,
+        req.user.id,
+        cashierDisplayName
       ]
     );
 
@@ -662,10 +823,12 @@ app.post('/api/invoices', async (req, res) => {
 });
 
 // --- Collector Assignments ---
-app.get('/api/collector-assignments', async (req, res) => {
+app.get('/api/collector-assignments', checkRole(['admin', 'gudoomiye']), async (req, res) => {
   try {
+    const zoneFilter = req.user.role.toLowerCase() === 'gudoomiye' ? 'WHERE ca.zone_group = $1' : '';
+    const params = req.user.role.toLowerCase() === 'gudoomiye' ? [req.user.zone] : [];
     const result = await db.query(`
-      SELECT 
+      SELECT
         ca.id,
         ca.zone_group,
         ca.collector_id,
@@ -679,23 +842,27 @@ app.get('/api/collector-assignments', async (req, res) => {
       FROM collector_assignments ca
       LEFT JOIN employees e ON ca.collector_id = e.id
       LEFT JOIN trucks t ON ca.truck_id = t.id
+      ${zoneFilter}
       ORDER BY ca.zone_group ASC, ca.id ASC
-    `);
+    `, params);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/collector-assignments', async (req, res) => {
+app.post('/api/collector-assignments', checkRole(['admin', 'gudoomiye']), async (req, res) => {
   const { zone_group, collector_id, collector_code, zone_id_str, truck_id } = req.body;
+  if (req.user.role.toLowerCase() === 'gudoomiye' && zone_group !== req.user.zone) {
+    return res.status(403).json({ error: 'A Gudoomiye can only dispatch collectors within their own zone' });
+  }
   try {
     const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10));
-    
+
     const result = await db.query(
-      `INSERT INTO collector_assignments 
-        (zone_group, collector_id, collector_code, zone_id_str, truck_id) 
-       VALUES ($1, $2, $3, $4, $5) 
+      `INSERT INTO collector_assignments
+        (zone_group, collector_id, collector_code, zone_id_str, truck_id)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [zone_group, safeInt(collector_id), collector_code, zone_id_str, safeInt(truck_id)]
     );
@@ -705,9 +872,12 @@ app.post('/api/collector-assignments', async (req, res) => {
   }
 });
 
-app.put('/api/collector-assignments/:id', async (req, res) => {
+app.put('/api/collector-assignments/:id', checkRole(['admin', 'gudoomiye']), async (req, res) => {
   const { id } = req.params;
   const { zone_group, collector_id, collector_code, zone_id_str, truck_id } = req.body;
+  if (req.user.role.toLowerCase() === 'gudoomiye' && zone_group !== req.user.zone) {
+    return res.status(403).json({ error: 'A Gudoomiye can only dispatch collectors within their own zone' });
+  }
   try {
     const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10));
 
@@ -723,7 +893,7 @@ app.put('/api/collector-assignments/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/collector-assignments/:id', async (req, res) => {
+app.delete('/api/collector-assignments/:id', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('DELETE FROM collector_assignments WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
@@ -732,8 +902,151 @@ app.delete('/api/collector-assignments/:id', async (req, res) => {
   }
 });
 
+// --- Cashier Assignments (which zone/group a cashier collects money for) ---
+app.get('/api/cashier-assignments', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  try {
+    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const result = await db.query(`
+      SELECT
+        ca.id,
+        ca.zone_group,
+        ca.cashier_id,
+        u.full_name as cashier_name,
+        ca.collector_id,
+        e.name as collector_name,
+        ca.zone_id_str,
+        (SELECT COUNT(*) FROM customers c WHERE c.collector_id = ca.collector_id) as total_customers,
+        (SELECT COUNT(*) FROM customers c WHERE c.collector_id = ca.collector_id AND c.status = 'Paid') as total_paid
+      FROM cashier_assignments ca
+      LEFT JOIN users u ON ca.cashier_id = u.id
+      LEFT JOIN employees e ON ca.collector_id = e.id
+      ${isGudoomiye ? 'WHERE ca.zone_group = $1' : ''}
+      ORDER BY ca.zone_group ASC, ca.id ASC
+    `, isGudoomiye ? [req.user.zone] : []);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cashier-assignments', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  const { zone_group, cashier_id, collector_id, zone_id_str } = req.body;
+  if (req.user.role.toLowerCase() === 'gudoomiye' && zone_group !== req.user.zone) {
+    return res.status(403).json({ error: 'A Gudoomiye can only pair cashiers within their own zone' });
+  }
+  try {
+    const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10));
+
+    const result = await db.query(
+      `INSERT INTO cashier_assignments
+        (zone_group, cashier_id, collector_id, zone_id_str)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [zone_group, safeInt(cashier_id), safeInt(collector_id), zone_id_str]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/cashier-assignments/:id', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  const { id } = req.params;
+  const { zone_group, cashier_id, collector_id, zone_id_str } = req.body;
+  if (req.user.role.toLowerCase() === 'gudoomiye' && zone_group !== req.user.zone) {
+    return res.status(403).json({ error: 'A Gudoomiye can only pair cashiers within their own zone' });
+  }
+  try {
+    const safeInt = (v) => (v === '' || v === undefined || v === null ? null : parseInt(v, 10));
+
+    const result = await db.query(
+      `UPDATE cashier_assignments SET
+        zone_group = $1, cashier_id = $2, collector_id = $3, zone_id_str = $4
+       WHERE id = $5 RETURNING *`,
+      [zone_group, safeInt(cashier_id), safeInt(collector_id), zone_id_str, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/cashier-assignments/:id', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM cashier_assignments WHERE id = $1 RETURNING *', [req.params.id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The customers a cashier's paired collector(s) serve - so the cashier knows who to go collect money from
+// Given a list of collector names, find their in-progress/today's task(s) and the customer list on those tasks
+const getTodayRouteForCollectors = async (collectorNames) => {
+  if (!collectorNames || collectorNames.length === 0) return { tasks: [], customers: [] };
+
+  const tasksRes = await db.query(
+    `SELECT id, collector_name, route_name, status
+     FROM tasks
+     WHERE LOWER(collector_name) = ANY($1::text[]) AND DATE(scheduled_at) = CURRENT_DATE
+     ORDER BY id DESC`,
+    [collectorNames.map(n => n.toLowerCase())]
+  );
+  if (tasksRes.rows.length === 0) return { tasks: [], customers: [] };
+
+  const taskIds = tasksRes.rows.map(t => t.id);
+  const taskCollectorMap = Object.fromEntries(tasksRes.rows.map(t => [t.id, t.collector_name]));
+
+  const customersRes = await db.query(
+    `SELECT c.*, tc.collected, tc.collected_at, tc.collected_lat, tc.collected_lng, tc.task_id
+     FROM task_customers tc
+     JOIN customers c ON tc.customer_id = c.id
+     WHERE tc.task_id = ANY($1::int[])
+     ORDER BY c.route_order ASC NULLS LAST, c.name ASC`,
+    [taskIds]
+  );
+
+  const customers = customersRes.rows.map(c => ({ ...c, collector_name: taskCollectorMap[c.task_id] }));
+  return { tasks: tasksRes.rows, customers };
+};
+
+// A collector's own list of customers on today's route, so they can go collect the garbage one by one
+app.get('/api/collector/my-today-route', checkRole(['admin', 'collector']), async (req, res) => {
+  try {
+    const userRes = await db.query('SELECT full_name, username FROM users WHERE id = $1', [req.user.id]);
+    const myName = userRes.rows[0]?.full_name || userRes.rows[0]?.username;
+    const result = await getTodayRouteForCollectors([myName]);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The customers the cashier's paired collector is working on today, so the cashier knows who to go collect money from
+app.get('/api/cashier/my-collector-customers', checkRole(['admin', 'cashier']), async (req, res) => {
+  try {
+    const pairings = await db.query(
+      `SELECT ca.collector_id, e.name as collector_name
+       FROM cashier_assignments ca
+       LEFT JOIN employees e ON ca.collector_id = e.id
+       WHERE ca.cashier_id = $1 AND ca.collector_id IS NOT NULL`,
+      [req.user.id]
+    );
+
+    if (pairings.rows.length === 0) {
+      return res.json({ collectors: [], tasks: [], customers: [] });
+    }
+
+    const collectorNames = pairings.rows.map(p => p.collector_name).filter(Boolean);
+    const result = await getTodayRouteForCollectors(collectorNames);
+    res.json({ collectors: pairings.rows, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Expenses ---
-app.get('/api/expenses', async (req, res) => {
+app.get('/api/expenses', checkRole(['admin', 'cashier']), async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM expenses ORDER BY expense_date DESC');
     res.json(result.rows);
@@ -742,7 +1055,7 @@ app.get('/api/expenses', async (req, res) => {
   }
 });
 
-app.post('/api/expenses', upload.single('invoice_image'), async (req, res) => {
+app.post('/api/expenses', checkRole(['admin', 'cashier']), upload.single('invoice_image'), async (req, res) => {
   const { category, description, amount, reference_no } = req.body;
   const invoice_image = req.file ? req.file.filename : null;
 
@@ -758,7 +1071,7 @@ app.post('/api/expenses', upload.single('invoice_image'), async (req, res) => {
 });
 
 // --- Tasks ---
-app.get('/api/tasks', async (req, res) => {
+app.get('/api/tasks', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT t.*, lh.lat, lh.lng 
@@ -778,7 +1091,7 @@ app.get('/api/tasks', async (req, res) => {
   }
 });
 
-app.post('/api/tasks', async (req, res) => {
+app.post('/api/tasks', checkRole(['admin', 'collector']), async (req, res) => {
   const { driver_name, collector_name, vehicle_plate, route_name, customer_ids, zone_id, truck_id } = req.body;
   try {
     const result = await db.query(
@@ -821,7 +1134,7 @@ app.post('/api/tasks', async (req, res) => {
   }
 });
 
-app.get('/api/tasks/:id/customers', async (req, res) => {
+app.get('/api/tasks/:id/customers', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(
@@ -838,13 +1151,13 @@ app.get('/api/tasks/:id/customers', async (req, res) => {
   }
 });
 
-app.put('/api/tasks/:taskId/customers/:customerId', async (req, res) => {
+app.put('/api/tasks/:taskId/customers/:customerId', checkRole(['admin', 'collector']), async (req, res) => {
   const { taskId, customerId } = req.params;
   const { collected } = req.body;
   try {
     await db.query(
-      `UPDATE task_customers SET collected = $1 WHERE task_id = $2 AND customer_id = $3`,
-      [collected, taskId, customerId]
+      `UPDATE task_customers SET collected = $1, collected_at = $2 WHERE task_id = $3 AND customer_id = $4`,
+      [collected, collected ? new Date() : null, taskId, customerId]
     );
 
     if (collected) {
@@ -876,7 +1189,71 @@ app.put('/api/tasks/:taskId/customers/:customerId', async (req, res) => {
   }
 });
 
-app.put('/api/tasks/:id/status', async (req, res) => {
+// Mark a customer as serviced (waste picked up) WITHOUT touching payment/status.
+// Used by collectors who don't handle money - the cashier bills these later.
+app.post('/api/tasks/:taskId/customers/:customerId/service', checkRole(['admin', 'collector']), async (req, res) => {
+  const { taskId, customerId } = req.params;
+  const { lat, lng } = req.body || {};
+  try {
+    const result = await db.query(
+      `UPDATE task_customers SET collected = true, collected_at = NOW(), collected_lat = $3, collected_lng = $4 WHERE task_id = $1 AND customer_id = $2 RETURNING *`,
+      [taskId, customerId, lat || null, lng || null]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Task/customer link not found' });
+    }
+
+    io.emit('customer_status_updated', { customerId: parseInt(customerId), serviced: true });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Work log: which customers were serviced by which collector, on which date.
+// Filters are all optional so it can power both the cashier follow-up report
+// and the "already serviced this cycle" check used when splitting a zone across days.
+app.get('/api/reports/service-log', checkRole(['admin']), async (req, res) => {
+  const { collector, zone, from, to } = req.query;
+  try {
+    const conditions = ['tc.collected = true'];
+    const params = [];
+
+    if (collector) {
+      params.push(`%${collector}%`);
+      conditions.push(`(t.collector_name ILIKE $${params.length} OR t.driver_name ILIKE $${params.length})`);
+    }
+    if (zone) {
+      params.push(zone);
+      conditions.push(`t.route_name = $${params.length}`);
+    }
+    if (from) {
+      params.push(from);
+      conditions.push(`tc.collected_at >= $${params.length}::date`);
+    }
+    if (to) {
+      params.push(to);
+      conditions.push(`tc.collected_at < ($${params.length}::date + INTERVAL '1 day')`);
+    }
+
+    const result = await db.query(
+      `SELECT c.id AS customer_id, c.name, c.phone, c.house_no, c.area, c.zone,
+              c.status AS payment_status, tc.collected_at,
+              t.id AS task_id, t.collector_name, t.driver_name, t.route_name
+       FROM task_customers tc
+       JOIN tasks t ON t.id = tc.task_id
+       JOIN customers c ON c.id = tc.customer_id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY tc.collected_at DESC`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tasks/:id/status', checkRole(['admin', 'collector']), async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   try {
@@ -900,7 +1277,7 @@ app.put('/api/tasks/:id/status', async (req, res) => {
   }
 });
 
-app.get('/api/tasks/:id/history', async (req, res) => {
+app.get('/api/tasks/:id/history', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   try {
     const result = await db.query(
       'SELECT lat, lng, created_at FROM truck_location_history WHERE task_id = $1 ORDER BY created_at ASC',
@@ -912,9 +1289,20 @@ app.get('/api/tasks/:id/history', async (req, res) => {
   }
 });
 
-app.post('/api/tasks/:id/ping', async (req, res) => {
+app.post('/api/tasks/:id/ping', checkRole(['admin', 'collector']), async (req, res) => {
   const { lat, lng } = req.body;
   try {
+    // A collector can only report GPS for a task actually assigned to them
+    if (req.user.role.toLowerCase() === 'collector') {
+      const taskRes = await db.query('SELECT collector_name FROM tasks WHERE id = $1', [req.params.id]);
+      if (taskRes.rows.length === 0) return res.status(404).json({ error: 'Task not found' });
+      const userRes = await db.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+      const myName = (userRes.rows[0]?.full_name || '').toLowerCase();
+      if ((taskRes.rows[0].collector_name || '').toLowerCase() !== myName) {
+        return res.status(403).json({ error: 'You are not the collector assigned to this task' });
+      }
+    }
+
     const result = await db.query(
       'INSERT INTO truck_location_history (task_id, lat, lng) VALUES ($1, $2, $3) RETURNING *',
       [req.params.id, lat, lng]
@@ -934,7 +1322,7 @@ app.post('/api/tasks/:id/ping', async (req, res) => {
   }
 });
 
-app.delete('/api/tasks/:id', async (req, res) => {
+app.delete('/api/tasks/:id', checkRole(['admin']), async (req, res) => {
   try {
     const { id } = req.params;
     const oldRow = await db.query('SELECT * FROM tasks WHERE id = $1', [id]);
@@ -950,7 +1338,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
 });
 
 // --- Trucks ---
-app.get('/api/trucks', async (req, res) => {
+app.get('/api/trucks', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT t.*, 
@@ -967,7 +1355,7 @@ app.get('/api/trucks', async (req, res) => {
   }
 });
 
-app.post('/api/trucks', async (req, res) => {
+app.post('/api/trucks', checkRole(['admin']), async (req, res) => {
   const { plate_number, model, driver_id, collector_id } = req.body;
   try {
     const result = await db.query(
@@ -981,7 +1369,7 @@ app.post('/api/trucks', async (req, res) => {
   }
 });
 
-app.put('/api/trucks/:id', async (req, res) => {
+app.put('/api/trucks/:id', checkRole(['admin']), async (req, res) => {
   try {
     const { plate_number, model, status, driver_id, collector_id } = req.body;
     const oldRow = await db.query('SELECT * FROM trucks WHERE id = $1', [req.params.id]);
@@ -997,7 +1385,7 @@ app.put('/api/trucks/:id', async (req, res) => {
 });
 
 
-app.delete('/api/trucks/:id', async (req, res) => {
+app.delete('/api/trucks/:id', checkRole(['admin']), async (req, res) => {
   try {
     const oldRow = await db.query('SELECT * FROM trucks WHERE id = $1', [req.params.id]);
     const result = await db.query('DELETE FROM trucks WHERE id = $1 RETURNING *', [req.params.id]);
@@ -1009,7 +1397,7 @@ app.delete('/api/trucks/:id', async (req, res) => {
 });
 
 // --- Zones ---
-app.get('/api/zones', async (req, res) => {
+app.get('/api/zones', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT z.*, 
@@ -1028,12 +1416,12 @@ app.get('/api/zones', async (req, res) => {
   }
 });
 
-app.post('/api/zones', async (req, res) => {
+app.post('/api/zones', checkRole(['admin']), async (req, res) => {
   const { name, truck_id, collection_days, collection_time, coordinates, area, neighborhood, zone_code, sub_zone } = req.body;
   try {
     const result = await db.query(
       'INSERT INTO zones (name, truck_id, collection_days, collection_time, coordinates, area, neighborhood, zone_code, sub_zone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [name, truck_id || null, collection_days, collection_time, coordinates ? JSON.stringify(coordinates) : null, area || null, neighborhood || null, zone_code || null, sub_zone || null]
+      [name, truck_id || null, collection_days ? JSON.stringify(collection_days) : null, collection_time, coordinates ? JSON.stringify(coordinates) : null, area || null, neighborhood || null, zone_code || null, sub_zone || null]
     );
     await logAudit(req, 'CREATE', 'zones', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
@@ -1043,13 +1431,13 @@ app.post('/api/zones', async (req, res) => {
 });
 
 
-app.put('/api/zones/:id', async (req, res) => {
+app.put('/api/zones/:id', checkRole(['admin']), async (req, res) => {
   try {
     const { name, truck_id, collection_days, collection_time, coordinates, area, neighborhood, zone_code, sub_zone } = req.body;
     const oldRow = await db.query('SELECT * FROM zones WHERE id = $1', [req.params.id]);
     const result = await db.query(
       'UPDATE zones SET name = $1, truck_id = $2, collection_days = $3, collection_time = $4, coordinates = COALESCE($5, coordinates), area = $6, neighborhood = $7, zone_code = $8, sub_zone = $9 WHERE id = $10 RETURNING *',
-      [name, truck_id || null, collection_days, collection_time, coordinates ? JSON.stringify(coordinates) : null, area || null, neighborhood || null, zone_code, sub_zone, req.params.id]
+      [name, truck_id || null, collection_days ? JSON.stringify(collection_days) : null, collection_time, coordinates ? JSON.stringify(coordinates) : null, area || null, neighborhood || null, zone_code, sub_zone, req.params.id]
     );
     await logAudit(req, 'UPDATE', 'zones', req.params.id, oldRow.rows[0], result.rows[0]);
     res.json(result.rows[0]);
@@ -1060,7 +1448,7 @@ app.put('/api/zones/:id', async (req, res) => {
 
 
 
-app.put('/api/zones/:id/coordinates', async (req, res) => {
+app.put('/api/zones/:id/coordinates', checkRole(['admin']), async (req, res) => {
   try {
     const { coordinates } = req.body;
     const result = await db.query(
@@ -1073,7 +1461,7 @@ app.put('/api/zones/:id/coordinates', async (req, res) => {
   }
 });
 
-app.delete('/api/zones/:id', async (req, res) => {
+app.delete('/api/zones/:id', checkRole(['admin']), async (req, res) => {
   try {
     const oldRow = await db.query('SELECT * FROM zones WHERE id = $1', [req.params.id]);
     const result = await db.query('DELETE FROM zones WHERE id = $1 RETURNING *', [req.params.id]);
@@ -1085,7 +1473,7 @@ app.delete('/api/zones/:id', async (req, res) => {
 });
 
 // --- Employees (HRM) ---
-app.get('/api/employees', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
+app.get('/api/employees', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM employees ORDER BY id DESC');
     res.json(result.rows);
@@ -1094,7 +1482,7 @@ app.get('/api/employees', checkRole(['admin', 'cashier', 'collector']), async (r
   }
 });
 
-app.put('/api/employees/:id', async (req, res) => {
+app.put('/api/employees/:id', checkRole(['admin']), async (req, res) => {
   const { name, role, phone, salary, status } = req.body;
   try {
     const oldRow = await db.query('SELECT * FROM employees WHERE id = $1', [req.params.id]);
@@ -1154,7 +1542,7 @@ app.get('/api/leave-requests', checkRole(['admin', 'cashier']), async (req, res)
   }
 });
 
-app.post('/api/leave-requests', async (req, res) => {
+app.post('/api/leave-requests', checkRole(['admin', 'cashier']), async (req, res) => {
   const { employee_id, leave_type, start_date, end_date, reason } = req.body;
   try {
     const result = await db.query(
@@ -1181,7 +1569,7 @@ app.put('/api/leave-requests/:id/status', checkRole(['admin']), async (req, res)
 });
 
 // --- Attendance ---
-app.get('/api/attendance', async (req, res) => {
+app.get('/api/attendance', checkRole(['admin', 'collector']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT a.*, e.name as employee_name, e.role as employee_role, e.photo as employee_photo
@@ -1195,7 +1583,7 @@ app.get('/api/attendance', async (req, res) => {
   }
 });
 
-app.get('/api/attendance/today', async (req, res) => {
+app.get('/api/attendance/today', checkRole(['admin', 'collector']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT a.*, e.name as employee_name, e.role as employee_role, e.photo as employee_photo
@@ -1210,7 +1598,7 @@ app.get('/api/attendance/today', async (req, res) => {
   }
 });
 
-app.post('/api/attendance/clock-in', upload.single('clock_in_photo'), async (req, res) => {
+app.post('/api/attendance/clock-in', checkRole(['admin', 'collector']), upload.single('clock_in_photo'), async (req, res) => {
   const { employee_id } = req.body;
   const clock_in_photo = req.file ? req.file.filename : null;
   try {
@@ -1232,7 +1620,7 @@ app.post('/api/attendance/clock-in', upload.single('clock_in_photo'), async (req
   }
 });
 
-app.post('/api/attendance/clock-out', upload.single('clock_out_photo'), async (req, res) => {
+app.post('/api/attendance/clock-out', checkRole(['admin', 'collector']), upload.single('clock_out_photo'), async (req, res) => {
   const { employee_id } = req.body;
   const clock_out_photo = req.file ? req.file.filename : null;
   try {
@@ -1250,7 +1638,7 @@ app.post('/api/attendance/clock-out', upload.single('clock_out_photo'), async (r
 });
 
 // --- Payroll ---
-app.get('/api/payroll', async (req, res) => {
+app.get('/api/payroll', checkRole(['admin', 'cashier']), async (req, res) => {
   const { month } = req.query; // YYYY-MM
   try {
     let query = `
@@ -1272,7 +1660,7 @@ app.get('/api/payroll', async (req, res) => {
   }
 });
 
-app.post('/api/payroll/generate', async (req, res) => {
+app.post('/api/payroll/generate', checkRole(['admin', 'cashier']), async (req, res) => {
   const { month } = req.body; // YYYY-MM
   if (!month) return res.status(400).json({ error: 'Month is required' });
 
@@ -1314,7 +1702,7 @@ app.post('/api/payroll/generate', async (req, res) => {
   }
 });
 
-app.put('/api/payroll/:id', async (req, res) => {
+app.put('/api/payroll/:id', checkRole(['admin', 'cashier']), async (req, res) => {
   const { id } = req.params;
   const { bonuses, deductions, status, notes, payment_method } = req.body;
   try {
@@ -1349,10 +1737,17 @@ app.put('/api/payroll/:id', async (req, res) => {
 });
 
 // --- Stats for Dashboard & Reports ---
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
-    const revenueRes = await db.query("SELECT SUM(amount) FROM invoices WHERE status = 'Paid'");
-    const customersRes = await db.query("SELECT COUNT(*) FROM customers");
+    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const zone = req.user.zone;
+
+    const revenueRes = isGudoomiye
+      ? await db.query("SELECT SUM(i.amount) FROM invoices i JOIN customers c ON i.customer_id = c.id WHERE i.status = 'Paid' AND c.zone = $1", [zone])
+      : await db.query("SELECT SUM(amount) FROM invoices WHERE status = 'Paid'");
+    const customersRes = isGudoomiye
+      ? await db.query("SELECT COUNT(*) FROM customers WHERE zone = $1", [zone])
+      : await db.query("SELECT COUNT(*) FROM customers");
     const tasksRes = await db.query("SELECT COUNT(*) FROM tasks WHERE status = 'Completed'");
     const expensesRes = await db.query("SELECT SUM(amount) FROM expenses");
 
@@ -1367,7 +1762,7 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-app.get('/api/stats/history', async (req, res) => {
+app.get('/api/stats/history', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const history = [];
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1401,7 +1796,7 @@ app.get('/api/stats/history', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-app.get('/api/dashboard/extended', async (req, res) => {
+app.get('/api/dashboard/extended', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -1452,7 +1847,7 @@ app.get('/api/dashboard/extended', async (req, res) => {
   }
 });
 
-app.get('/api/reports/collectors', async (req, res) => {
+app.get('/api/reports/collectors', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT COALESCE(collector_name, 'Unassigned / Direct') as collector, SUM(amount) as total_collected, COUNT(id) as transaction_count
@@ -1467,7 +1862,7 @@ app.get('/api/reports/collectors', async (req, res) => {
   }
 });
 
-app.get('/api/reports/collectors/today', async (req, res) => {
+app.get('/api/reports/collectors/today', checkRole(['admin', 'cashier']), async (req, res) => {
   try {
     const moneyRes = await db.query(`
       SELECT COALESCE(collector_name, 'Unassigned') as collector, 
@@ -1516,8 +1911,42 @@ app.get('/api/reports/collectors/today', async (req, res) => {
   }
 });
 
+// Detail lists for one collector on one day: who was serviced vs who actually paid
+app.get('/api/reports/collector-daily', checkRole(['admin']), async (req, res) => {
+  const { collector_name, date } = req.query;
+  if (!collector_name || !date) {
+    return res.status(400).json({ error: 'collector_name and date are required' });
+  }
+  try {
+    const servicedRes = await db.query(`
+      SELECT c.id, c.name, c.phone, c.house_no, c.street, c.area, tc.collected_at
+      FROM task_customers tc
+      JOIN tasks t ON tc.task_id = t.id
+      JOIN customers c ON tc.customer_id = c.id
+      WHERE t.collector_name = $1
+        AND tc.collected = TRUE
+        AND DATE(COALESCE(tc.collected_at, t.scheduled_at)) = $2
+      ORDER BY tc.collected_at ASC NULLS LAST
+    `, [collector_name, date]);
+
+    const collectedRes = await db.query(`
+      SELECT i.id, i.customer_id, c.name, c.phone, i.amount, i.currency, i.payment_method, i.created_at
+      FROM invoices i
+      LEFT JOIN customers c ON i.customer_id = c.id
+      WHERE i.collector_name = $1
+        AND i.status = 'Paid'
+        AND DATE(i.created_at) = $2
+      ORDER BY i.created_at ASC
+    `, [collector_name, date]);
+
+    res.json({ serviced: servicedRes.rows, collected: collectedRes.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Archive & Documents ---
-app.get('/api/archives', async (req, res) => {
+app.get('/api/archives', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM archives ORDER BY created_at DESC');
     res.json(result.rows);
@@ -1526,7 +1955,7 @@ app.get('/api/archives', async (req, res) => {
   }
 });
 
-app.post('/api/archives', upload.single('file'), async (req, res) => {
+app.post('/api/archives', checkRole(['admin']), upload.single('file'), async (req, res) => {
   const { title, category, uploaded_by, doc_ref, description } = req.body;
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -1541,7 +1970,7 @@ app.post('/api/archives', upload.single('file'), async (req, res) => {
   }
 });
 
-app.delete('/api/archives/:id', async (req, res) => {
+app.delete('/api/archives/:id', checkRole(['admin']), async (req, res) => {
   try {
     // Optional: Delete physical file too
     const find = await db.query('SELECT file_name FROM archives WHERE id = $1', [req.params.id]);
@@ -1558,7 +1987,7 @@ app.delete('/api/archives/:id', async (req, res) => {
 });
 
 // --- Inventory ---
-app.get('/api/inventory', async (req, res) => {
+app.get('/api/inventory', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM inventory ORDER BY item_name ASC');
     res.json(result.rows);
@@ -1567,7 +1996,7 @@ app.get('/api/inventory', async (req, res) => {
   }
 });
 
-app.post('/api/inventory', async (req, res) => {
+app.post('/api/inventory', checkRole(['admin']), async (req, res) => {
   const { item_name, quantity, unit, price_per_unit, status } = req.body;
   try {
     const result = await db.query(
@@ -1580,7 +2009,7 @@ app.post('/api/inventory', async (req, res) => {
   }
 });
 
-app.put('/api/inventory/:id', async (req, res) => {
+app.put('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
   const { id } = req.params;
   const { item_name, quantity, unit, price_per_unit, status } = req.body;
   try {
@@ -1595,7 +2024,7 @@ app.put('/api/inventory/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/inventory/:id', async (req, res) => {
+app.delete('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('DELETE FROM inventory WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
@@ -1605,7 +2034,7 @@ app.delete('/api/inventory/:id', async (req, res) => {
 });
 
 // --- Debts (Daymaha) ---
-app.get('/api/debts', async (req, res) => {
+app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT d.id::text as id, d.customer_id, 
@@ -1636,13 +2065,16 @@ app.get('/api/debts', async (req, res) => {
       WHERE i.status = 'Unpaid'
       ORDER BY created_at DESC
     `);
-    res.json(result.rows);
+    const rows = req.user.role.toLowerCase() === 'gudoomiye'
+      ? result.rows.filter(r => r.zone === req.user.zone)
+      : result.rows;
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/debts', async (req, res) => {
+app.post('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   const { customer_id, debtor_name, phone, amount, currency, description, collector_name, zone, house_no } = req.body;
   try {
     const result = await db.query(
@@ -1664,7 +2096,7 @@ app.post('/api/debts', async (req, res) => {
   }
 });
 
-app.delete('/api/debts/:id', async (req, res) => {
+app.delete('/api/debts/:id', checkRole(['admin', 'cashier']), async (req, res) => {
   try {
     const result = await db.query('DELETE FROM debts WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
@@ -1673,7 +2105,7 @@ app.delete('/api/debts/:id', async (req, res) => {
   }
 });
 
-app.put('/api/debts/:id/status', async (req, res) => {
+app.put('/api/debts/:id/status', checkRole(['admin', 'cashier']), async (req, res) => {
   const { id } = req.params;
   const { status, payment_method } = req.body;
   try {
@@ -1697,31 +2129,53 @@ app.put('/api/debts/:id/status', async (req, res) => {
 });
 
 // --- Cashouts (Taariikhda Xisaab-celinta) ---
-app.get('/api/cashouts', async (req, res) => {
+// Step 8 of the workflow: the Gudoomiye finalizes/settles the cashout for their own zone.
+// Admin can do it for any zone; Cashier can still record it during the transition period.
+app.get('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
-    const result = await db.query('SELECT * FROM cashouts ORDER BY created_at DESC');
+    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const result = await db.query(
+      isGudoomiye ? 'SELECT * FROM cashouts WHERE zone = $1 ORDER BY created_at DESC' : 'SELECT * FROM cashouts ORDER BY created_at DESC',
+      isGudoomiye ? [req.user.zone] : []
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/cashouts', async (req, res) => {
-  const { collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by } = req.body;
+app.post('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
+  const { collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by, zone } = req.body;
+
+  let resolvedZone = zone || null;
+  if (req.user.role.toLowerCase() === 'gudoomiye') {
+    // A Gudoomiye can only settle cashouts for collectors dispatched in their own zone.
+    resolvedZone = req.user.zone;
+    const assignmentCheck = await db.query(
+      `SELECT ca.id FROM collector_assignments ca JOIN employees e ON ca.collector_id = e.id
+       WHERE e.name = $1 AND ca.zone_group = $2`,
+      [collector_name, req.user.zone]
+    );
+    if (assignmentCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'This collector is not dispatched in your zone' });
+    }
+  }
+
   try {
     const result = await db.query(
-      'INSERT INTO cashouts (collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
+      'INSERT INTO cashouts (collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by, zone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
       [
-        collector_name, 
-        expected_amount, 
-        actual_amount, 
+        collector_name,
+        expected_amount,
+        actual_amount,
         zaad_amount || 0,
         edahab_amount || 0,
         cash_amount || 0,
         slsh_amount || 0,
-        shortage || 0, 
-        reason || null, 
-        processed_by || null
+        shortage || 0,
+        reason || null,
+        processed_by || null,
+        resolvedZone
       ]
     );
     res.json(result.rows[0]);
@@ -1742,7 +2196,7 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-app.post('/api/settings', async (req, res) => {
+const updateSettingsHandler = async (req, res) => {
   try {
     const entries = Object.entries(req.body);
     for (const [key, value] of entries) {
@@ -1756,10 +2210,12 @@ app.post('/api/settings', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+app.post('/api/settings', checkRole(['admin', 'cashier']), updateSettingsHandler);
+app.put('/api/settings', checkRole(['admin', 'cashier']), updateSettingsHandler);
 
 // --- Tracking & Location Endpoints ---
-app.post('/api/tasks/:id/ping', async (req, res) => {
+app.post('/api/tasks/:id/ping', checkRole(['admin', 'collector']), async (req, res) => {
   const { id } = req.params;
   const { lat, lng } = req.body;
   try {
@@ -1773,7 +2229,7 @@ app.post('/api/tasks/:id/ping', async (req, res) => {
   }
 });
 
-app.get('/api/tasks/:id/history', async (req, res) => {
+app.get('/api/tasks/:id/history', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { id } = req.params;
   try {
     const result = await db.query(
@@ -1786,7 +2242,7 @@ app.get('/api/tasks/:id/history', async (req, res) => {
   }
 });
 
-app.put('/api/customers/:id/location', async (req, res) => {
+app.put('/api/customers/:id/location', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { id } = req.params;
   const { lat, lng } = req.body;
   try {
@@ -1801,8 +2257,11 @@ app.put('/api/customers/:id/location', async (req, res) => {
 });
 
 // --- 2FA Endpoints ---
-app.post('/api/auth/2fa/setup', async (req, res) => {
+app.post('/api/auth/2fa/setup', authenticateToken, async (req, res) => {
   const { userId } = req.body;
+  if (parseInt(userId, 10) !== req.user.id && req.user.role.toLowerCase() !== 'admin') {
+    return res.status(403).json({ error: 'Access denied: you can only set up your own 2FA' });
+  }
   try {
     const secret = speakeasy.generateSecret({ name: `GURMAD` });
     const qrCodeDataUrl = await QRCode.toDataURL(secret.otpauth_url);
@@ -1816,8 +2275,11 @@ app.post('/api/auth/2fa/setup', async (req, res) => {
   }
 });
 
-app.post('/api/auth/2fa/verify', async (req, res) => {
+app.post('/api/auth/2fa/verify', authenticateToken, async (req, res) => {
   let { userId, token } = req.body;
+  if (parseInt(userId, 10) !== req.user.id && req.user.role.toLowerCase() !== 'admin') {
+    return res.status(403).json({ error: 'Access denied: you can only verify your own 2FA' });
+  }
   token = token.toString().replace(/\s/g, '');
   try {
     const result = await db.query('SELECT two_factor_secret FROM users WHERE id = $1', [userId]);
@@ -1847,8 +2309,11 @@ app.post('/api/auth/2fa/verify', async (req, res) => {
   }
 });
 
-app.post('/api/auth/2fa/disable', async (req, res) => {
+app.post('/api/auth/2fa/disable', authenticateToken, async (req, res) => {
   const { userId } = req.body;
+  if (parseInt(userId, 10) !== req.user.id && req.user.role.toLowerCase() !== 'admin') {
+    return res.status(403).json({ error: 'Access denied: you can only disable your own 2FA' });
+  }
   try {
     await db.query('UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL WHERE id = $1', [userId]);
     res.json({ success: true });
@@ -1858,7 +2323,7 @@ app.post('/api/auth/2fa/disable', async (req, res) => {
 });
 
 // --- Fleet Maintenance & Fuel ---
-app.get('/api/fleet/fuel', async (req, res) => {
+app.get('/api/fleet/fuel', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT f.*, t.plate_number, u.full_name as recorded_by_name 
@@ -1873,7 +2338,7 @@ app.get('/api/fleet/fuel', async (req, res) => {
   }
 });
 
-app.post('/api/fleet/fuel', async (req, res) => {
+app.post('/api/fleet/fuel', checkRole(['admin']), async (req, res) => {
   const { truck_id, liters, cost, odometer_reading, recorded_by } = req.body;
   try {
     const result = await db.query(
@@ -1886,7 +2351,7 @@ app.post('/api/fleet/fuel', async (req, res) => {
   }
 });
 
-app.get('/api/fleet/maintenance', async (req, res) => {
+app.get('/api/fleet/maintenance', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT m.*, t.plate_number, u.full_name as recorded_by_name 
@@ -1901,7 +2366,7 @@ app.get('/api/fleet/maintenance', async (req, res) => {
   }
 });
 
-app.post('/api/fleet/maintenance', async (req, res) => {
+app.post('/api/fleet/maintenance', checkRole(['admin']), async (req, res) => {
   const { truck_id, description, cost, next_service_date, recorded_by } = req.body;
   try {
     const result = await db.query(
@@ -1915,7 +2380,7 @@ app.post('/api/fleet/maintenance', async (req, res) => {
 });
 
 // --- Inventory Management ---
-app.get('/api/inventory', async (req, res) => {
+app.get('/api/inventory', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM inventory ORDER BY item_name ASC');
     res.json(result.rows);
@@ -1924,7 +2389,7 @@ app.get('/api/inventory', async (req, res) => {
   }
 });
 
-app.post('/api/inventory', async (req, res) => {
+app.post('/api/inventory', checkRole(['admin']), async (req, res) => {
   const { item_name, quantity, unit, price_per_unit, status } = req.body;
   try {
     const result = await db.query(
@@ -1937,7 +2402,7 @@ app.post('/api/inventory', async (req, res) => {
   }
 });
 
-app.put('/api/inventory/:id', async (req, res) => {
+app.put('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
   const { item_name, quantity, unit, price_per_unit, status } = req.body;
   try {
     const result = await db.query(
@@ -1950,7 +2415,7 @@ app.put('/api/inventory/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/inventory/:id', async (req, res) => {
+app.delete('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
   try {
     await db.query('DELETE FROM inventory WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -1960,7 +2425,7 @@ app.delete('/api/inventory/:id', async (req, res) => {
 });
 
 // --- Complaints Management ---
-app.get('/api/complaints', async (req, res) => {
+app.get('/api/complaints', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT c.*, cust.name as customer_name, cust.phone as customer_phone, u.full_name as assigned_to_name
@@ -1975,7 +2440,7 @@ app.get('/api/complaints', async (req, res) => {
   }
 });
 
-app.post('/api/complaints', async (req, res) => {
+app.post('/api/complaints', checkRole(['admin', 'cashier']), async (req, res) => {
   const { customer_id, title, description, priority, assigned_to } = req.body;
   try {
     const result = await db.query(
@@ -1988,7 +2453,7 @@ app.post('/api/complaints', async (req, res) => {
   }
 });
 
-app.put('/api/complaints/:id/status', async (req, res) => {
+app.put('/api/complaints/:id/status', checkRole(['admin', 'cashier']), async (req, res) => {
   const { status } = req.body;
   try {
     const result = await db.query(
@@ -2003,7 +2468,7 @@ app.put('/api/complaints/:id/status', async (req, res) => {
 
 
 // --- Notifications ---
-app.get('/api/users/:userId/notifications', async (req, res) => {
+app.get('/api/users/:userId/notifications', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
@@ -2015,7 +2480,7 @@ app.get('/api/users/:userId/notifications', async (req, res) => {
   }
 });
 
-app.put('/api/notifications/:id/read', async (req, res) => {
+app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
   try {
     await db.query('UPDATE notifications SET is_read = TRUE WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -2024,7 +2489,7 @@ app.put('/api/notifications/:id/read', async (req, res) => {
   }
 });
 
-app.put('/api/users/:userId/notifications/read-all', async (req, res) => {
+app.put('/api/users/:userId/notifications/read-all', authenticateToken, async (req, res) => {
   try {
     await db.query('UPDATE notifications SET is_read = TRUE WHERE user_id = $1', [req.params.userId]);
     res.json({ success: true });
@@ -2091,18 +2556,19 @@ app.get('/api/admin/backup', checkRole(['admin']), async (req, res) => {
       backupData[table] = result.rows;
     }
 
+    // Stream the backup directly in the (already admin-authenticated) response instead of
+    // writing it to the public uploads/ folder, so it's never reachable without a login.
     const backupFileName = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-    const backupPath = path.join(__dirname, 'uploads', backupFileName);
-    fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2));
-
-    res.json({ success: true, fileName: backupFileName, url: `/uploads/${backupFileName}` });
+    res.setHeader('Content-Disposition', `attachment; filename="${backupFileName}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(backupData);
   } catch (err) {
     res.status(500).json({ error: 'Backup failed: ' + err.message });
   }
 });
 
 // --- User Management (Admin Only) ---
-app.get('/api/users', checkRole(['admin']), async (req, res) => {
+app.get('/api/users', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const result = await db.query('SELECT id, username, full_name, role, two_factor_enabled, created_at FROM users ORDER BY id ASC');
     res.json(result.rows);
@@ -2111,7 +2577,7 @@ app.get('/api/users', checkRole(['admin']), async (req, res) => {
   }
 });
 
-app.post('/api/users', async (req, res) => {
+app.post('/api/users', checkRole(['admin']), async (req, res) => {
   const { username, password, full_name, role } = req.body;
   try {
     // Basic validation
@@ -2130,18 +2596,7 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
-app.post('/api/users/:id/reset-password', async (req, res) => {
-  const { id } = req.params;
-  const { newPassword } = req.body;
-  try {
-    await db.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/users/:id/reset-2fa', async (req, res) => {
+app.post('/api/users/:id/reset-2fa', checkRole(['admin']), async (req, res) => {
   const { id } = req.params;
   try {
     await db.query('UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL WHERE id = $1', [id]);
@@ -2151,7 +2606,7 @@ app.post('/api/users/:id/reset-2fa', async (req, res) => {
   }
 });
 
-app.post('/api/users/:id/full-reset', async (req, res) => {
+app.post('/api/users/:id/full-reset', checkRole(['admin']), async (req, res) => {
   const { id } = req.params;
   const { newPassword } = req.body;
   try {
@@ -2169,7 +2624,7 @@ app.post('/api/users/:id/full-reset', async (req, res) => {
 // COMMUNICATIONS & MESSAGING API
 // ----------------------------------------------------
 
-app.post('/api/messages/send', async (req, res) => {
+app.post('/api/messages/send', checkRole(['admin']), async (req, res) => {
   const { phone, message, type = 'sms' } = req.body;
 
   if (!phone || !message) {
@@ -2194,7 +2649,7 @@ app.post('/api/messages/send', async (req, res) => {
   }
 });
 
-app.post('/api/messages/broadcast', async (req, res) => {
+app.post('/api/messages/broadcast', checkRole(['admin']), async (req, res) => {
   const { targetType, targetValue, message, type = 'sms' } = req.body;
   // targetType can be 'zone', 'all', 'unpaid', 'task_id'
 
@@ -2248,7 +2703,7 @@ app.post('/api/messages/broadcast', async (req, res) => {
 // AI ROUTE OPTIMIZATION API
 // ----------------------------------------------------
 
-app.get('/api/optimize-route', async (req, res) => {
+app.get('/api/optimize-route', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { task_id } = req.query;
   if (!task_id) return res.status(400).json({ error: 'task_id is required' });
 
@@ -2306,7 +2761,7 @@ app.get('/api/optimize-route', async (req, res) => {
 // ----------------------------------------------------
 // DATABASE INITIALIZATION
 // ----------------------------------------------------
-app.post('/api/zaad/pay', async (req, res) => {
+app.post('/api/zaad/pay', checkRole(['admin', 'cashier']), async (req, res) => {
   const { phone, amount, invoiceId } = req.body;
   const currency = amount > 1000 ? 'SLSH' : 'USD';
   const waafiEndpoint = 'https://api.waafi.com/asm';
@@ -2350,9 +2805,11 @@ app.post('/api/zaad/pay', async (req, res) => {
     const isSuccess = data.responseCode && successCodes.includes(data.responseCode);
     const isApproved = data.responseMsg === 'RCS_SUCCESS' || isSuccess;
 
-    // Regardless of real Waafi success (since IP might not be whitelisted, we will forcefully save it for the system flow if needed, OR enforce real logic)
-    // To ensure the system continues to work even if Waafi rejects the test IP:
-    const paymentStatus = isApproved ? 'Paid' : 'Paid'; // Force to Paid for local demo purposes
+    if (!isApproved) {
+      console.error('ZAAD payment not approved by WAAFI:', data);
+      return res.status(402).json({ error: 'Payment was not approved by WAAFI', waafi_raw: data });
+    }
+    const paymentStatus = 'Paid';
 
     // Insert Invoice into Database
     const customer = await db.query('SELECT id FROM customers WHERE phone = $1', [phone]);
@@ -2378,23 +2835,12 @@ app.post('/api/zaad/pay', async (req, res) => {
 
   } catch (err) {
     console.error("Waafi Fetch Error:", err);
-    // Fallback: If network to WAAFI fails completely, still insert to preserve local flow for now
-    try {
-      const customer = await db.query('SELECT id FROM customers WHERE phone = $1', [phone]);
-      const customerId = customer.rows.length > 0 ? customer.rows[0].id : 1;
-      const insertResult = await db.query(
-        'INSERT INTO invoices (customer_id, amount, currency, status, payment_method) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [customerId, amount, currency, 'Paid', 'ZAAD (Offline)']
-      );
-      res.json({ success: true, offline: true, invoice: insertResult.rows[0] });
-    } catch (dbErr) {
-      res.status(500).json({ error: 'Database Fallback Error: ' + dbErr.message });
-    }
+    res.status(502).json({ error: 'Could not reach WAAFI to confirm payment; no invoice was created.' });
   }
 });
 
 // --- Unified Global Search ---
-app.get('/api/search', async (req, res) => {
+app.get('/api/search', authenticateToken, async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.json({ results: [] });
 
@@ -2424,7 +2870,7 @@ app.get('/api/search', async (req, res) => {
 });
 
 // --- Notifications ---
-app.get('/api/users/:id/notifications', async (req, res) => {
+app.get('/api/users/:id/notifications', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
@@ -2436,7 +2882,7 @@ app.get('/api/users/:id/notifications', async (req, res) => {
   }
 });
 
-app.put('/api/notifications/:id/read', async (req, res) => {
+app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
   try {
     await db.query('UPDATE notifications SET is_read = TRUE WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -2445,7 +2891,7 @@ app.put('/api/notifications/:id/read', async (req, res) => {
   }
 });
 
-app.put('/api/users/:id/notifications/read-all', async (req, res) => {
+app.put('/api/users/:id/notifications/read-all', authenticateToken, async (req, res) => {
   try {
     await db.query('UPDATE notifications SET is_read = TRUE WHERE user_id = $1', [req.params.id]);
     res.json({ success: true });
@@ -2455,7 +2901,7 @@ app.put('/api/users/:id/notifications/read-all', async (req, res) => {
 });
 
 // --- CHAT MESSAGES ---
-app.get('/api/messages', async (req, res) => {
+app.get('/api/messages', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { userId } = req.query; // current user id to filter private messages
   try {
     const result = await db.query(`
@@ -2474,7 +2920,7 @@ app.get('/api/messages', async (req, res) => {
   }
 });
 
-app.post('/api/messages', async (req, res) => {
+app.post('/api/messages', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { sender_id, receiver_id, content } = req.body; // receiver_id can be null for 'all'
   try {
     const result = await db.query(
@@ -2509,7 +2955,7 @@ app.post('/api/messages', async (req, res) => {
 
 const twilio = require('twilio');
 
-app.post('/api/whatsapp/notify', async (req, res) => {
+app.post('/api/whatsapp/notify', checkRole(['admin']), async (req, res) => {
   const { taskId, message, customerIds } = req.body;
 
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -2560,7 +3006,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
 });
 
 // Waafi ZAAD API Integration
-app.post('/api/payments/zaad', async (req, res) => {
+app.post('/api/payments/zaad', checkRole(['admin', 'cashier']), async (req, res) => {
   const { amount, phone, reference, currency } = req.body;
   try {
     const merchantUid = process.env.ZAAD_MERCHANT_UID;
@@ -2624,7 +3070,7 @@ app.post('/api/payments/zaad', async (req, res) => {
 
 // --- Messaging Endpoints ---
 
-app.post('/api/messages/send', async (req, res) => {
+app.post('/api/messages/send', checkRole(['admin']), async (req, res) => {
   const { to, message, method } = req.body;
   if (!to || !message) return res.status(400).json({ error: 'Missing to or message' });
   try {
@@ -2640,7 +3086,7 @@ app.post('/api/messages/send', async (req, res) => {
   }
 });
 
-app.post('/api/whatsapp/notify', async (req, res) => {
+app.post('/api/whatsapp/notify', checkRole(['admin']), async (req, res) => {
   const { taskId, message, customerIds } = req.body;
   try {
     let query = 'SELECT phone FROM customers WHERE id = ANY($1)';
@@ -2669,7 +3115,7 @@ app.post('/api/whatsapp/notify', async (req, res) => {
   }
 });
 
-app.post('/api/messages/broadcast', async (req, res) => {
+app.post('/api/messages/broadcast', checkRole(['admin']), async (req, res) => {
   const { targetType, message, type } = req.body;
   if (!message) return res.status(400).json({ error: 'Missing message' });
 
@@ -2703,7 +3149,7 @@ app.post('/api/messages/broadcast', async (req, res) => {
 });
 
 // --- Route Optimization Endpoint ---
-app.get('/api/optimize-route', async (req, res) => {
+app.get('/api/optimize-route', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { task_id } = req.query;
   if (!task_id) return res.status(400).json({ error: 'Missing task_id' });
 

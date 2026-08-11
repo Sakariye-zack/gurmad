@@ -31,17 +31,28 @@ const CashoutView = ({ currentUser }) => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const [uData, invData, cashoutsData, setRes] = await Promise.all([
+      const [uData, invData, cashoutsData, setRes, pairingsData] = await Promise.all([
         api.getUsers(),
         api.getInvoices(),
         api.getCashouts().catch(() => []), // fallback empty array if error
-        fetch('/api/settings').then(res => res.json())
+        fetch('/api/settings').then(res => res.json()),
+        api.getCashierAssignments().catch(() => [])
       ]);
-      
-      const collectorUsers = uData.filter(u => u.role === 'collector');
+
+      let collectorUsers = uData.filter(u => u.role === 'collector');
+
+      // A cashier paired to specific collector(s) can only cash out for those collectors
+      if (currentUser?.role === 'cashier') {
+        const myPairings = (pairingsData || []).filter(p => p.cashier_id === currentUser.id && p.collector_name);
+        if (myPairings.length > 0) {
+          const pairedNames = myPairings.map(p => p.collector_name.toLowerCase());
+          collectorUsers = collectorUsers.filter(u => pairedNames.includes((u.full_name || '').toLowerCase()));
+        }
+      }
+
       setCollectors(collectorUsers);
       setCashouts(cashoutsData || []);
-      
+
       // Filter invoices for today only
       const today = new Date().toISOString().split('T')[0];
       const todayInvoices = invData.filter(inv => inv.created_at.startsWith(today));
@@ -148,6 +159,8 @@ const CashoutView = ({ currentUser }) => {
         
         await api.addDebt(debtData);
         toast.success('Deyntii (Shortage) waa la diiwaangeliyay!');
+      } else if (actual - expected > 0.01) {
+        toast.success(`Cashout processed! Lacag dheeraad ah: $${(actual - expected).toFixed(2)} (Overage)`);
       } else {
         toast.success('Cashout is successfully processed! (No shortage)');
       }
@@ -169,6 +182,27 @@ const CashoutView = ({ currentUser }) => {
     }
   };
 
+  const thStyle = {
+    padding: '0.75rem 0.6rem',
+    fontSize: '0.8rem',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.03em',
+    whiteSpace: 'nowrap'
+  };
+
+  const tdStyle = {
+    padding: '0.75rem 0.6rem',
+    verticalAlign: 'top'
+  };
+
+  const chipStyle = {
+    backgroundColor: '#f1f5f9',
+    borderRadius: '6px',
+    padding: '0.15rem 0.45rem',
+    whiteSpace: 'nowrap'
+  };
+
   const inputStyle = {
     width: '100%', 
     padding: '0.75rem 1rem', 
@@ -188,7 +222,7 @@ const CashoutView = ({ currentUser }) => {
           <Wallet size={24} />
         </div>
         <div>
-          <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>Collector Cashout</h1>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: '#1e293b', margin: 0 }}>Cashier Cashout</h1>
           <p style={{ color: '#64748b', margin: 0 }}>Reconcile collections and view history</p>
         </div>
       </div>
@@ -368,6 +402,16 @@ const CashoutView = ({ currentUser }) => {
               </div>
             )}
 
+            {/* Overage Notice */}
+            {selectedCollector && (totalActualUsd - selectedStats.totalUsd > 0.01) && (
+              <div style={{ padding: '1.5rem', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#15803d', fontWeight: 600 }}>
+                  <AlertCircle size={24} />
+                  <span style={{ fontSize: '1.1rem' }}>Overage Detected: ${(totalActualUsd - selectedStats.totalUsd).toFixed(2)} is extra!</span>
+                </div>
+              </div>
+            )}
+
             {/* Submit Button */}
             <button 
               className="btn btn-primary" 
@@ -385,13 +429,13 @@ const CashoutView = ({ currentUser }) => {
             <table className="table" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#475569' }}>
-                  <th style={{ padding: '1rem' }}>Date</th>
-                  <th style={{ padding: '1rem' }}>Collector</th>
-                  <th style={{ padding: '1rem' }}>Breakdown (Actual)</th>
-                  <th style={{ padding: '1rem' }}>Total Expected</th>
-                  <th style={{ padding: '1rem' }}>Total Actual</th>
-                  <th style={{ padding: '1rem' }}>Shortage</th>
-                  <th style={{ padding: '1rem' }}>Processed By</th>
+                  <th style={thStyle}>Date</th>
+                  <th style={thStyle}>Collector</th>
+                  <th style={thStyle}>Breakdown (Actual)</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Expected</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Shortage / Overage</th>
+                  <th style={thStyle}>Processed By</th>
                 </tr>
               </thead>
               <tbody>
@@ -404,32 +448,39 @@ const CashoutView = ({ currentUser }) => {
                 ) : (
                   cashouts.map(co => (
                     <tr key={co.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '1rem' }}>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         <div style={{ fontWeight: 600 }}>{new Date(co.created_at).toLocaleDateString()}</div>
-                        <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{new Date(co.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{new Date(co.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>
-                      <td style={{ padding: '1rem', fontWeight: 600 }}>{co.collector_name}</td>
-                      <td style={{ padding: '1rem', fontSize: '0.85rem', color: '#475569' }}>
-                        <div>Cash: ${parseFloat(co.cash_amount).toFixed(2)}</div>
-                        <div>Zaad: ${parseFloat(co.zaad_amount).toFixed(2)}</div>
-                        <div>eDahab: ${parseFloat(co.edahab_amount).toFixed(2)}</div>
-                        <div>SLSH: {parseFloat(co.slsh_amount).toLocaleString()}</div>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{co.collector_name}</td>
+                      <td style={{ ...tdStyle, fontSize: '0.8rem', color: '#475569' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem 0.5rem', maxWidth: '260px' }}>
+                          <span style={chipStyle}>Cash ${parseFloat(co.cash_amount).toFixed(2)}</span>
+                          <span style={chipStyle}>Zaad ${parseFloat(co.zaad_amount).toFixed(2)}</span>
+                          <span style={chipStyle}>eDahab ${parseFloat(co.edahab_amount).toFixed(2)}</span>
+                          <span style={chipStyle}>SLSH {parseFloat(co.slsh_amount).toLocaleString()}</span>
+                        </div>
                       </td>
-                      <td style={{ padding: '1rem' }}>${parseFloat(co.expected_amount).toFixed(2)}</td>
-                      <td style={{ padding: '1rem', color: 'var(--gurmad-green)', fontWeight: 600 }}>${parseFloat(co.actual_amount).toFixed(2)}</td>
-                      <td style={{ padding: '1rem' }}>
-                        {parseFloat(co.shortage) > 0 ? (
-                          <span style={{ color: '#ef4444', fontWeight: 600 }}>${parseFloat(co.shortage).toFixed(2)}</span>
-                        ) : (
-                          <span style={{ color: '#94a3b8' }}>$0.00</span>
-                        )}
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>${parseFloat(co.expected_amount).toFixed(2)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap', color: 'var(--gurmad-green)', fontWeight: 600 }}>${parseFloat(co.actual_amount).toFixed(2)}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        {(() => {
+                          const overage = parseFloat(co.actual_amount) - parseFloat(co.expected_amount);
+                          if (parseFloat(co.shortage) > 0) {
+                            return <span style={{ color: '#ef4444', fontWeight: 600 }}>-${parseFloat(co.shortage).toFixed(2)}</span>;
+                          }
+                          if (overage > 0.01) {
+                            return <span style={{ color: 'var(--gurmad-green)', fontWeight: 600 }}>+${overage.toFixed(2)}</span>;
+                          }
+                          return <span style={{ color: '#94a3b8' }}>$0.00</span>;
+                        })()}
                         {co.reason && (
-                          <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.25rem', maxWidth: '200px' }}>
+                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem', maxWidth: '180px', marginLeft: 'auto' }}>
                             {co.reason}
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: '1rem' }}>{co.processed_by}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{co.processed_by}</td>
                     </tr>
                   ))
                 )}

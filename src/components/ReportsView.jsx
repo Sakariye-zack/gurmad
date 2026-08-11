@@ -11,7 +11,8 @@ import {
   Users,
   Box,
   AlertCircle,
-  Clock
+  Clock,
+  XCircle
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -43,6 +44,42 @@ const ReportsView = ({ searchQuery = '' }) => {
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [showPicker, setShowPicker] = useState(false);
+
+  // Collector <-> Cashier daily reconciliation modal
+  const [dailyModalOpen, setDailyModalOpen] = useState(false);
+  const [dailyModalCollector, setDailyModalCollector] = useState('');
+  const [dailyModalDate, setDailyModalDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dailyModalLoading, setDailyModalLoading] = useState(false);
+  const [dailyServiced, setDailyServiced] = useState([]);
+  const [dailyCollected, setDailyCollected] = useState([]);
+
+  const fetchDailyReport = async (collector, date) => {
+    setDailyModalLoading(true);
+    try {
+      const data = await api.getCollectorDailyReport(collector, date);
+      setDailyServiced(data.serviced || []);
+      setDailyCollected(data.collected || []);
+    } catch (err) {
+      console.error(err);
+      setDailyServiced([]);
+      setDailyCollected([]);
+    } finally {
+      setDailyModalLoading(false);
+    }
+  };
+
+  const openDailyModal = (collector) => {
+    setDailyModalCollector(collector);
+    const today = new Date().toISOString().split('T')[0];
+    setDailyModalDate(today);
+    setDailyModalOpen(true);
+    fetchDailyReport(collector, today);
+  };
+
+  const handleDailyDateChange = (newDate) => {
+    setDailyModalDate(newDate);
+    fetchDailyReport(dailyModalCollector, newDate);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -500,6 +537,7 @@ const ReportsView = ({ searchQuery = '' }) => {
               <th style={{ padding: '1rem' }}>COLLECTOR / ASSIGNED PERSONNEL</th>
               <th style={{ padding: '2rem' }}>COLLECTIONS COUNT</th>
               <th style={{ padding: '1rem' }}>TOTAL REVENUE</th>
+              <th style={{ padding: '1rem', textAlign: 'right' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
@@ -510,6 +548,14 @@ const ReportsView = ({ searchQuery = '' }) => {
                 <td style={{ padding: '1rem', fontWeight: 600 }}>{row.collector}</td>
                 <td style={{ padding: '2rem' }}>{row.transaction_count} deposits</td>
                 <td style={{ padding: '1rem', fontWeight: 700, color: 'var(--gurmad-green)' }}>{formatValue(row.total_collected)}</td>
+                <td style={{ padding: '1rem', textAlign: 'right' }}>
+                  <button
+                    onClick={() => openDailyModal(row.collector)}
+                    style={{ padding: '0.4rem 0.9rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'white', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
+                  >
+                    View List
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -570,6 +616,88 @@ const ReportsView = ({ searchQuery = '' }) => {
           </table>
         </div>
       </div>
+
+      {/* Collector <-> Cashier Daily Reconciliation Modal */}
+      {dailyModalOpen && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, backdropFilter: 'blur(4px)'
+        }}>
+          <div className="card glass" style={{ width: '900px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', borderTop: '4px solid var(--gurmad-green)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h3 style={{ fontWeight: 800, margin: 0 }}>{dailyModalCollector}</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '4px 0 0 0' }}>Customers serviced vs. money actually collected</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="date"
+                  value={dailyModalDate}
+                  onChange={e => handleDailyDateChange(e.target.value)}
+                  style={{ padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none' }}
+                />
+                <button onClick={() => setDailyModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                  <XCircle size={24} />
+                </button>
+              </div>
+            </div>
+
+            {dailyModalLoading ? (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                {/* Serviced by collector */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Customers Serviced (Collector)</h4>
+                    <span style={{ fontWeight: 700, color: '#f59e0b' }}>{dailyServiced.length}</span>
+                  </div>
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    {dailyServiced.length === 0 ? (
+                      <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No houses serviced this day.</div>
+                    ) : dailyServiced.map((c, i) => (
+                      <div key={`${c.id}-${i}`} style={{ padding: '0.75rem 1rem', borderBottom: i < dailyServiced.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{c.name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          {[c.house_no, c.street, c.area].filter(Boolean).join(', ') || c.phone}
+                        </div>
+                        {c.collected_at && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {new Date(c.collected_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Collected by cashier */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700 }}>Money Collected (Cashier)</h4>
+                    <span style={{ fontWeight: 700, color: 'var(--gurmad-green)' }}>{dailyCollected.length}</span>
+                  </div>
+                  <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+                    {dailyCollected.length === 0 ? (
+                      <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No payments recorded this day.</div>
+                    ) : dailyCollected.map((inv, i) => (
+                      <div key={inv.id} style={{ padding: '0.75rem 1rem', borderBottom: i < dailyCollected.length - 1 ? '1px solid var(--border-color)' : 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{inv.name || 'Walk-in Customer'}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{inv.payment_method || '-'} &middot; {new Date(inv.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                        <div style={{ fontWeight: 700, color: 'var(--gurmad-green)' }}>{inv.currency === 'SLSH' ? 'Slsh ' : '$'}{parseFloat(inv.amount).toLocaleString()}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
