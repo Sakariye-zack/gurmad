@@ -1,229 +1,393 @@
--- Gurmad Waste Management System Database Schema & Seed Data
+-- Gurmad Waste Management System — Live Database Schema
+-- Auto-generated snapshot of the ACTUAL live Supabase schema (public schema), not a hand-maintained file.
+-- Generated: 2026-08-13T14:38:54.005Z
+--
+-- Why this file exists: the live schema was previously spread across 30+ one-off scripts
+-- (migrate_*.js, fix_*.js) with no single source of truth. This file is that source of truth --
+-- it reflects exactly what is live right now. Regenerate it any time the schema changes with:
+--   cd server && node scripts/dump_schema.js
+--
+-- This does NOT replace server/index.js's runMigrations() — that function is still what
+-- actually applies changes to the live database on every server start (idempotent
+-- CREATE TABLE IF NOT EXISTS / ALTER TABLE ADD COLUMN IF NOT EXISTS statements). This file is
+-- read-only documentation of the result, regenerated periodically, not an executable migration.
 
--- Drop tables if they exist
-DROP TABLE IF EXISTS task_customers CASCADE;
-DROP TABLE IF EXISTS tasks CASCADE;
-DROP TABLE IF EXISTS invoices CASCADE;
-DROP TABLE IF EXISTS expenses CASCADE;
-DROP TABLE IF EXISTS customers CASCADE;
-DROP TABLE IF EXISTS employees CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS settings CASCADE;
-DROP TABLE IF EXISTS inventory CASCADE;
-DROP TABLE IF EXISTS debts CASCADE;
-DROP TABLE IF EXISTS trucks CASCADE;
-DROP TABLE IF EXISTS zones CASCADE;
-
--- Users Table
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    full_name VARCHAR(100),
-    role VARCHAR(20) NOT NULL DEFAULT 'cashier',
-    profile_image VARCHAR(255),
-    two_factor_secret TEXT,
-    two_factor_enabled BOOLEAN DEFAULT FALSE,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: archives
+CREATE TABLE IF NOT EXISTS archives (
+  id INTEGER NOT NULL DEFAULT nextval('archives_id_seq'::regclass) PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  category VARCHAR(100),
+  file_name VARCHAR(255) NOT NULL,
+  file_type VARCHAR(50),
+  file_size BIGINT,
+  uploaded_by VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  doc_ref VARCHAR(100),
+  description TEXT
 );
 
--- Employees Table (HRM)
-CREATE TABLE employees (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    role VARCHAR(50),
-    phone VARCHAR(20),
-    status VARCHAR(20) DEFAULT 'Active',
-    salary DECIMAL(15,2),
-    join_date DATE DEFAULT CURRENT_DATE
+-- Table: attendance
+CREATE TABLE IF NOT EXISTS attendance (
+  id INTEGER NOT NULL DEFAULT nextval('attendance_id_seq'::regclass) PRIMARY KEY,
+  employee_id INTEGER,
+  date DATE DEFAULT CURRENT_DATE,
+  clock_in TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  clock_out TIMESTAMP,
+  clock_in_photo TEXT,
+  clock_out_photo TEXT,
+  status VARCHAR(20) DEFAULT 'Present'::character varying
 );
 
--- Trucks Table
-CREATE TABLE trucks (
-    id SERIAL PRIMARY KEY,
-    plate_number VARCHAR(50) UNIQUE NOT NULL,
-    model VARCHAR(100),
-    status VARCHAR(20) DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: audit_logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER NOT NULL DEFAULT nextval('audit_logs_id_seq'::regclass) PRIMARY KEY,
+  user_id INTEGER,
+  action VARCHAR(50) NOT NULL,
+  entity_type VARCHAR(50),
+  entity_id VARCHAR(50),
+  old_values JSONB,
+  new_values JSONB,
+  ip_address VARCHAR(45),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Zones Table
-CREATE TABLE zones (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) UNIQUE NOT NULL,
-    assigned_driver VARCHAR(100),
-    assigned_collector VARCHAR(100),
-    assigned_truck VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- NOTE: blog_comments / blog_posts / blog_users below are NOT part of the Gurmad application.
+-- They share the same Supabase project but belong to an unrelated project/experiment.
+-- Table: blog_comments
+CREATE TABLE IF NOT EXISTS blog_comments (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  post_id UUID REFERENCES blog_posts(id),
+  user_id UUID REFERENCES blog_users(id),
+  comment TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Customers Table
-CREATE TABLE customers (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    phone VARCHAR(20) NOT NULL,
-    house_no VARCHAR(20),
-    street VARCHAR(100),
-    area VARCHAR(50),
-    status VARCHAR(20) DEFAULT 'Unpaid',
-    lat DECIMAL(10, 8),
-    lng DECIMAL(11, 8),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: blog_posts
+CREATE TABLE IF NOT EXISTS blog_posts (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  author_id UUID REFERENCES blog_users(id),
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  published_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Invoices Table
-CREATE TABLE invoices (
-    id SERIAL PRIMARY KEY,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
-    amount DECIMAL(15, 2) NOT NULL,
-    currency VARCHAR(10) DEFAULT 'USD',
-    status VARCHAR(20) DEFAULT 'Unpaid',
-    payment_method VARCHAR(50) DEFAULT '-',
-    collector_name VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: blog_users
+CREATE TABLE IF NOT EXISTS blog_users (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  username TEXT NOT NULL,
+  email TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Expenses Table
-CREATE TABLE expenses (
-    id SERIAL PRIMARY KEY,
-    category VARCHAR(50) NOT NULL,
-    description TEXT,
-    amount DECIMAL(15, 2) NOT NULL,
-    expense_date DATE DEFAULT CURRENT_DATE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: cashier_assignments
+CREATE TABLE IF NOT EXISTS cashier_assignments (
+  id INTEGER NOT NULL DEFAULT nextval('cashier_assignments_id_seq'::regclass) PRIMARY KEY,
+  zone_group VARCHAR(50),
+  cashier_id INTEGER REFERENCES users(id),
+  zone_id_str VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  collector_id INTEGER REFERENCES employees(id)
 );
 
--- Tasks (Driver Jobs)
-CREATE TABLE tasks (
-    id SERIAL PRIMARY KEY,
-    driver_name VARCHAR(100) NOT NULL,
-    collector_name VARCHAR(100),
-    vehicle_plate VARCHAR(50),
-    route_name VARCHAR(100),
-    status VARCHAR(20) DEFAULT 'Pending',
-    scheduled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP
+-- Table: cashouts
+CREATE TABLE IF NOT EXISTS cashouts (
+  id INTEGER NOT NULL DEFAULT nextval('cashouts_id_seq'::regclass) PRIMARY KEY,
+  collector_name VARCHAR(100) NOT NULL,
+  expected_amount NUMERIC NOT NULL,
+  actual_amount NUMERIC NOT NULL,
+  zaad_amount NUMERIC DEFAULT 0,
+  edahab_amount NUMERIC DEFAULT 0,
+  cash_amount NUMERIC DEFAULT 0,
+  slsh_amount NUMERIC DEFAULT 0,
+  shortage NUMERIC DEFAULT 0,
+  reason TEXT,
+  processed_by VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  zone VARCHAR(100)
 );
 
--- Task_Customers (Mapping customers to tasks)
-CREATE TABLE task_customers (
-    task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
-    collected BOOLEAN DEFAULT FALSE,
-    PRIMARY KEY (task_id, customer_id)
+-- Table: collector_assignments
+CREATE TABLE IF NOT EXISTS collector_assignments (
+  id INTEGER NOT NULL DEFAULT nextval('collector_assignments_id_seq'::regclass) PRIMARY KEY,
+  zone_group VARCHAR(50),
+  collector_id INTEGER REFERENCES employees(id),
+  collector_code VARCHAR(50),
+  zone_id_str VARCHAR(100),
+  truck_id INTEGER REFERENCES trucks(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Settings Table
-CREATE TABLE settings (
-    id SERIAL PRIMARY KEY,
-    setting_key VARCHAR(50) UNIQUE NOT NULL,
-    setting_value TEXT,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: complaints
+CREATE TABLE IF NOT EXISTS complaints (
+  id INTEGER NOT NULL DEFAULT nextval('complaints_id_seq'::regclass) PRIMARY KEY,
+  customer_id INTEGER,
+  title VARCHAR(255),
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'Pending'::character varying,
+  priority VARCHAR(20) DEFAULT 'Medium'::character varying,
+  assigned_to INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Inventory Table
-CREATE TABLE inventory (
-    id SERIAL PRIMARY KEY,
-    item_name VARCHAR(100) NOT NULL,
-    quantity INTEGER DEFAULT 0,
-    unit VARCHAR(20) DEFAULT 'Pcs',
-    price_per_unit DECIMAL(15, 2) DEFAULT 0,
-    status VARCHAR(50) DEFAULT 'In Stock',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: customers
+CREATE TABLE IF NOT EXISTS customers (
+  id INTEGER NOT NULL DEFAULT nextval('customers_id_seq'::regclass) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  house_no VARCHAR(20),
+  street VARCHAR(100),
+  area VARCHAR(50),
+  status VARCHAR(20) DEFAULT 'Unpaid'::character varying,
+  lat NUMERIC,
+  lng NUMERIC,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  whatsapp VARCHAR(20),
+  neighborhood VARCHAR(100),
+  zone VARCHAR(100),
+  category VARCHAR(100),
+  fee NUMERIC,
+  collector_id INTEGER,
+  route_order INTEGER,
+  collection_frequency VARCHAR(50),
+  collection_mode VARCHAR(50),
+  payment_status VARCHAR(50),
+  registered_by INTEGER REFERENCES users(id),
+  registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Debts Table (Daymaha)
-CREATE TABLE debts (
-    id SERIAL PRIMARY KEY,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-    debtor_name VARCHAR(100) NOT NULL,
-    phone VARCHAR(20),
-    amount DECIMAL(15, 2) NOT NULL,
-    currency VARCHAR(10) DEFAULT 'USD',
-    description TEXT,
-    status VARCHAR(20) DEFAULT 'Unpaid',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: debts
+CREATE TABLE IF NOT EXISTS debts (
+  id INTEGER NOT NULL DEFAULT nextval('debts_id_seq'::regclass) PRIMARY KEY,
+  customer_id INTEGER REFERENCES customers(id),
+  debtor_name VARCHAR(100) NOT NULL,
+  phone VARCHAR(20),
+  amount NUMERIC NOT NULL,
+  currency VARCHAR(10) DEFAULT 'USD'::character varying,
+  description TEXT,
+  status VARCHAR(20) DEFAULT 'Unpaid'::character varying,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  zone VARCHAR(100),
+  house_no VARCHAR(50),
+  collector_name VARCHAR(100)
 );
 
--- Cashouts Table (Taariikhda Xisaab-celinta)
-CREATE TABLE cashouts (
-    id SERIAL PRIMARY KEY,
-    collector_name VARCHAR(100) NOT NULL,
-    expected_amount DECIMAL(15, 2) NOT NULL,
-    actual_amount DECIMAL(15, 2) NOT NULL,
-    zaad_amount DECIMAL(15, 2) DEFAULT 0,
-    edahab_amount DECIMAL(15, 2) DEFAULT 0,
-    cash_amount DECIMAL(15, 2) DEFAULT 0,
-    slsh_amount DECIMAL(15, 2) DEFAULT 0,
-    shortage DECIMAL(15, 2) DEFAULT 0,
-    reason TEXT,
-    processed_by VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- Table: employees
+CREATE TABLE IF NOT EXISTS employees (
+  id INTEGER NOT NULL DEFAULT nextval('employees_id_seq'::regclass) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  role VARCHAR(50),
+  phone VARCHAR(20),
+  status VARCHAR(20) DEFAULT 'Active'::character varying,
+  salary NUMERIC,
+  join_date DATE DEFAULT CURRENT_DATE,
+  photo VARCHAR(255),
+  id_document VARCHAR(255),
+  guarantor_name VARCHAR(100),
+  guarantor_phone VARCHAR(20)
 );
 
--- --- SEED DATA ---
+-- Table: expenses
+CREATE TABLE IF NOT EXISTS expenses (
+  id INTEGER NOT NULL DEFAULT nextval('expenses_id_seq'::regclass) PRIMARY KEY,
+  category VARCHAR(50) NOT NULL,
+  description TEXT,
+  amount NUMERIC NOT NULL,
+  expense_date DATE DEFAULT CURRENT_DATE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Initial Users & Settings
-INSERT INTO users (username, password, full_name, role) VALUES 
-('admin', 'admin123', 'System Admin', 'admin'),
-('jamac', 'jamac123', 'Jamac (Cashier)', 'cashier'),
-('faarax', 'faarax123', 'Faarax (Collector)', 'collector');
-INSERT INTO settings (setting_key, setting_value) VALUES ('exchange_rate', '8500');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_hero_title', 'Gurmad Waste Management');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_hero_subtitle', 'Leading the way in sustainable waste collection and urban sanitation in Burao.');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_about_text', 'Gurmad is committed to providing efficient, reliable, and environmentally friendly waste management solutions. Our mission is to keep our cities clean and safe for everyone.');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_contact_email', 'info@gurmad.so');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_contact_phone', '063-4444444');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_contact_address', 'Main Office, Burao, Somaliland');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_services', '[{"icon":"Truck", "title":"Waste Collection", "desc":"Daily doorstep collection for households and businesses."}, {"icon":"Shield", "title":"Sanitation", "desc":"Professional cleaning and disinfection services."}, {"icon":"BarChart", "title":"Reporting", "desc":"Detailed analytics on waste reduction and disposal."}]');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_navbar_links', '[{"label":"Home", "target":"home", "type":"scroll"}, {"label":"Services", "target":"services", "type":"scroll"}, {"label":"News", "target":"news", "type":"scroll"}, {"label":"About Us", "target":"about", "type":"scroll"}, {"label":"Contact", "target":"contact", "type":"scroll"}]');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_news', '[{"id":1, "title":"Adeegga Cusub ee Gurmad", "date":"2024-04-15", "excerpt":"Waxaan bilownay adeeg cusub oo casri ah oo ku saabsan nadaafadda magaalada Burao.", "content":"Waxaan si farxad leh ugu laabnay adeegga cusub ee Gurmad Waste Management. Adeeggan wuxuu sahlayaa in si degdeg ah oo hufan looga gurto qashinka guryaha iyo meheradaha magaalada Burao.", "images":[], "coverImage":"", "videoUrl":""}]');
-INSERT INTO settings (setting_key, setting_value) VALUES ('landing_social_links', '[{"platform":"Facebook", "url":"https://facebook.com/gurmad", "icon":"Facebook"}, {"platform":"Twitter", "url":"https://twitter.com/gurmad", "icon":"Twitter"}, {"platform":"Instagram", "url":"https://instagram.com/gurmad", "icon":"Instagram"}, {"platform":"LinkedIn", "url":"https://linkedin.com/company/gurmad", "icon":"Linkedin"}, {"platform":"YouTube", "url":"https://youtube.com/gurmad", "icon":"Youtube"}, {"platform":"WhatsApp", "url":"https://wa.me/252634444444", "icon":"WhatsApp"}]');
+-- Table: inventory
+CREATE TABLE IF NOT EXISTS inventory (
+  id INTEGER NOT NULL DEFAULT nextval('inventory_id_seq'::regclass) PRIMARY KEY,
+  item_name VARCHAR(100) NOT NULL,
+  quantity INTEGER DEFAULT 0,
+  unit VARCHAR(20) DEFAULT 'Pcs'::character varying,
+  price_per_unit NUMERIC DEFAULT 0,
+  status VARCHAR(50) DEFAULT 'In Stock'::character varying,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Initial Trucks
-INSERT INTO trucks (plate_number, model) VALUES 
-('SL-1025', 'Isuzu NPR'),
-('SL-9080', 'Mitsubishi Fuso'),
-('SL-4410', 'Tata LPT');
+-- Table: invoices
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER NOT NULL DEFAULT nextval('invoices_id_seq'::regclass) PRIMARY KEY,
+  customer_id INTEGER REFERENCES customers(id),
+  amount NUMERIC NOT NULL,
+  currency VARCHAR(10) DEFAULT 'USD'::character varying,
+  status VARCHAR(20) DEFAULT 'Unpaid'::character varying,
+  payment_method VARCHAR(50) DEFAULT '-'::character varying,
+  collector_name VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  collector_id INTEGER,
+  invoice_house_no VARCHAR(50),
+  slsh_amount NUMERIC,
+  discount_amount NUMERIC,
+  cash_amount NUMERIC,
+  zaad_amount NUMERIC,
+  edahab_amount NUMERIC,
+  debt_amount NUMERIC,
+  is_split BOOLEAN DEFAULT false,
+  truck_name VARCHAR(100),
+  invoice_zone VARCHAR(100),
+  cashier_id INTEGER REFERENCES users(id),
+  cashier_name VARCHAR(100)
+);
 
--- Initial Zones
-INSERT INTO zones (name, assigned_driver, assigned_collector, assigned_truck) VALUES 
-('Burao North - Zone A', 'Ahmed Ali', 'Faarax (Collector)', 'SL-1025'),
-('Burao East - Zone B', 'Hassan Omar', 'Hassan (Collector)', 'SL-9080'),
-('Burao Central', 'Abdi Jama', 'Mahad (Collector)', 'SL-4410');
+-- Table: leave_requests
+CREATE TABLE IF NOT EXISTS leave_requests (
+  id INTEGER NOT NULL DEFAULT nextval('leave_requests_id_seq'::regclass) PRIMARY KEY,
+  employee_id INTEGER,
+  leave_type VARCHAR(50) NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  reason TEXT,
+  status VARCHAR(20) DEFAULT 'Pending'::character varying,
+  approved_by INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Realistic Customers
-INSERT INTO customers (name, phone, house_no, street, area, status, lat, lng) VALUES 
-('Jaamac Cali', '063-4455667', 'H-204', 'Wada-jic', 'Burao North', 'Paid', 9.5222, 45.5342),
-('Hodman Axmed', '063-8899001', 'H-512', 'Sheikh Ibrahim', 'Oodweyne', 'Unpaid', 9.5255, 45.5312),
-('Mustafe Cabdi', '063-1234567', 'H-99', 'Jaayga', 'Burao East', 'Paid', 9.5198, 45.5367),
-('Sahra Yusuf', '063-7112233', 'H-401', 'Sayidka', 'Burao Central', 'Paid', 9.5282, 45.5399),
-('Maxamed Cumar', '063-5544332', 'H-12', 'Iftin', 'Burao West', 'Unpaid', 9.5242, 45.5352);
+-- Table: messages
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER NOT NULL DEFAULT nextval('messages_id_seq'::regclass) PRIMARY KEY,
+  sender_id INTEGER,
+  receiver_id INTEGER,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Realistic Invoices
-INSERT INTO invoices (customer_id, amount, currency, status, payment_method, created_at) VALUES 
-(1, 15.00, 'USD', 'Paid', 'ZAAD', CURRENT_TIMESTAMP - INTERVAL '1 day'),
-(3, 15.00, 'USD', 'Paid', 'eDahab', CURRENT_TIMESTAMP - INTERVAL '2 days'),
-(4, 15.00, 'USD', 'Paid', 'ZAAD', CURRENT_TIMESTAMP - INTERVAL '3 days'),
-(2, 120000, 'SLSH', 'Unpaid', '-', CURRENT_TIMESTAMP - INTERVAL '4 days');
+-- Table: notifications
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER NOT NULL DEFAULT nextval('notifications_id_seq'::regclass) PRIMARY KEY,
+  user_id INTEGER,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Realistic Expenses
-INSERT INTO expenses (category, description, amount, expense_date) VALUES 
-('Fuel', 'Truck-01 Weekly Refuel', 450.00, CURRENT_DATE - 1),
-('Salaries', 'Driver Weekly Payment', 1200.00, CURRENT_DATE - 2),
-('Maintenance', 'Tire replacement Truck-02', 85.00, CURRENT_DATE - 5),
-('Other', 'Office Electricity Bill', 120.00, CURRENT_DATE - 7);
+-- Table: payroll
+CREATE TABLE IF NOT EXISTS payroll (
+  id INTEGER NOT NULL DEFAULT nextval('payroll_id_seq'::regclass) PRIMARY KEY,
+  employee_id INTEGER,
+  month VARCHAR(7) NOT NULL,
+  base_salary NUMERIC DEFAULT 0,
+  total_days_present INTEGER DEFAULT 0,
+  bonuses NUMERIC DEFAULT 0,
+  deductions NUMERIC DEFAULT 0,
+  net_salary NUMERIC DEFAULT 0,
+  status VARCHAR(20) DEFAULT 'Pending'::character varying,
+  payment_method VARCHAR(50),
+  payment_date TIMESTAMP,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  needs_review BOOLEAN DEFAULT false
+);
 
--- Realistic Tasks
-INSERT INTO tasks (driver_name, route_name, status, scheduled_at) VALUES 
-('Abdikariim', 'Burao North - Zone A', 'In Progress', CURRENT_TIMESTAMP - INTERVAL '2 hours'),
-('Guuleed', 'Burao East - Zone B', 'Pending', CURRENT_TIMESTAMP + INTERVAL '1 hour'),
-('Safiia', 'Burao Central', 'Completed', CURRENT_TIMESTAMP - INTERVAL '5 hours');
+-- Table: settings
+CREATE TABLE IF NOT EXISTS settings (
+  id INTEGER NOT NULL DEFAULT nextval('settings_id_seq'::regclass) PRIMARY KEY,
+  setting_key VARCHAR(50) NOT NULL,
+  setting_value TEXT,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Link some customers to tasks
-INSERT INTO task_customers (task_id, customer_id, collected) VALUES 
-(1, 1, TRUE),
-(1, 5, FALSE),
-(3, 3, TRUE),
-(3, 4, TRUE);
+-- Table: task_customers
+CREATE TABLE IF NOT EXISTS task_customers (
+  task_id INTEGER NOT NULL PRIMARY KEY REFERENCES tasks(id),
+  customer_id INTEGER NOT NULL PRIMARY KEY REFERENCES customers(id),
+  collected BOOLEAN DEFAULT false,
+  collected_at TIMESTAMP,
+  collected_lat NUMERIC,
+  collected_lng NUMERIC
+);
+
+-- Table: tasks
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER NOT NULL DEFAULT nextval('tasks_id_seq'::regclass) PRIMARY KEY,
+  driver_name VARCHAR(100) NOT NULL,
+  collector_name VARCHAR(100),
+  vehicle_plate VARCHAR(50),
+  route_name VARCHAR(100),
+  status VARCHAR(20) DEFAULT 'Pending'::character varying,
+  scheduled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP,
+  zone_id INTEGER,
+  truck_id INTEGER
+);
+
+-- Table: truck_fuel_logs
+CREATE TABLE IF NOT EXISTS truck_fuel_logs (
+  id INTEGER NOT NULL DEFAULT nextval('truck_fuel_logs_id_seq'::regclass) PRIMARY KEY,
+  truck_id INTEGER,
+  date DATE DEFAULT CURRENT_DATE,
+  liters NUMERIC NOT NULL,
+  cost NUMERIC NOT NULL,
+  odometer_reading INTEGER,
+  recorded_by INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table: truck_location_history
+CREATE TABLE IF NOT EXISTS truck_location_history (
+  id INTEGER NOT NULL DEFAULT nextval('truck_location_history_id_seq'::regclass) PRIMARY KEY,
+  task_id INTEGER NOT NULL,
+  lat NUMERIC NOT NULL,
+  lng NUMERIC NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table: truck_maintenance_logs
+CREATE TABLE IF NOT EXISTS truck_maintenance_logs (
+  id INTEGER NOT NULL DEFAULT nextval('truck_maintenance_logs_id_seq'::regclass) PRIMARY KEY,
+  truck_id INTEGER,
+  date DATE DEFAULT CURRENT_DATE,
+  description TEXT NOT NULL,
+  cost NUMERIC NOT NULL,
+  next_service_date DATE,
+  recorded_by INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Table: trucks
+CREATE TABLE IF NOT EXISTS trucks (
+  id INTEGER NOT NULL DEFAULT nextval('trucks_id_seq'::regclass) PRIMARY KEY,
+  plate_number VARCHAR(50) NOT NULL,
+  model VARCHAR(100),
+  status VARCHAR(20) DEFAULT 'Active'::character varying,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  driver_id INTEGER,
+  collector_id INTEGER
+);
+
+-- Table: users
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER NOT NULL DEFAULT nextval('users_id_seq'::regclass) PRIMARY KEY,
+  username VARCHAR(50) NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  full_name VARCHAR(100),
+  role VARCHAR(20) NOT NULL DEFAULT 'cashier'::character varying,
+  profile_image VARCHAR(255),
+  two_factor_secret TEXT,
+  two_factor_enabled BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  is_active BOOLEAN DEFAULT true,
+  zone VARCHAR(100)
+);
+
+-- Table: zones
+CREATE TABLE IF NOT EXISTS zones (
+  id INTEGER NOT NULL DEFAULT nextval('zones_id_seq'::regclass) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  assigned_driver VARCHAR(100),
+  assigned_collector VARCHAR(100),
+  assigned_truck VARCHAR(50),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  truck_id INTEGER,
+  collection_days JSONB,
+  collection_time VARCHAR(100),
+  coordinates JSONB,
+  area VARCHAR(100),
+  neighborhood VARCHAR(100),
+  zone_code VARCHAR(50),
+  sub_zone VARCHAR(100)
+);
+

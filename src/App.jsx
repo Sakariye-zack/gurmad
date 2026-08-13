@@ -394,8 +394,7 @@ const App = () => {
       case 'collectors': return <HRMView searchQuery={globalSearch} initialTab="Collectors" />;
       case 'onboard_staff': return <OnboardEmployeeView />;
       case 'attendance': return <AttendanceView searchQuery={globalSearch} />;
-      case 'reports': return <ReportsView searchQuery={globalSearch} />;
-      case 'settings': return <SettingsView 
+      case 'settings': return <SettingsView
          searchQuery={globalSearch}
          currentUser={currentUser} 
          onProfileUpdate={(updatedUser) => {

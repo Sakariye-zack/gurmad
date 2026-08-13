@@ -304,6 +304,25 @@ const PayrollView = () => {
                         {p.status === 'Paid' ? <CheckCircle size={12} /> : <Clock size={12} />}
                         {p.status.toUpperCase()}
                       </span>
+                      {p.needs_review && (
+                        <div
+                          title={p.notes || 'Attendance for this month is incomplete - review before paying'}
+                          style={{
+                            marginTop: '6px',
+                            padding: '4px 10px',
+                            borderRadius: '20px',
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            backgroundColor: '#fef2f2',
+                            color: '#ef4444',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <AlertCircle size={12} /> Needs Review ({p.total_days_present}d)
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '1.2rem 1.5rem', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>

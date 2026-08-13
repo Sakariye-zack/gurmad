@@ -192,9 +192,23 @@ const MapView = ({ currentUser }) => {
       toast.success('Customer status updated!', { icon: '🔄', position: 'bottom-right' });
     });
 
+    // A customer's house/GPS location was captured or changed (registration, edit, or the
+    // dedicated location-capture endpoint) — reflect it on the map immediately, no reload needed.
+    socket.on('customer_location_updated', (data) => {
+      const c = data.customer;
+      if (!c) return;
+      setCustomers(prev => {
+        const exists = prev.some(p => p.id === c.id);
+        const withPos = { ...c, isValidPos: !isNaN(parseFloat(c.lat)) && parseFloat(c.lat) !== 0 };
+        if (exists) return prev.map(p => (p.id === c.id ? { ...p, ...withPos } : p));
+        return [...prev, withPos];
+      });
+    });
+
     return () => {
       socket.off('truck_location_updated');
       socket.off('customer_status_updated');
+      socket.off('customer_location_updated');
     };
   }, []);
 
@@ -414,6 +428,24 @@ const MapView = ({ currentUser }) => {
            <span style={{ fontSize: '1rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px' }}>GURMAD LIVE</span>
         </div>
 
+        {(() => {
+          // Only count tasks that are actually still on the road (Pending/In Progress) — a
+          // Completed task has no truck currently driving it, so it shouldn't be counted as
+          // "waiting for GPS" (that's not a live-tracking gap, the job is simply over).
+          const liveTasks = filteredTasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled');
+          const withGps = liveTasks.filter(t => {
+            const p = [parseFloat(t.lat), parseFloat(t.lng)];
+            return !isNaN(p[0]) && !isNaN(p[1]) && (p[0] !== 0 || p[1] !== 0);
+          }).length;
+          const waiting = liveTasks.length - withGps;
+          if (waiting <= 0) return null;
+          return (
+            <div className="glass" style={{ padding: '10px 20px', borderRadius: '100px', backgroundColor: 'rgba(245, 158, 11, 0.95)', color: 'white', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)', pointerEvents: 'auto' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800 }}>{waiting} gaadhi ayaa GPS sugaya (weli lama arki karo)</span>
+            </div>
+          );
+        })()}
+
         <div style={{ display: 'flex', gap: '10px', pointerEvents: 'auto' }}>
            <button onClick={() => setMapStyle(mapStyle === 'satellite' ? 'streets' : 'satellite')} className="glass" style={{ width: '56px', height: '56px', borderRadius: '18px', backgroundColor: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 20px rgba(0,0,0,0.1)' }}>
               {mapStyle === 'satellite' ? <MapIcon size={24} /> : <Layers size={24} />}
@@ -440,27 +472,21 @@ const MapView = ({ currentUser }) => {
           <Polygon key={z.id} positions={z.coordinates} pathOptions={{ color: '#3FAE2A', fillColor: '#3FAE2A', fillOpacity: 0.08, weight: 2, dashArray: '8, 12' }} />
         ))}
 
-        {/* Active Driver Markers */}
-        {filteredTasks.map(t => {
-          let pos = [parseFloat(t.lat), parseFloat(t.lng)];
-          if (isNaN(pos[0]) || isNaN(pos[1])) {
-            const zone = zones.find(z => z.name === t.route_name);
-            const center = zone?.coordinates?.[0] || [9.524, 45.535];
-            pos = [center[0] + (Math.random()-0.5)*0.002, center[1] + (Math.random()-0.5)*0.002];
-            t.lat = pos[0];
-            t.lng = pos[1];
-          }
-          
-          return (
-            <AnimatedTruckMarker 
-              key={t.id} 
-              task={t} 
-              isSelected={selectedTaskId === t.id} 
-              onSelect={() => handleSelectTask(t)}
-              onOptimizeRoute={handleOptimizeRoute}
-            />
-          );
-        })}
+        {/* Active Driver Markers — only trucks still on the road (not Completed/Cancelled) with a
+            real GPS ping are shown; no fake/random positions, and no markers for finished jobs */}
+        {filteredTasks.filter(t => {
+          if (t.status === 'Completed' || t.status === 'Cancelled') return false;
+          const pos = [parseFloat(t.lat), parseFloat(t.lng)];
+          return !isNaN(pos[0]) && !isNaN(pos[1]) && (pos[0] !== 0 || pos[1] !== 0);
+        }).map(t => (
+          <AnimatedTruckMarker
+            key={t.id}
+            task={t}
+            isSelected={selectedTaskId === t.id}
+            onSelect={() => handleSelectTask(t)}
+            onOptimizeRoute={handleOptimizeRoute}
+          />
+        ))}
 
         {/* Vehicle Route History */}
         {selectedTaskId && taskHistory[selectedTaskId] && (
@@ -544,12 +570,8 @@ const MapView = ({ currentUser }) => {
           </Marker>
         ))}
 
-        {/* Idle Gawaadhida */}
-        {dbTrucks.filter(trk => !tasks.some(t => t.vehicle_plate === trk.plate_number && t.status !== 'Completed')).map(trk => (
-          <Marker key={`idle-${trk.id}`} position={[9.518 + (Math.random()-0.5)*0.003, 45.545 + (Math.random()-0.5)*0.003]} icon={idleTruckIcon}>
-            <Tooltip direction="top" offset={[0, -10]}><span style={{ fontWeight: 800, fontSize: '0.75rem' }}>{trk.plate_number} (IDLE)</span></Tooltip>
-          </Marker>
-        ))}
+        {/* Idle trucks have no live GPS (no active task) — they are listed in the fleet panel, not
+            plotted on the map with a fake position. See idleTrucks below for the real count. */}
 
         <FeatureGroup>
           <EditControl position='topleft' onCreated={_onCreated} draw={{ rectangle: false, circle: false, circlemarker: false, marker: false, polyline: false }} />

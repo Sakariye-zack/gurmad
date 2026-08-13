@@ -11,6 +11,8 @@ node_modules
 server/node_modules
 dist
 dist-ssr
+server/uploads/*
+!server/uploads/.gitkeep
 *.local
 .env
 .env.*

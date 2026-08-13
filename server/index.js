@@ -9,6 +9,28 @@ const crypto = require('crypto');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const messaging = require('./messaging');
+
+// Formats a raw Somali phone number for WhatsApp/Twilio ("+252...").
+const formatSomaliPhone = (raw) => {
+  if (!raw) return null;
+  let digits = String(raw).replace(/\D/g, '');
+  if (digits.startsWith('063')) digits = '252' + digits.substring(1);
+  else if (digits.startsWith('63')) digits = '252' + digits;
+  else if (!digits.startsWith('252')) digits = '252' + digits;
+  return '+' + digits;
+};
+
+// Fire-and-forget WhatsApp send: never let a messaging failure block the request that
+// triggered it (task dispatch / invoice creation), just log it.
+const sendWhatsAppSafe = async (rawPhone, body) => {
+  const to = formatSomaliPhone(rawPhone);
+  if (!to) return;
+  try {
+    await messaging.sendWhatsApp(to, body);
+  } catch (err) {
+    console.error(`[WhatsApp] Failed to send to ${to}:`, err.message);
+  }
+};
 const http = require('http');
 const { Server } = require('socket.io');
 const bcrypt = require('bcryptjs');
@@ -192,6 +214,12 @@ const runMigrations = async () => {
       ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS zone VARCHAR(100);
     `);
 
+    // A cashout reconciles what a CASHIER physically brought in — collector_name stays for the
+    // zone-security check and historical grouping, but the person being reconciled is the cashier.
+    await db.query(`
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS cashier_name VARCHAR(100);
+    `);
+
     // Track exactly when a customer was serviced (independent of payment)
     await db.query(`
       ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS collected_at TIMESTAMP;
@@ -201,6 +229,11 @@ const runMigrations = async () => {
     await db.query(`
       ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS collected_lat DECIMAL(10, 8);
       ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS collected_lng DECIMAL(11, 8);
+    `);
+
+    // Flag payroll records where attendance didn't cover the full month, instead of silently paying full base salary
+    await db.query(`
+      ALTER TABLE payroll ADD COLUMN IF NOT EXISTS needs_review BOOLEAN DEFAULT FALSE;
     `);
 
     console.log('Database migrations completed successfully');
@@ -517,10 +550,42 @@ app.post('/api/upload', checkRole(['admin', 'cashier', 'collector']), upload.sin
   });
 });
 
+// A cashier's real-world job is tied to whichever zone(s)/collector(s) they were assigned to
+// (Cashier Assignments) — they should only ever see the customers in those zones or served by
+// their paired collector, not the whole company's customer list.
+const getCashierScope = async (cashierId) => {
+  const rows = await db.query(
+    'SELECT DISTINCT zone_group, collector_id FROM cashier_assignments WHERE cashier_id = $1',
+    [cashierId]
+  );
+  const zoneGroups = [...new Set(rows.rows.map(r => r.zone_group).filter(Boolean))];
+  const collectorIds = [...new Set(rows.rows.map(r => r.collector_id).filter(Boolean))];
+  return { zoneGroups, collectorIds };
+};
+
 // --- Customers ---
 app.get('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
     const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const isCashier = req.user.role.toLowerCase() === 'cashier';
+
+    if (isCashier) {
+      const { zoneGroups, collectorIds } = await getCashierScope(req.user.id);
+      if (zoneGroups.length === 0 && collectorIds.length === 0) {
+        // No assignment yet — nothing to show until an admin/gudoomiye assigns this cashier
+        // a zone/collector (Cashier Assignments), rather than leaking every customer.
+        return res.json([]);
+      }
+      const result = await db.query(`
+        SELECT c.*, e.name as collector_name
+        FROM customers c
+        LEFT JOIN employees e ON c.collector_id = e.id
+        WHERE c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[])
+        ORDER BY c.route_order ASC NULLS LAST, c.created_at DESC
+      `, [zoneGroups, collectorIds]);
+      return res.json(result.rows);
+    }
+
     const result = await db.query(`
       SELECT c.*, e.name as collector_name
       FROM customers c
@@ -574,6 +639,9 @@ app.post('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiy
       ]
     );
     await logAudit(req, 'CREATE', 'customers', result.rows[0].id, null, result.rows[0]);
+    if (result.rows[0].lat && result.rows[0].lng) {
+      io.emit('customer_location_updated', { customer: result.rows[0] });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[POST /api/customers] ERROR:', err.message, '| DETAIL:', err.detail || '');
@@ -651,6 +719,9 @@ app.put('/api/customers/:id', checkRole(['admin', 'cashier', 'collector']), asyn
       ]
     );
     await logAudit(req, 'UPDATE', 'customers', req.params.id, oldValues, result.rows[0]);
+    if (result.rows[0].lat && result.rows[0].lng) {
+      io.emit('customer_location_updated', { customer: result.rows[0] });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     console.error('[PUT /api/customers/:id] ERROR:', err.message, '| DETAIL:', err.detail || '');
@@ -698,19 +769,45 @@ app.get('/api/invoices/stats', checkRole(['admin', 'cashier', 'gudoomiye']), asy
 
 app.get('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
+    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const isCashier = req.user.role.toLowerCase() === 'cashier';
+
+    if (isCashier) {
+      const { zoneGroups, collectorIds } = await getCashierScope(req.user.id);
+      if (zoneGroups.length === 0 && collectorIds.length === 0) {
+        return res.json([]);
+      }
+      const result = await db.query(`
+        SELECT
+          i.*,
+          c.name as customer_name,
+          c.phone as customer_phone,
+          COALESCE(i.invoice_house_no, c.house_no) as customer_house,
+          c.street as customer_street,
+          c.area as customer_area,
+          COALESCE(i.invoice_zone, c.zone) as zone
+        FROM invoices i
+        INNER JOIN customers c ON i.customer_id = c.id
+        WHERE c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[])
+        ORDER BY i.created_at DESC
+      `, [zoneGroups, collectorIds]);
+      return res.json(result.rows);
+    }
+
     const result = await db.query(`
-      SELECT 
-        i.*, 
-        c.name as customer_name, 
+      SELECT
+        i.*,
+        c.name as customer_name,
         c.phone as customer_phone,
         COALESCE(i.invoice_house_no, c.house_no) as customer_house,
         c.street as customer_street,
         c.area as customer_area,
-        COALESCE(i.invoice_zone, c.zone) as zone 
-      FROM invoices i 
-      INNER JOIN customers c ON i.customer_id = c.id 
+        COALESCE(i.invoice_zone, c.zone) as zone
+      FROM invoices i
+      INNER JOIN customers c ON i.customer_id = c.id
+      ${isGudoomiye ? 'WHERE c.zone = $1' : ''}
       ORDER BY i.created_at DESC
-    `);
+    `, isGudoomiye ? [req.user.zone] : []);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -815,6 +912,23 @@ app.post('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye']), async (r
       status: invoiceStatus
     });
 
+    // WhatsApp the customer automatically: a receipt when they paid in full, or a debt
+    // reminder with the exact balance owed when part/all of it was left as debt.
+    (async () => {
+      try {
+        const custRow = await db.query('SELECT name, phone, whatsapp FROM customers WHERE id = $1', [customerId]);
+        const cust = custRow.rows[0];
+        if (!cust) return;
+        const debtAmt = parseFloat(debt) || 0;
+        const body = debtAmt > 0
+          ? `Salaan ${cust.name},\n\nWaad ku mahadsantahay lacagtii aad bixisay. Waxaad wali nagu leedahay dayn dhan $${debtAmt.toFixed(2)} (${currency || 'USD'}). Fadlan naga soo xaqiiji marka aad diyaar u tahay inaad bixiso.\n\nGurmad Waste Management`
+          : `Salaan ${cust.name},\n\nWaan ku mahadsanahay lacagtii $${totalAmount.toFixed(2)} (${currency || 'USD'}) ee aad maanta bixisay. Kharashkaaga waa la xaqiijiyay.\n\nGurmad Waste Management`;
+        await sendWhatsAppSafe(cust.whatsapp || cust.phone, body);
+      } catch (err) {
+        console.error('[WhatsApp] Invoice receipt/debt reminder failed:', err.message);
+      }
+    })();
+
     await logAudit(req, 'CREATE', 'invoices', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
@@ -903,9 +1017,11 @@ app.delete('/api/collector-assignments/:id', checkRole(['admin']), async (req, r
 });
 
 // --- Cashier Assignments (which zone/group a cashier collects money for) ---
-app.get('/api/cashier-assignments', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+app.get('/api/cashier-assignments', checkRole(['admin', 'gudoomiye', 'cashier']), async (req, res) => {
   try {
     const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const isCashier = req.user.role.toLowerCase() === 'cashier';
+    const whereClause = isGudoomiye ? 'WHERE ca.zone_group = $1' : (isCashier ? 'WHERE ca.cashier_id = $1' : '');
     const result = await db.query(`
       SELECT
         ca.id,
@@ -920,9 +1036,9 @@ app.get('/api/cashier-assignments', checkRole(['admin', 'gudoomiye']), async (re
       FROM cashier_assignments ca
       LEFT JOIN users u ON ca.cashier_id = u.id
       LEFT JOIN employees e ON ca.collector_id = e.id
-      ${isGudoomiye ? 'WHERE ca.zone_group = $1' : ''}
+      ${whereClause}
       ORDER BY ca.zone_group ASC, ca.id ASC
-    `, isGudoomiye ? [req.user.zone] : []);
+    `, isGudoomiye ? [req.user.zone] : (isCashier ? [req.user.id] : []));
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1073,18 +1189,22 @@ app.post('/api/expenses', checkRole(['admin', 'cashier']), upload.single('invoic
 // --- Tasks ---
 app.get('/api/tasks', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
   try {
+    // A gudoomiye should only see the tasks dispatched in their own zone — route_name carries
+    // the zone group label (e.g. "Group1"), same as everywhere else this is scoped.
+    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
     const result = await db.query(`
-      SELECT t.*, lh.lat, lh.lng 
+      SELECT t.*, lh.lat, lh.lng
       FROM tasks t
       LEFT JOIN LATERAL (
-        SELECT lat, lng 
-        FROM truck_location_history 
-        WHERE task_id = t.id 
-        ORDER BY created_at DESC 
+        SELECT lat, lng
+        FROM truck_location_history
+        WHERE task_id = t.id
+        ORDER BY created_at DESC
         LIMIT 1
       ) lh ON true
+      ${isGudoomiye ? 'WHERE t.route_name = $1' : ''}
       ORDER BY t.status ASC, t.scheduled_at DESC
-    `);
+    `, isGudoomiye ? [req.user.zone] : []);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1117,6 +1237,27 @@ app.post('/api/tasks', checkRole(['admin', 'collector']), async (req, res) => {
         [task.id, route_name]
       );
     }
+
+    // Automatically remind every customer on this task's route, by WhatsApp, that the
+    // collector/truck is coming for them today — this is the actual dispatch moment, so it's
+    // the right point to notify, not left as a manual step someone has to remember to do.
+    (async () => {
+      try {
+        const assignedCustomers = await db.query(
+          `SELECT c.name, c.phone, c.whatsapp FROM task_customers tc
+           JOIN customers c ON tc.customer_id = c.id
+           WHERE tc.task_id = $1 AND (c.phone IS NOT NULL OR c.whatsapp IS NOT NULL)`,
+          [task.id]
+        );
+        for (const cust of assignedCustomers.rows) {
+          const body = `Salaan ${cust.name},\n\nGurmad Waste Management ayaa maanta idiin iman doona si ay qashinka uga soo qaadaan gurigaaga. Fadlan diyaar u ahaw.\n\nMahadsanid.`;
+          await sendWhatsAppSafe(cust.whatsapp || cust.phone, body);
+          await new Promise(resolve => setTimeout(resolve, 200)); // avoid Twilio rate limits
+        }
+      } catch (err) {
+        console.error('[WhatsApp] Task dispatch reminder batch failed:', err.message);
+      }
+    })();
 
     // Notify Driver and/or Collector
     const assignees = [driver_name, collector_name].filter(Boolean);
@@ -1678,20 +1819,29 @@ app.post('/api/payroll/generate', checkRole(['admin', 'cashier']), async (req, r
       const daysPresent = parseInt(attendance.rows[0].count);
 
       // 3. Insert or update payroll
-      // Net salary is now simply the base salary
+      // Attendance is not auto-deducted from pay (that risks wrongly shortchanging someone -
+      // e.g. approved leave isn't tracked as attendance yet). Instead, flag it for manual review.
       const baseSalary = emp.salary || 0;
       const netSalary = baseSalary;
+      const [year, monthNum] = month.split('-').map(Number);
+      const daysInMonth = new Date(year, monthNum, 0).getDate();
+      const needsReview = daysPresent < daysInMonth;
+      const suggestedNote = needsReview
+        ? `Attended ${daysPresent}/${daysInMonth} days this month — review before paying`
+        : null;
 
       const payrollResult = await db.query(`
-        INSERT INTO payroll (employee_id, month, base_salary, total_days_present, net_salary)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (employee_id, month) 
-        DO UPDATE SET 
+        INSERT INTO payroll (employee_id, month, base_salary, total_days_present, net_salary, needs_review, notes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (employee_id, month)
+        DO UPDATE SET
           base_salary = EXCLUDED.base_salary,
           total_days_present = EXCLUDED.total_days_present,
-          net_salary = EXCLUDED.net_salary
+          net_salary = EXCLUDED.net_salary,
+          needs_review = EXCLUDED.needs_review,
+          notes = COALESCE(payroll.notes, EXCLUDED.notes)
         RETURNING *
-      `, [emp.id, month, baseSalary, daysPresent, netSalary]);
+      `, [emp.id, month, baseSalary, daysPresent, netSalary, needsReview, suggestedNote]);
 
       results.push(payrollResult.rows[0]);
     }
@@ -1748,14 +1898,50 @@ app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']),
     const customersRes = isGudoomiye
       ? await db.query("SELECT COUNT(*) FROM customers WHERE zone = $1", [zone])
       : await db.query("SELECT COUNT(*) FROM customers");
-    const tasksRes = await db.query("SELECT COUNT(*) FROM tasks WHERE status = 'Completed'");
-    const expensesRes = await db.query("SELECT SUM(amount) FROM expenses");
+    // A collector's "Tasks Completed" must mean their own completed tasks, and a gudoomiye's
+    // must mean their own zone's — not the whole system's, otherwise every dashboard shows the
+    // same misleading company-wide number. tasks.route_name carries the zone group label
+    // (e.g. "Group1"), the same value stored on req.user.zone.
+    const isCollector = req.user.role.toLowerCase() === 'collector';
+    let tasksRes;
+    if (isCollector) {
+      const meRow = await db.query('SELECT full_name FROM users WHERE id = $1', [req.user.id]);
+      const myName = meRow.rows[0]?.full_name || req.user.username || '';
+      tasksRes = await db.query(
+        "SELECT COUNT(*) FROM tasks WHERE status = 'Completed' AND LOWER(TRIM(collector_name)) = LOWER(TRIM($1))",
+        [myName]
+      );
+    } else if (isGudoomiye) {
+      tasksRes = await db.query(
+        "SELECT COUNT(*) FROM tasks WHERE status = 'Completed' AND route_name = $1",
+        [zone]
+      );
+    } else {
+      tasksRes = await db.query("SELECT COUNT(*) FROM tasks WHERE status = 'Completed'");
+    }
+
+    // Expenses (fuel, salaries, etc.) have no per-zone attribution in the schema — showing the
+    // whole company's expense total on a zone manager's dashboard would be misleading, so a
+    // gudoomiye instead gets a stat that actually reflects their own zone: unpaid customers.
+    let totalExpenses = 0;
+    let zonePendingCustomers = 0;
+    if (isGudoomiye) {
+      const pendingRes = await db.query(
+        "SELECT COUNT(*) FROM customers WHERE zone = $1 AND payment_status = 'Unpaid'",
+        [zone]
+      );
+      zonePendingCustomers = parseInt(pendingRes.rows[0].count || 0);
+    } else {
+      const expensesRes = await db.query("SELECT SUM(amount) FROM expenses");
+      totalExpenses = parseFloat(expensesRes.rows[0].sum || 0);
+    }
 
     res.json({
       revenue: parseFloat(revenueRes.rows[0].sum || 0),
       customerCount: parseInt(customersRes.rows[0].count || 0),
       tasksCompleted: parseInt(tasksRes.rows[0].count || 0),
-      totalExpenses: parseFloat(expensesRes.rows[0].sum || 0)
+      totalExpenses,
+      zonePendingCustomers
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2145,7 +2331,7 @@ app.get('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye']), async (re
 });
 
 app.post('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
-  const { collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by, zone } = req.body;
+  const { collector_name, cashier_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by, zone } = req.body;
 
   let resolvedZone = zone || null;
   if (req.user.role.toLowerCase() === 'gudoomiye') {
@@ -2163,9 +2349,10 @@ app.post('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye']), async (r
 
   try {
     const result = await db.query(
-      'INSERT INTO cashouts (collector_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by, zone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+      'INSERT INTO cashouts (collector_name, cashier_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by, zone) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *',
       [
         collector_name,
+        cashier_name || null,
         expected_amount,
         actual_amount,
         zaad_amount || 0,
@@ -2215,41 +2402,17 @@ app.post('/api/settings', checkRole(['admin', 'cashier']), updateSettingsHandler
 app.put('/api/settings', checkRole(['admin', 'cashier']), updateSettingsHandler);
 
 // --- Tracking & Location Endpoints ---
-app.post('/api/tasks/:id/ping', checkRole(['admin', 'collector']), async (req, res) => {
-  const { id } = req.params;
-  const { lat, lng } = req.body;
-  try {
-    await db.query(
-      'INSERT INTO truck_location_history (task_id, lat, lng) VALUES ($1, $2, $3)',
-      [id, lat, lng]
-    );
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/tasks/:id/history', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await db.query(
-      'SELECT lat, lng, created_at FROM truck_location_history WHERE task_id = $1 ORDER BY created_at ASC',
-      [id]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.put('/api/customers/:id/location', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { id } = req.params;
   const { lat, lng } = req.body;
   try {
-    await db.query(
-      'UPDATE customers SET lat = $1, lng = $2 WHERE id = $3',
+    const result = await db.query(
+      'UPDATE customers SET lat = $1, lng = $2 WHERE id = $3 RETURNING *',
       [lat, lng, id]
     );
+    if (result.rows[0] && result.rows[0].lat && result.rows[0].lng) {
+      io.emit('customer_location_updated', { customer: result.rows[0] });
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2380,50 +2543,6 @@ app.post('/api/fleet/maintenance', checkRole(['admin']), async (req, res) => {
 });
 
 // --- Inventory Management ---
-app.get('/api/inventory', checkRole(['admin']), async (req, res) => {
-  try {
-    const result = await db.query('SELECT * FROM inventory ORDER BY item_name ASC');
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/inventory', checkRole(['admin']), async (req, res) => {
-  const { item_name, quantity, unit, price_per_unit, status } = req.body;
-  try {
-    const result = await db.query(
-      'INSERT INTO inventory (item_name, quantity, unit, price_per_unit, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [item_name, quantity, unit, price_per_unit, status]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
-  const { item_name, quantity, unit, price_per_unit, status } = req.body;
-  try {
-    const result = await db.query(
-      'UPDATE inventory SET item_name = $1, quantity = $2, unit = $3, price_per_unit = $4, status = $5 WHERE id = $6 RETURNING *',
-      [item_name, quantity, unit, price_per_unit, status, req.params.id]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
-  try {
-    await db.query('DELETE FROM inventory WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // --- Complaints Management ---
 app.get('/api/complaints', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
@@ -2568,52 +2687,10 @@ app.get('/api/admin/backup', checkRole(['admin']), async (req, res) => {
 });
 
 // --- User Management (Admin Only) ---
-app.get('/api/users', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
-  try {
-    const result = await db.query('SELECT id, username, full_name, role, two_factor_enabled, created_at FROM users ORDER BY id ASC');
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/users', checkRole(['admin']), async (req, res) => {
-  const { username, password, full_name, role } = req.body;
-  try {
-    // Basic validation
-    if (!username || !password) return res.status(400).json({ error: 'Username and password are required' });
-
-    const result = await db.query(
-      'INSERT INTO users (username, password, full_name, role) VALUES ($1, $2, $3, $4) RETURNING id, username, full_name, role, created_at',
-      [username, password, full_name || '', role || 'collector']
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    if (err.message.includes('unique constraint')) {
-      return res.status(400).json({ error: 'Username already exists' });
-    }
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.post('/api/users/:id/reset-2fa', checkRole(['admin']), async (req, res) => {
   const { id } = req.params;
   try {
     await db.query('UPDATE users SET two_factor_enabled = FALSE, two_factor_secret = NULL WHERE id = $1', [id]);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/users/:id/full-reset', checkRole(['admin']), async (req, res) => {
-  const { id } = req.params;
-  const { newPassword } = req.body;
-  try {
-    await db.query(
-      'UPDATE users SET password = $1, two_factor_enabled = FALSE, two_factor_secret = NULL WHERE id = $2',
-      [newPassword, id]
-    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2727,13 +2804,28 @@ app.get('/api/optimize-route', checkRole(['admin', 'cashier', 'collector']), asy
     // Mapbox/OSRM expects: lng,lat;lng,lat
     const coordinatesString = customers.map(c => `${c.lng},${c.lat}`).join(';');
 
-    const osrmUrl = `http://router.project-osrm.org/trip/v1/driving/${coordinatesString}?roundtrip=true&source=first&geometries=geojson`;
+    // NOTE: OSRM_BASE_URL defaults to OSRM's free public demo server, which has no uptime
+    // guarantee and can rate-limit or block traffic without notice - it is explicitly meant
+    // for testing, not production use. Set OSRM_BASE_URL in the environment to point this at
+    // a paid or self-hosted OSRM instance once one is available.
+    const osrmBase = process.env.OSRM_BASE_URL || 'https://router.project-osrm.org';
+    const osrmUrl = `${osrmBase}/trip/v1/driving/${coordinatesString}?roundtrip=true&source=first&geometries=geojson`;
 
-    const osrmResponse = await fetch(osrmUrl);
-    const osrmData = await osrmResponse.json();
+    let osrmData;
+    try {
+      const osrmResponse = await fetch(osrmUrl, { signal: AbortSignal.timeout(8000) });
+      osrmData = await osrmResponse.json();
+    } catch (fetchErr) {
+      const timedOut = fetchErr.name === 'TimeoutError' || fetchErr.name === 'AbortError';
+      return res.status(503).json({
+        error: timedOut
+          ? 'Route optimization service timed out. It runs on a public demo server with no uptime guarantee - try again shortly.'
+          : 'Route optimization service is unreachable right now.'
+      });
+    }
 
     if (osrmData.code !== 'Ok') {
-      throw new Error('OSRM API failed: ' + osrmData.code);
+      return res.status(502).json({ error: 'Route optimization service could not compute a route: ' + osrmData.code });
     }
 
     // Reorder customers based on OSRM waypoints
@@ -2755,6 +2847,52 @@ app.get('/api/optimize-route', checkRole(['admin', 'cashier', 'collector']), asy
   } catch (err) {
     console.error('Route Optimization Error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Proxies the live truck-animation routing calls (getRoute/snapToRoad) through the backend so
+// they share the same OSRM_BASE_URL/timeout handling as /api/optimize-route above, instead of the
+// browser calling the public OSRM demo server directly. That direct browser call was the cause of
+// trucks appearing to drive in straight lines across blocks/houses on the Operations Map: the
+// public demo server frequently rate-limits or fails from a browser origin, silently falling back
+// to a straight line between two points with no road-following at all.
+app.get('/api/route', authenticateToken, async (req, res) => {
+  const { start, end } = req.query; // "lat,lng"
+  if (!start || !end) return res.status(400).json({ error: 'start and end are required' });
+  try {
+    const [sLat, sLng] = start.split(',').map(Number);
+    const [eLat, eLng] = end.split(',').map(Number);
+    if ([sLat, sLng, eLat, eLng].some(isNaN)) return res.status(400).json({ error: 'invalid coordinates' });
+
+    const osrmBase = process.env.OSRM_BASE_URL || 'https://router.project-osrm.org';
+    const osrmUrl = `${osrmBase}/route/v1/driving/${sLng},${sLat};${eLng},${eLat}?overview=full&geometries=geojson`;
+    const r = await fetch(osrmUrl, { signal: AbortSignal.timeout(6000) });
+    const data = await r.json();
+    if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+      return res.json({ success: true, coordinates: data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]) });
+    }
+    res.json({ success: false });
+  } catch (err) {
+    res.json({ success: false });
+  }
+});
+
+app.get('/api/snap-to-road', authenticateToken, async (req, res) => {
+  const { lat, lng } = req.query;
+  const latNum = parseFloat(lat), lngNum = parseFloat(lng);
+  if (isNaN(latNum) || isNaN(lngNum)) return res.status(400).json({ error: 'invalid coordinates' });
+  try {
+    const osrmBase = process.env.OSRM_BASE_URL || 'https://router.project-osrm.org';
+    const osrmUrl = `${osrmBase}/nearest/v1/driving/${lngNum},${latNum}?number=1`;
+    const r = await fetch(osrmUrl, { signal: AbortSignal.timeout(6000) });
+    const data = await r.json();
+    if (data.code === 'Ok' && data.waypoints && data.waypoints.length > 0) {
+      const snapped = data.waypoints[0].location;
+      return res.json({ success: true, lat: snapped[1], lng: snapped[0] });
+    }
+    res.json({ success: false });
+  } catch (err) {
+    res.json({ success: false });
   }
 });
 
@@ -2877,15 +3015,6 @@ app.get('/api/users/:id/notifications', authenticateToken, async (req, res) => {
       [req.params.id]
     );
     res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
-  try {
-    await db.query('UPDATE notifications SET is_read = TRUE WHERE id = $1', [req.params.id]);
-    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3070,146 +3199,7 @@ app.post('/api/payments/zaad', checkRole(['admin', 'cashier']), async (req, res)
 
 // --- Messaging Endpoints ---
 
-app.post('/api/messages/send', checkRole(['admin']), async (req, res) => {
-  const { to, message, method } = req.body;
-  if (!to || !message) return res.status(400).json({ error: 'Missing to or message' });
-  try {
-    let result;
-    if (method === 'whatsapp') {
-      result = await messaging.sendWhatsApp(to, message);
-    } else {
-      result = await messaging.sendSMS(to, message);
-    }
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/whatsapp/notify', checkRole(['admin']), async (req, res) => {
-  const { taskId, message, customerIds } = req.body;
-  try {
-    let query = 'SELECT phone FROM customers WHERE id = ANY($1)';
-    let params = [customerIds];
-
-    if (!customerIds || customerIds.length === 0) {
-      query = 'SELECT c.phone FROM task_customers tc JOIN customers c ON tc.customer_id = c.id WHERE tc.task_id = $1';
-      params = [taskId];
-    }
-
-    const result = await db.query(query, params);
-    const phones = result.rows.map(r => r.phone).filter(Boolean);
-
-    let sentCount = 0;
-    for (const phone of phones) {
-      try {
-        await messaging.sendWhatsApp(phone, message);
-        sentCount++;
-      } catch (e) {
-        console.error('Failed to notify phone:', phone, e.message);
-      }
-    }
-    res.json({ success: true, sentCount, total: phones.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/messages/broadcast', checkRole(['admin']), async (req, res) => {
-  const { targetType, message, type } = req.body;
-  if (!message) return res.status(400).json({ error: 'Missing message' });
-
-  try {
-    let query = 'SELECT phone, name FROM customers WHERE phone IS NOT NULL AND phone != \'\'';
-    if (targetType === 'unpaid') {
-      query += " AND status = 'Unpaid'";
-    }
-
-    const result = await db.query(query);
-    const customers = result.rows;
-
-    let sentCount = 0;
-    for (const c of customers) {
-      try {
-        const personalizedMsg = message.replace(/{name}/g, c.name);
-        if (type === 'whatsapp') {
-          await messaging.sendWhatsApp(c.phone, personalizedMsg);
-        } else {
-          await messaging.sendSMS(c.phone, personalizedMsg);
-        }
-        sentCount++;
-      } catch (e) {
-        console.error('Failed to notify phone:', c.phone, e.message);
-      }
-    }
-    res.json({ success: true, sentCount, total: customers.length, message: `Successfully sent ${sentCount} messages` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // --- Route Optimization Endpoint ---
-app.get('/api/optimize-route', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
-  const { task_id } = req.query;
-  if (!task_id) return res.status(400).json({ error: 'Missing task_id' });
-
-  try {
-    const result = await db.query(`
-      SELECT c.id, c.lat, c.lng 
-      FROM task_customers tc 
-      JOIN customers c ON tc.customer_id = c.id 
-      WHERE tc.task_id = $1 AND tc.collected = false 
-        AND c.lat IS NOT NULL AND c.lng IS NOT NULL 
-        AND c.lat != 0 AND c.lng != 0
-    `, [task_id]);
-
-    const customers = result.rows;
-    if (customers.length === 0) {
-      return res.json({ success: true, geometry: { type: 'LineString', coordinates: [] } });
-    }
-
-    const points = customers.map(c => ({
-      id: c.id,
-      lat: parseFloat(c.lat),
-      lng: parseFloat(c.lng)
-    }));
-
-    let unvisited = [...points];
-    let current = unvisited.shift();
-    let sortedPoints = [current];
-
-    while (unvisited.length > 0) {
-      let nearestIdx = 0;
-      let minDistance = Infinity;
-
-      for (let i = 0; i < unvisited.length; i++) {
-        const point = unvisited[i];
-        const d2 = Math.pow(current.lat - point.lat, 2) + Math.pow(current.lng - point.lng, 2);
-        if (d2 < minDistance) {
-          minDistance = d2;
-          nearestIdx = i;
-        }
-      }
-
-      current = unvisited[nearestIdx];
-      sortedPoints.push(current);
-      unvisited.splice(nearestIdx, 1);
-    }
-
-    const coordinates = sortedPoints.map(p => [p.lng, p.lat]);
-
-    res.json({
-      success: true,
-      geometry: {
-        type: 'LineString',
-        coordinates
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 server.listen(PORT, () => {
   console.log(`Gurmad Backend running on port ${PORT}`);
 });

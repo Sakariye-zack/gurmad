@@ -6,12 +6,13 @@ import { api } from '../api';
 const CashoutView = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState('process'); // 'process' or 'history'
   
-  const [collectors, setCollectors] = useState([]);
+  const [cashiers, setCashiers] = useState([]);
+  const [cashierToCollectors, setCashierToCollectors] = useState({}); // cashier full_name -> [collector names]
   const [invoices, setInvoices] = useState([]);
   const [cashouts, setCashouts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  const [selectedCollector, setSelectedCollector] = useState('');
+
+  const [selectedCashier, setSelectedCashier] = useState('');
   
   // Actual amounts inputs
   const [actualCashUsd, setActualCashUsd] = useState('');
@@ -39,18 +40,29 @@ const CashoutView = ({ currentUser }) => {
         api.getCashierAssignments().catch(() => [])
       ]);
 
-      let collectorUsers = uData.filter(u => u.role === 'collector');
+      // Build a cashier -> [paired collector names] map from Cashier Assignments, so selecting
+      // a cashier here can pull "expected" straight from the collector(s) they're paired with.
+      const cashierMap = {};
+      (pairingsData || []).forEach(p => {
+        if (!p.cashier_name || !p.collector_name) return;
+        if (!cashierMap[p.cashier_name]) cashierMap[p.cashier_name] = [];
+        cashierMap[p.cashier_name].push(p.collector_name);
+      });
+      setCashierToCollectors(cashierMap);
 
-      // A cashier paired to specific collector(s) can only cash out for those collectors
+      let cashierUsers = uData.filter(u => u.role === 'cashier');
+
+      // A cashier only ever cashes out their own collections
       if (currentUser?.role === 'cashier') {
-        const myPairings = (pairingsData || []).filter(p => p.cashier_id === currentUser.id && p.collector_name);
-        if (myPairings.length > 0) {
-          const pairedNames = myPairings.map(p => p.collector_name.toLowerCase());
-          collectorUsers = collectorUsers.filter(u => pairedNames.includes((u.full_name || '').toLowerCase()));
-        }
+        cashierUsers = cashierUsers.filter(u => u.id === currentUser.id);
+      }
+      // A gudoomiye only sees cashiers assigned within their own zone
+      if (currentUser?.role === 'gudoomiye') {
+        const zoneUserIds = new Set((pairingsData || []).filter(p => p.zone_group === currentUser.zone).map(p => p.cashier_id));
+        cashierUsers = cashierUsers.filter(u => zoneUserIds.has(u.id));
       }
 
-      setCollectors(collectorUsers);
+      setCashiers(cashierUsers);
       setCashouts(cashoutsData || []);
 
       // Filter invoices for today only
@@ -67,38 +79,44 @@ const CashoutView = ({ currentUser }) => {
     }
   };
 
+  // The collector(s) this cashier is paired with — that's whose route income they're
+  // reconciling. Falls back to matching invoices by cashier_name directly (invoices already
+  // record who processed them), in case a pairing hasn't been set up yet.
+  const pairedCollectorNames = (cashierToCollectors[selectedCashier] || []).map(n => n.toLowerCase());
+
   const selectedStats = useMemo(() => {
-    if (!selectedCollector) return null;
-    
-    const collectorInvs = invoices.filter(i => 
-      i.collector_name && 
-      i.collector_name.toLowerCase() === selectedCollector.toLowerCase()
-    );
-    
+    if (!selectedCashier) return null;
+
+    const cashierInvs = invoices.filter(i => {
+      const byCashier = (i.cashier_name || '').toLowerCase() === selectedCashier.toLowerCase();
+      const byCollector = i.collector_name && pairedCollectorNames.includes(i.collector_name.toLowerCase());
+      return byCashier || byCollector;
+    });
+
     let cashUsd = 0;
     let zaadUsd = 0;
     let edahabUsd = 0;
     let slshVal = 0;
-    
-    collectorInvs.forEach(inv => {
+
+    cashierInvs.forEach(inv => {
       cashUsd += parseFloat(inv.cash_amount) || 0;
       zaadUsd += parseFloat(inv.zaad_amount) || 0;
       edahabUsd += parseFloat(inv.edahab_amount) || 0;
       slshVal += parseFloat(inv.slsh_amount) || 0;
     });
-    
+
     const rate = parseFloat(settings.exchange_rate) || 8500;
     const totalUsd = cashUsd + zaadUsd + edahabUsd + (slshVal / rate);
-    
+
     return {
       cashUsd,
       zaadUsd,
       edahabUsd,
       slshVal,
       totalUsd,
-      invoiceCount: collectorInvs.length
+      invoiceCount: cashierInvs.length
     };
-  }, [selectedCollector, invoices, settings]);
+  }, [selectedCashier, invoices, settings, cashierToCollectors]);
 
   const totalActualUsd = useMemo(() => {
     const cash = parseFloat(actualCashUsd) || 0;
@@ -111,8 +129,8 @@ const CashoutView = ({ currentUser }) => {
   }, [actualCashUsd, actualZaad, actualEDahab, actualSlsh, settings]);
 
   const handleCashout = async () => {
-    if (!selectedCollector) return toast.error('Please select a collector');
-    
+    if (!selectedCashier) return toast.error('Please select a cashier');
+
     // Check if at least one input is provided
     if (actualCashUsd === '' && actualZaad === '' && actualEDahab === '' && actualSlsh === '') {
       return toast.error('Please enter at least one actual amount');
@@ -127,9 +145,11 @@ const CashoutView = ({ currentUser }) => {
     }
 
     try {
-      // 1. Create Cashout Record
+      // 1. Create Cashout Record — collector_name is kept for the zone-security check and
+      // historical grouping, cashier_name is who's actually being reconciled.
       const newCashout = await api.addCashout({
-        collector_name: selectedCollector,
+        collector_name: (cashierToCollectors[selectedCashier] || [])[0] || '',
+        cashier_name: selectedCashier,
         expected_amount: expected,
         actual_amount: actual,
         zaad_amount: parseFloat(actualZaad) || 0,
@@ -141,14 +161,14 @@ const CashoutView = ({ currentUser }) => {
         processed_by: currentUser?.full_name || 'Cashier'
       });
 
-      // 2. Register Debt if there is a shortage
+      // 2. Register Debt if there is a shortage — owed by the cashier who came up short
       if (missing > 0.01) {
-        const collectorObj = collectors.find(c => c.full_name.toLowerCase() === selectedCollector.toLowerCase() || c.username.toLowerCase() === selectedCollector.toLowerCase());
-        
+        const cashierObj = cashiers.find(c => c.full_name.toLowerCase() === selectedCashier.toLowerCase() || c.username.toLowerCase() === selectedCashier.toLowerCase());
+
         const debtData = {
           customer_id: null,
-          debtor_name: selectedCollector,
-          phone: collectorObj?.phone || '',
+          debtor_name: selectedCashier,
+          phone: cashierObj?.phone || '',
           amount: missing,
           currency: 'USD',
           description: `Cashout Shortage - Reason: ${justification}`,
@@ -156,7 +176,7 @@ const CashoutView = ({ currentUser }) => {
           zone: 'Office Cashout',
           house_no: '-'
         };
-        
+
         await api.addDebt(debtData);
         toast.success('Deyntii (Shortage) waa la diiwaangeliyay!');
       } else if (actual - expected > 0.01) {
@@ -174,7 +194,7 @@ const CashoutView = ({ currentUser }) => {
       setActualEDahab('');
       setActualSlsh('');
       setJustification('');
-      setSelectedCollector('');
+      setSelectedCashier('');
       
     } catch (err) {
       console.error(err);
@@ -274,14 +294,14 @@ const CashoutView = ({ currentUser }) => {
         ) : activeTab === 'process' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', maxWidth: '800px', margin: '0 auto' }}>
             
-            {/* Collector Selection */}
+            {/* Cashier Selection */}
             <div>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Select Collector</label>
-              <select 
-                className="input-field" 
-                value={selectedCollector}
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>Select Cashier</label>
+              <select
+                className="input-field"
+                value={selectedCashier}
                 onChange={(e) => {
-                  setSelectedCollector(e.target.value);
+                  setSelectedCashier(e.target.value);
                   setActualCashUsd('');
                   setActualZaad('');
                   setActualEDahab('');
@@ -290,14 +310,19 @@ const CashoutView = ({ currentUser }) => {
                 }}
                 style={inputStyle}
               >
-                <option value="">-- Dooro Collector (Select) --</option>
-                {collectors.map(c => (
-                  <option key={c.id} value={c.full_name}>{c.full_name}</option>
+                <option value="">-- Dooro Cashier (Select) --</option>
+                {cashiers.map(c => (
+                  <option key={c.id} value={c.full_name}>{c.full_name}{cashierToCollectors[c.full_name]?.length ? ` (${cashierToCollectors[c.full_name].join(', ')})` : ''}</option>
                 ))}
               </select>
+              {cashiers.length === 0 && (
+                <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#ef4444' }}>
+                  No cashiers found. Assign cashiers to a zone/collector first (Cashier Assignments).
+                </p>
+              )}
             </div>
 
-            {selectedCollector && selectedStats && (
+            {selectedCashier && selectedStats && (
               <div style={{ backgroundColor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
                 <div style={{ padding: '1.5rem', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f1f5f9' }}>
                   <h3 style={{ margin: 0, color: '#334155', fontWeight: 700 }}>Expected Collections (La filayo)</h3>
@@ -333,7 +358,7 @@ const CashoutView = ({ currentUser }) => {
             )}
 
             {/* Actual Amounts Inputs */}
-            {selectedCollector && (
+            {selectedCashier && (
               <div>
                 <h3 style={{ marginBottom: '1rem', color: '#334155', fontWeight: 700 }}>Actual Amounts Brought (Lacagta la keenay)</h3>
                 
@@ -382,7 +407,7 @@ const CashoutView = ({ currentUser }) => {
             )}
 
             {/* Shortage Warning and Justification */}
-            {selectedCollector && (selectedStats.totalUsd - totalActualUsd > 0.01) && (
+            {selectedCashier && (selectedStats.totalUsd - totalActualUsd > 0.01) && (
               <div style={{ padding: '1.5rem', backgroundColor: '#fef2f2', borderRadius: '8px', border: '1px solid #fca5a5' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ef4444', marginBottom: '1rem', fontWeight: 600 }}>
                   <AlertCircle size={24} />
@@ -403,7 +428,7 @@ const CashoutView = ({ currentUser }) => {
             )}
 
             {/* Overage Notice */}
-            {selectedCollector && (totalActualUsd - selectedStats.totalUsd > 0.01) && (
+            {selectedCashier && (totalActualUsd - selectedStats.totalUsd > 0.01) && (
               <div style={{ padding: '1.5rem', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #86efac' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#15803d', fontWeight: 600 }}>
                   <AlertCircle size={24} />
@@ -416,7 +441,7 @@ const CashoutView = ({ currentUser }) => {
             <button 
               className="btn btn-primary" 
               onClick={handleCashout}
-              disabled={!selectedCollector}
+              disabled={!selectedCashier}
               style={{ marginTop: '1rem', padding: '1rem', fontSize: '1.1rem', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}
             >
               <CheckCircle2 size={24} />
@@ -430,7 +455,7 @@ const CashoutView = ({ currentUser }) => {
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#475569' }}>
                   <th style={thStyle}>Date</th>
-                  <th style={thStyle}>Collector</th>
+                  <th style={thStyle}>Cashier</th>
                   <th style={thStyle}>Breakdown (Actual)</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Expected</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
@@ -452,7 +477,7 @@ const CashoutView = ({ currentUser }) => {
                         <div style={{ fontWeight: 600 }}>{new Date(co.created_at).toLocaleDateString()}</div>
                         <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{new Date(co.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                       </td>
-                      <td style={{ ...tdStyle, fontWeight: 600 }}>{co.collector_name}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600 }}>{co.cashier_name || co.collector_name || 'N/A'}</td>
                       <td style={{ ...tdStyle, fontSize: '0.8rem', color: '#475569' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem 0.5rem', maxWidth: '260px' }}>
                           <span style={chipStyle}>Cash ${parseFloat(co.cash_amount).toFixed(2)}</span>

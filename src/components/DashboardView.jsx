@@ -139,8 +139,8 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
       return [
         { label: 'Zone Revenue', value: formatValue(dbStats.revenue), sub: currentUser.zone || '', icon: DollarSign, color: 'var(--gurmad-green)', bg: '#dcfce7' },
         { label: t('active_customers'), value: dbStats.customerCount.toString(), sub: currentUser.zone || '', icon: Users, color: 'var(--gurmad-orange)', bg: '#fef3c7' },
-        { label: t('tasks_completed'), value: dbStats.tasksCompleted.toString(), sub: 'This month', icon: CheckCircle2, color: '#3b82f6', bg: '#dbeafe' },
-        { label: t('total_expenses'), value: formatValue(dbStats.totalExpenses), sub: t('optimal'), icon: Clock, color: '#f97316', bg: '#ffedd5' },
+        { label: t('tasks_completed'), value: dbStats.tasksCompleted.toString(), sub: currentUser.zone || '', icon: CheckCircle2, color: '#3b82f6', bg: '#dbeafe' },
+        { label: 'Pending Payments', value: (dbStats.zonePendingCustomers || 0).toString(), sub: currentUser.zone || '', icon: Clock, color: '#f97316', bg: '#ffedd5' },
       ];
     } else { // collector
       const collectedToday = myTodayRoute.filter(c => c.collected).length;
@@ -256,7 +256,7 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
                <Users size={18} color="var(--gurmad-green)" />
-               Xisaabta Cashier-ka Maanta
+               Today's Cashier Transactions
             </h3>
             {currentUser?.role === 'admin' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -302,7 +302,7 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="8" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
+                    <td colSpan="8" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>No transactions recorded today yet.</td>
                   </tr>
                 )}
               </tbody>

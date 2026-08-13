@@ -336,7 +336,7 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
         <div className="card" style={{ padding: '1.5rem', border: '1px solid var(--border-color)' }}>
           <h3 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
              <Users size={18} color="var(--gurmad-green)" />
-             Xisaabta Cashier-ka Maanta
+             Today's Cashier Transactions
           </h3>
           <div style={{ overflowX: 'auto' }}>
             <table className="table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse' }}>
@@ -369,7 +369,7 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="8" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>Maanta wax xisaab ah weli lama diiwaangelin.</td>
+                    <td colSpan="8" style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>No transactions recorded today yet.</td>
                   </tr>
                 )}
               </tbody>
