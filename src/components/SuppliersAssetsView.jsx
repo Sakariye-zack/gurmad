@@ -433,7 +433,7 @@ const SuppliersAssetsView = ({ searchQuery = '' }) => {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '1.5rem', borderBottom: '1px solid #f1f5f9' }}>
             <h3 style={{ margin: 0, fontWeight: 700 }}>Stock Movements</h3>
-            <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '4px 0 0 0' }}>Read-only ledger of every inventory quantity change from a received purchase order</p>
+            <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '4px 0 0 0' }}>Read-only ledger of every inventory quantity change — stock in from received purchase orders, stock out issued to departments</p>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>

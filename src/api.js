@@ -315,6 +315,11 @@ export const api = {
     method: 'DELETE',
     headers: getAuthHeaders()
   }).then(handleResponse),
+  stockOutInventory: (id, data) => fetch(`${API_BASE_URL}/inventory/${id}/stock-out`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
 
   // Suppliers
   getSuppliers: () => fetch(`${API_BASE_URL}/suppliers`, { headers: getAuthHeaders() }).then(handleResponse),

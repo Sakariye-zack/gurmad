@@ -2948,6 +2948,38 @@ app.delete('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
   }
 });
 
+// Issues stock OUT to a department/employee — the counterpart to a PO's "Received" stock IN.
+// This is the last gap from the master proposal's Inventory pages (Stock In/Stock Out/Stock
+// Movement): every quantity decrease is now logged the same way every increase already is.
+app.post('/api/inventory/:id/stock-out', checkRole(['admin']), async (req, res) => {
+  const { quantity, department, employee_id, reason } = req.body;
+  const qty = parseInt(quantity);
+  if (!qty || qty <= 0) return res.status(400).json({ error: 'Quantity must be a positive number' });
+  try {
+    const itemRes = await db.query('SELECT * FROM inventory WHERE id = $1', [req.params.id]);
+    const item = itemRes.rows[0];
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    if (qty > item.quantity) return res.status(400).json({ error: `Only ${item.quantity} ${item.unit} in stock` });
+
+    const newQty = item.quantity - qty;
+    const updated = await db.query(
+      'UPDATE inventory SET quantity = $1, status = $2 WHERE id = $3 RETURNING *',
+      [newQty, newQty <= 0 ? 'Out of Stock' : newQty < 10 ? 'Low Stock' : 'In Stock', req.params.id]
+    );
+
+    const refParts = [department, reason].filter(Boolean);
+    const reference = refParts.length ? refParts.join(' — ') : 'Manual stock-out';
+    await db.query(
+      `INSERT INTO stock_movements (inventory_id, type, quantity, reference, created_by) VALUES ($1, 'out', $2, $3, $4)`,
+      [req.params.id, qty, reference, req.user.id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Suppliers (Phase 4) ---
 app.get('/api/suppliers', checkRole(['admin']), async (req, res) => {
   try {

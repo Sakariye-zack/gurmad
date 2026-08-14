@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, TrendingUp, AlertCircle, CheckCircle2, Edit3, X, Trash2, BarChart3, Boxes } from 'lucide-react';
+import { Package, Plus, TrendingUp, AlertCircle, CheckCircle2, Edit3, X, Trash2, BarChart3, Boxes, PackageMinus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../api';
 
@@ -13,6 +13,28 @@ const InventoryView = ({ searchQuery = '' }) => {
   const [newItem, setNewItem] = useState({
     item_name: '', quantity: '', unit: 'Pcs', price_per_unit: '', status: 'In Stock'
   });
+
+  // Stock Out (Phase 4 completion) — issue stock to a department/employee, logged in
+  // stock_movements the same way a PO's "Received" stock-in already is.
+  const [stockOutItem, setStockOutItem] = useState(null);
+  const [stockOutForm, setStockOutForm] = useState({ quantity: '', department: '', reason: '' });
+
+  const openStockOut = (item) => {
+    setStockOutItem(item);
+    setStockOutForm({ quantity: '', department: '', reason: '' });
+  };
+
+  const handleStockOutSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const updated = await api.stockOutInventory(stockOutItem.id, stockOutForm);
+      setInventory(prev => prev.map(i => i.id === updated.id ? updated : i));
+      toast.success(`${stockOutForm.quantity} ${stockOutItem.unit} issued`);
+      setStockOutItem(null);
+    } catch (err) {
+      toast.error(err.message || 'Failed to issue stock');
+    }
+  };
 
   useEffect(() => { fetchInventory(); }, []);
 
@@ -321,6 +343,16 @@ const InventoryView = ({ searchQuery = '' }) => {
                     <td style={{ padding: '1rem 1.25rem' }}>
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <button
+                          onClick={() => openStockOut(item)}
+                          title="Stock Out"
+                          disabled={item.quantity <= 0}
+                          style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid #e2e8f0', backgroundColor: 'white', cursor: item.quantity <= 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: item.quantity <= 0 ? '#cbd5e1' : '#f97316', transition: 'all 0.15s' }}
+                          onMouseEnter={e => { if (item.quantity > 0) { e.currentTarget.style.backgroundColor = '#fff7ed'; e.currentTarget.style.borderColor = '#fdba74'; } }}
+                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'white'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                        >
+                          <PackageMinus size={15} />
+                        </button>
+                        <button
                           onClick={() => startEdit(item)}
                           title="Edit"
                           style={{ width: '34px', height: '34px', borderRadius: '9px', border: '1px solid #e2e8f0', backgroundColor: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', transition: 'all 0.15s' }}
@@ -457,6 +489,35 @@ const InventoryView = ({ searchQuery = '' }) => {
                 }}>
                   {isEditMode ? '✓ Update Item' : '+ Save to Inventory'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {stockOutItem && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '420px', borderTop: '4px solid #f97316', animation: 'slideUp 0.2s ease-out' }}>
+            <h3 style={{ marginBottom: '0.3rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <PackageMinus size={20} color="#f97316" /> Stock Out — {stockOutItem.item_name}
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.3rem' }}>{stockOutItem.quantity} {stockOutItem.unit} currently in stock</p>
+            <form onSubmit={handleStockOutSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Quantity to issue</label>
+                <input required type="number" min="1" max={stockOutItem.quantity} value={stockOutForm.quantity} onChange={e => setStockOutForm({...stockOutForm, quantity: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Department / To</label>
+                <input value={stockOutForm.department} onChange={e => setStockOutForm({...stockOutForm, department: e.target.value})} placeholder="e.g. Fleet, Operations" style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Reason</label>
+                <textarea value={stockOutForm.reason} onChange={e => setStockOutForm({...stockOutForm, reason: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', minHeight: '70px', resize: 'vertical', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setStockOutItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" style={{ padding: '0.65rem 1.3rem', borderRadius: '8px', border: 'none', background: '#f97316', color: 'white', fontWeight: 700, cursor: 'pointer' }}>Issue Stock</button>
               </div>
             </form>
           </div>
