@@ -61,10 +61,19 @@ const CustomerPortalApp = () => {
   const [loading, setLoading] = useState(false);
   const [showComplaintForm, setShowComplaintForm] = useState(false);
   const [newComplaint, setNewComplaint] = useState({ title: '', description: '' });
+  const [companyLogo, setCompanyLogo] = useState('');
+  const [logoError, setLogoError] = useState(false);
 
   useEffect(() => {
     if (customer) fetchAll();
   }, [customer?.id]);
+
+  // Company logo on the login screen — same /api/settings + /api/uploads pattern the staff
+  // sidebar uses (App.jsx), just fetched without auth since this is the public login screen.
+  useEffect(() => {
+    if (customer) return;
+    api.getSettings().then(data => setCompanyLogo(data.system_logo || '')).catch(() => {});
+  }, [customer]);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -140,11 +149,28 @@ const CustomerPortalApp = () => {
           <div style={{ background: `linear-gradient(160deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, padding: '3.5rem 2rem 3rem', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '180px', height: '180px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
             <div style={{ position: 'absolute', bottom: '-80px', left: '-40px', width: '200px', height: '200px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
-            <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.2rem', position: 'relative', zIndex: 1 }}>
-              <Home size={34} color="white" />
+            {/* small decorative dot pattern, top-left */}
+            <div style={{ position: 'absolute', top: '18px', left: '20px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', opacity: 0.35 }}>
+              {Array.from({ length: 9 }).map((_, i) => (
+                <span key={i} style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'white' }} />
+              ))}
+            </div>
+            {/* subtle ring behind the logo badge */}
+            <div style={{ width: '92px', height: '92px', borderRadius: '26px', border: '1.5px dashed rgba(255,255,255,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.2rem', position: 'relative', zIndex: 1 }}>
+              <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: companyLogo && !logoError ? 'white' : 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: companyLogo && !logoError ? '0 8px 20px rgba(0,0,0,0.15)' : 'none', overflow: 'hidden' }}>
+                {companyLogo && !logoError ? (
+                  <img src={`/api/uploads/${companyLogo}`} alt="Gurmad" onError={() => setLogoError(true)} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '8px', boxSizing: 'border-box' }} />
+                ) : (
+                  <Home size={34} color="white" />
+                )}
+              </div>
             </div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: 900, margin: 0, color: 'white', letterSpacing: '-0.02em', position: 'relative', zIndex: 1 }}>GURMAD</h1>
-            <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.9rem', margin: '4px 0 0 0', fontWeight: 600, position: 'relative', zIndex: 1 }}>Customer Portal</p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '6px 0 0 0', position: 'relative', zIndex: 1 }}>
+              <span style={{ width: '14px', height: '1.5px', background: 'rgba(255,255,255,0.5)' }} />
+              <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.9rem', margin: 0, fontWeight: 600 }}>Customer Portal</p>
+              <span style={{ width: '14px', height: '1.5px', background: 'rgba(255,255,255,0.5)' }} />
+            </div>
           </div>
 
           <form onSubmit={handleLogin} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1.3rem', padding: '2.2rem 1.8rem', justifyContent: 'center' }}>
