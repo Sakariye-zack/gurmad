@@ -374,6 +374,9 @@ export const api = {
   // Stock Movements
   getStockMovements: () => fetch(`${API_BASE_URL}/stock-movements`, { headers: getAuthHeaders() }).then(handleResponse),
 
+  // Geofence Events
+  getGeofenceEvents: () => fetch(`${API_BASE_URL}/geofence-events`, { headers: getAuthHeaders() }).then(handleResponse),
+
   // Debts
   getDebts: () => fetch(`${API_BASE_URL}/debts`, { headers: getAuthHeaders() }).then(handleResponse),
   addDebt: (data) => fetch(`${API_BASE_URL}/debts`, {

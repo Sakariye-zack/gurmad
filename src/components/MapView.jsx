@@ -205,10 +205,16 @@ const MapView = ({ currentUser }) => {
       });
     });
 
+    // Phase 6: a truck/collector's GPS ping landed outside its dispatched zone's drawn boundary.
+    socket.on('geofence_alert', (data) => {
+      toast.error(`⚠ Task #${data.taskId} left the ${data.zoneName} zone boundary`, { position: 'bottom-right', duration: 6000 });
+    });
+
     return () => {
       socket.off('truck_location_updated');
       socket.off('customer_status_updated');
       socket.off('customer_location_updated');
+      socket.off('geofence_alert');
     };
   }, []);
 

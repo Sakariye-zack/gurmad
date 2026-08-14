@@ -187,6 +187,20 @@ const runMigrations = async () => {
       ALTER TABLE trucks ADD COLUMN IF NOT EXISTS road_tax_expiry DATE;
     `);
 
+    // Phase 6: geofence exit/enter events, one row per boundary crossing (not per ping) —
+    // logged against the task so it can be traced to the truck/collector/zone at that moment.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS geofence_events (
+        id SERIAL PRIMARY KEY,
+        task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+        zone_id INTEGER REFERENCES zones(id),
+        event_type VARCHAR(10) NOT NULL,
+        lat DECIMAL(10, 8),
+        lng DECIMAL(11, 8),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Phase 4 completion: the full procurement chain (Purchase Request -> Purchase Order ->
     // Goods Receipt), plus a Stock Movement ledger so every inventory quantity change (whether
     // from a received PO or a manual adjustment) is traceable to who/when/why.
@@ -620,6 +634,27 @@ const getZoneScope = (req) => {
   }
   return { restricted: false, zone: null };
 };
+
+// --- Phase 6: Geofencing ---
+// Standard ray-casting point-in-polygon test. `point` is [lat, lng]; `polygon` is the array of
+// [lat, lng] vertices drawn on the Operations Map (leaflet-draw writes zones.coordinates in this
+// same [lat, lng] shape — see MapView.jsx's <Polygon positions={z.coordinates}>).
+const isPointInPolygon = (point, polygon) => {
+  const [lat, lng] = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [latI, lngI] = polygon[i];
+    const [latJ, lngJ] = polygon[j];
+    const intersects = ((lngI > lng) !== (lngJ > lng)) &&
+      (lat < (latJ - latI) * (lng - lngI) / (lngJ - lngI) + latI);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+};
+
+// In-memory "was this task's last known ping inside its zone" state, so an alert fires once on
+// the inside->outside transition rather than every 15s while a truck sits outside the boundary.
+const geofenceState = new Map(); // task_id -> boolean (true = currently outside)
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
@@ -1853,7 +1888,64 @@ app.post('/api/tasks/:id/ping', checkRole(['admin', 'collector']), async (req, r
       timestamp: new Date().toISOString()
     });
 
+    // Geofence check: is this ping inside the zone this task's route is dispatched to? Only
+    // fires an alert on the inside->outside transition (not on every 15s ping while still
+    // outside), and only for zones that actually have a drawn boundary — a zone with no polygon
+    // has nothing to check against.
+    try {
+      const taskId = parseInt(req.params.id);
+      const taskRow = await db.query('SELECT route_name FROM tasks WHERE id = $1', [taskId]);
+      const routeName = taskRow.rows[0]?.route_name;
+      if (routeName) {
+        const zoneRow = await db.query('SELECT id, coordinates FROM zones WHERE name = $1', [routeName]);
+        const zone = zoneRow.rows[0];
+        if (zone && zone.coordinates && zone.coordinates.length >= 3) {
+          const inside = isPointInPolygon([parseFloat(lat), parseFloat(lng)], zone.coordinates);
+          const wasOutside = geofenceState.get(taskId) === true;
+          if (!inside && !wasOutside) {
+            geofenceState.set(taskId, true);
+            await db.query(
+              `INSERT INTO geofence_events (task_id, zone_id, event_type, lat, lng) VALUES ($1, $2, 'exit', $3, $4)`,
+              [taskId, zone.id, lat, lng]
+            );
+            await db.query(
+              `INSERT INTO notifications (user_id, title, message) VALUES (1, 'Geofence Alert', $1)`,
+              [`Task #${taskId} left its assigned zone (${routeName})`]
+            );
+            io.emit('geofence_alert', { taskId, zoneId: zone.id, zoneName: routeName, lat: parseFloat(lat), lng: parseFloat(lng) });
+          } else if (inside && wasOutside) {
+            geofenceState.set(taskId, false);
+            await db.query(
+              `INSERT INTO geofence_events (task_id, zone_id, event_type, lat, lng) VALUES ($1, $2, 'enter', $3, $4)`,
+              [taskId, zone.id, lat, lng]
+            );
+          }
+        }
+      }
+    } catch (geoErr) {
+      console.error('[Geofence] check failed:', geoErr.message);
+    }
+
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Geofence Events (Phase 6) — read-only history of zone-boundary crossings ---
+app.get('/api/geofence-events', checkRole(['admin', 'gudoomiye', 'zone_accountant']), async (req, res) => {
+  try {
+    const { restricted, zone } = getZoneScope(req);
+    const result = await db.query(`
+      SELECT ge.*, t.route_name, t.collector_name, t.driver_name, t.vehicle_plate, z.name as zone_name
+      FROM geofence_events ge
+      JOIN tasks t ON ge.task_id = t.id
+      LEFT JOIN zones z ON ge.zone_id = z.id
+      ${restricted ? 'WHERE t.route_name = $1' : ''}
+      ORDER BY ge.created_at DESC
+      LIMIT 200
+    `, restricted ? [zone] : []);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
