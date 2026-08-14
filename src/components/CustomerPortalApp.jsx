@@ -75,6 +75,18 @@ const CustomerPortalApp = () => {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const photoInputRef = React.useRef(null);
 
+  // On an actual phone the "phone mockup floating on a gray backdrop" look (fixed max-width,
+  // rounded corners, shadow, padding) just eats into an already-small screen — it only makes
+  // sense on desktop/tablet where there's spare width around it. Below 480px we go edge-to-edge
+  // instead: full width, full height, no card chrome, so the portal opens correctly filling the
+  // whole screen on any phone size rather than looking like a shrunk-down app-in-an-app.
+  const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 480);
+  useEffect(() => {
+    const onResize = () => setIsMobileViewport(window.innerWidth <= 480);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   useEffect(() => {
     if (customer) fetchAll();
   }, [customer?.id]);
@@ -342,9 +354,15 @@ const CustomerPortalApp = () => {
   // ============ LOGIN SCREEN ============
   if (!customer) {
     return (
-      <div style={{ minHeight: '100vh', background: '#eef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <div style={{ minHeight: '100dvh', background: '#eef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: isMobileViewport ? 0 : '1rem' }}>
         <Toaster />
-        <div style={{ width: '100%', maxWidth: PHONE_WIDTH, minHeight: '100vh', maxHeight: '900px', background: 'white', borderRadius: '32px', boxShadow: '0 30px 70px -15px rgba(15,23,42,0.25)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{
+          width: '100%', maxWidth: isMobileViewport ? '100%' : PHONE_WIDTH,
+          minHeight: '100dvh', maxHeight: isMobileViewport ? 'none' : '900px',
+          background: 'white', borderRadius: isMobileViewport ? 0 : '32px',
+          boxShadow: isMobileViewport ? 'none' : '0 30px 70px -15px rgba(15,23,42,0.25)',
+          overflow: 'hidden', display: 'flex', flexDirection: 'column'
+        }}>
           <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
 
             {/* Hero */}
@@ -477,9 +495,14 @@ const CustomerPortalApp = () => {
   ];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#eef2f2', display: 'flex', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100dvh', background: '#eef2f2', display: 'flex', justifyContent: 'center' }}>
       <Toaster />
-      <div style={{ width: '100%', maxWidth: PHONE_WIDTH, minHeight: '100vh', background: '#f8fafc', boxShadow: '0 0 60px rgba(15,23,42,0.08)', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <div style={{
+        width: '100%', maxWidth: isMobileViewport ? '100%' : PHONE_WIDTH,
+        minHeight: '100dvh', background: '#f8fafc',
+        boxShadow: isMobileViewport ? 'none' : '0 0 60px rgba(15,23,42,0.08)',
+        display: 'flex', flexDirection: 'column', position: 'relative'
+      }}>
 
         {/* Status-bar style header */}
         <div style={{ padding: '1.4rem 1.3rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
