@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X, Camera } from 'lucide-react';
+import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X, Camera, Eye, EyeOff, Globe, HelpCircle, Leaf, ArrowRight, Phone as PhoneIcon, MessageCircle } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import { api } from '../api';
@@ -51,8 +51,10 @@ const CustomerPortalApp = () => {
     const saved = localStorage.getItem('gurmadCustomer');
     return saved ? JSON.parse(saved) : null;
   });
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(() => localStorage.getItem('gurmadCustomerPhone') || '');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => !!localStorage.getItem('gurmadCustomerPhone'));
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [tab, setTab] = useState('dashboard');
 
@@ -281,6 +283,8 @@ const CustomerPortalApp = () => {
     try {
       const data = await api.customerPortal.login(phone, password);
       localStorage.setItem('gurmadCustomer', JSON.stringify(data));
+      if (rememberMe) localStorage.setItem('gurmadCustomerPhone', phone);
+      else localStorage.removeItem('gurmadCustomerPhone');
       setCustomer(data);
       toast.success(`Ku soo dhawoow, ${data.name}!`);
     } catch (err) {
@@ -341,67 +345,124 @@ const CustomerPortalApp = () => {
       <div style={{ minHeight: '100vh', background: '#eef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
         <Toaster />
         <div style={{ width: '100%', maxWidth: PHONE_WIDTH, minHeight: '100vh', maxHeight: '900px', background: 'white', borderRadius: '32px', boxShadow: '0 30px 70px -15px rgba(15,23,42,0.25)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ background: `linear-gradient(160deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, padding: '3.5rem 2rem 3rem', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '180px', height: '180px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
-            <div style={{ position: 'absolute', bottom: '-80px', left: '-40px', width: '200px', height: '200px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
-            {/* small decorative dot pattern, top-left */}
-            <div style={{ position: 'absolute', top: '18px', left: '20px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', opacity: 0.35 }}>
-              {Array.from({ length: 9 }).map((_, i) => (
-                <span key={i} style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'white' }} />
-              ))}
-            </div>
-            {/* subtle ring behind the logo badge */}
-            <div style={{ width: '92px', height: '92px', borderRadius: '26px', border: '1.5px dashed rgba(255,255,255,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.2rem', position: 'relative', zIndex: 1 }}>
-              <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: companyLogo && !logoError ? 'white' : 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: companyLogo && !logoError ? '0 8px 20px rgba(0,0,0,0.15)' : 'none', overflow: 'hidden' }}>
+          <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+
+            {/* Hero */}
+            <div style={{ background: `linear-gradient(160deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, padding: '1.3rem 1.5rem 3.2rem', textAlign: 'center', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+              <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '180px', height: '180px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
+              <div style={{ position: 'absolute', bottom: '20px', left: '-50px', width: '200px', height: '200px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
+
+              {/* top bar: language + help */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1, marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '6px 12px', color: 'white', fontSize: '0.78rem', fontWeight: 800 }}>
+                  <Globe size={13} /> SO
+                </div>
+                <button
+                  onClick={() => toast(company.phone || company.email ? `Caawimo: ${[company.phone, company.email].filter(Boolean).join(' · ')}` : 'La xiriir shirkadda Gurmad si aad u hesho caawimo.', { icon: '💬' })}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '6px 12px', color: 'white', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  <HelpCircle size={13} /> Caawin
+                </button>
+              </div>
+
+              <div style={{ width: '88px', height: '88px', borderRadius: '24px', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0.6rem auto 1rem', boxShadow: '0 10px 26px rgba(0,0,0,0.18)', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
                 {companyLogo && !logoError ? (
-                  <img src={`/api/uploads/${companyLogo}`} alt="Gurmad" onError={() => setLogoError(true)} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '8px', boxSizing: 'border-box' }} />
+                  <img src={`/api/uploads/${companyLogo}`} alt="Gurmad" onError={() => setLogoError(true)} style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '10px', boxSizing: 'border-box' }} />
                 ) : (
-                  <Home size={34} color="white" />
+                  <Home size={36} color={GREEN} />
                 )}
               </div>
+              <h1 style={{ fontSize: '1.8rem', fontWeight: 900, margin: 0, color: 'white', letterSpacing: '-0.02em', position: 'relative', zIndex: 1 }}>GURMAD</h1>
+              <p style={{ color: '#d9f7cf', fontSize: '1.05rem', margin: '2px 0 0 0', fontWeight: 800, position: 'relative', zIndex: 1 }}>Customer Portal</p>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '14px 0', position: 'relative', zIndex: 1 }}>
+                <span style={{ width: '30px', height: '1px', background: 'rgba(255,255,255,0.4)' }} />
+                <Leaf size={14} color="rgba(255,255,255,0.7)" />
+                <span style={{ width: '30px', height: '1px', background: 'rgba(255,255,255,0.4)' }} />
+              </div>
+              <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.88rem', margin: 0, lineHeight: 1.5, position: 'relative', zIndex: 1, maxWidth: '280px', marginLeft: 'auto', marginRight: 'auto' }}>
+                Ku soo dhaweow nidaamka casriga ah ee maamulka qashinka Gurmad
+              </p>
             </div>
-            <h1 style={{ fontSize: '1.6rem', fontWeight: 900, margin: 0, color: 'white', letterSpacing: '-0.02em', position: 'relative', zIndex: 1 }}>GURMAD</h1>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '6px 0 0 0', position: 'relative', zIndex: 1 }}>
-              <span style={{ width: '14px', height: '1.5px', background: 'rgba(255,255,255,0.5)' }} />
-              <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.9rem', margin: 0, fontWeight: 600 }}>Customer Portal</p>
-              <span style={{ width: '14px', height: '1.5px', background: 'rgba(255,255,255,0.5)' }} />
+
+            {/* White sheet overlapping the hero, rounded top corners */}
+            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', marginTop: '-22px', position: 'relative', zIndex: 2, padding: '2rem 1.6rem 1.8rem', flex: 1 }}>
+              <div style={{ width: '58px', height: '58px', borderRadius: '18px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+                <ShieldCheck size={26} color={GREEN} />
+              </div>
+              <h2 style={{ textAlign: 'center', fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', margin: '0 0 6px' }}>Ku soo dhawoow!</h2>
+              <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8', margin: '0 0 1.6rem', lineHeight: 1.5 }}>Fadlan geli akoonkaaga si aad u adeegato portal-ka.</p>
+
+              <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: GREEN_DARK, marginBottom: '8px', letterSpacing: '0.3px' }}>LAMBARKA TELEFOONKA</label>
+                  <div style={{ position: 'relative' }}>
+                    <PhoneIcon size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: GREEN }} />
+                    <input required value={phone} onChange={e => setPhone(e.target.value)} placeholder="0634xxxxxx"
+                      onFocus={e => { e.target.style.borderColor = GREEN; e.target.style.background = 'white'; }}
+                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; }}
+                      style={inputStyle} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: GREEN_DARK, marginBottom: '8px', letterSpacing: '0.3px' }}>PASSWORD</label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: GREEN }} />
+                    <input required type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="********"
+                      onFocus={e => { e.target.style.borderColor = GREEN; e.target.style.background = 'white'; }}
+                      onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; }}
+                      style={{ ...inputStyle, paddingRight: '2.6rem' }} />
+                    <button type="button" onClick={() => setShowPassword(s => !s)} style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}>
+                      {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '-0.3rem 0 0.1rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
+                      style={{ width: '17px', height: '17px', accentColor: GREEN, cursor: 'pointer' }} />
+                    Xusuusnow akoonkayga
+                  </label>
+                  <button type="button" onClick={() => toast('Fadlan la xiriir shirkadda Gurmad si loo dib-u-deeqo password-kaaga.', { icon: '🔑' })} style={{ background: 'none', border: 'none', color: GREEN_DARK, fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
+                    Ihlaaw Password-ka?
+                  </button>
+                </div>
+
+                <button type="submit" disabled={isLoggingIn} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px',
+                  padding: '1.05rem', borderRadius: '18px', border: 'none',
+                  background: isLoggingIn ? '#86c976' : `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`,
+                  color: 'white', fontWeight: 800, fontSize: '1rem', cursor: isLoggingIn ? 'default' : 'pointer', marginTop: '0.3rem',
+                  boxShadow: '0 10px 24px rgba(63,174,42,0.32)'
+                }}>
+                  {isLoggingIn ? 'Logging in...' : (<><Lock size={16} /> Login <ArrowRight size={16} /></>)}
+                </button>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '0.3rem 0' }}>
+                  <span style={{ flex: 1, height: '1px', background: '#f1f5f9' }} />
+                  <span style={{ fontSize: '0.72rem', color: '#cbd5e1', fontWeight: 800 }}>AMA</span>
+                  <span style={{ flex: 1, height: '1px', background: '#f1f5f9' }} />
+                </div>
+
+                <button type="button" onClick={() => toast('SMS Code login weli lama hirgeliyay — fadlan isticmaal password-kaaga.', { icon: 'ℹ️' })} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px',
+                  padding: '1rem', borderRadius: '18px', border: '1.5px solid #e2e8f0', background: 'white',
+                  color: GREEN_DARK, fontWeight: 800, fontSize: '0.92rem', cursor: 'pointer'
+                }}>
+                  <MessageCircle size={17} /> Login with SMS Code
+                </button>
+              </form>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', background: '#f0fdf4', borderRadius: '16px', padding: '0.9rem 1rem', marginTop: '1.4rem' }}>
+                <ShieldCheck size={18} color={GREEN} style={{ flexShrink: 0, marginTop: '1px' }} />
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#15803d' }}>Nidaam ammaan ah oo lagu kalsoon yahay</div>
+                  <div style={{ fontSize: '0.76rem', color: '#4d7c0f', marginTop: '2px' }}>Data-gaaga waa mid ammaan ah oo qarsoon.</div>
+                </div>
+              </div>
             </div>
           </div>
-
-          <form onSubmit={handleLogin} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1.3rem', padding: '2.2rem 1.8rem', justifyContent: 'center' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: '#64748b', marginBottom: '8px', letterSpacing: '0.3px' }}>PHONE NUMBER</label>
-              <div style={{ position: 'relative' }}>
-                <User size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                <input required value={phone} onChange={e => setPhone(e.target.value)} placeholder="0634xxxxxx"
-                  onFocus={e => { e.target.style.borderColor = GREEN; e.target.style.background = 'white'; }}
-                  onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; }}
-                  style={inputStyle} />
-              </div>
-            </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 800, color: '#64748b', marginBottom: '8px', letterSpacing: '0.3px' }}>PASSWORD</label>
-              <div style={{ position: 'relative' }}>
-                <Lock size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                <input required type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********"
-                  onFocus={e => { e.target.style.borderColor = GREEN; e.target.style.background = 'white'; }}
-                  onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#f8fafc'; }}
-                  style={inputStyle} />
-              </div>
-            </div>
-            <button type="submit" disabled={isLoggingIn} style={{
-              padding: '1.05rem', borderRadius: '18px', border: 'none',
-              background: isLoggingIn ? '#86c976' : GREEN,
-              color: 'white', fontWeight: 800, fontSize: '1rem', cursor: isLoggingIn ? 'default' : 'pointer', marginTop: '0.5rem',
-              boxShadow: '0 10px 24px rgba(63,174,42,0.32)'
-            }}>
-              {isLoggingIn ? 'Logging in...' : 'Login'}
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', color: '#94a3b8', fontSize: '0.78rem', marginTop: '0.4rem' }}>
-              <ShieldCheck size={14} />
-              <span style={{ textAlign: 'center' }}>Login-kan waxaa kuu siiya shirkadda Gurmad marka lagu diiwaan geliyo.</span>
-            </div>
-          </form>
         </div>
       </div>
     );
