@@ -12,6 +12,14 @@ const getAuthHeaders = () => {
   return headers;
 };
 
+// Customer Portal (Phase 8) uses its own storage key ('gurmadCustomer') and token type —
+// completely separate from staff auth above, so a customer session can never be confused with
+// (or accidentally reuse) a staff session in the same browser.
+const getCustomerAuthHeaders = () => {
+  const customer = JSON.parse(localStorage.getItem('gurmadCustomer') || '{}');
+  return customer.token ? { Authorization: `Bearer ${customer.token}` } : {};
+};
+
 const handleResponse = async (res) => {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -376,6 +384,35 @@ export const api = {
 
   // Geofence Events
   getGeofenceEvents: () => fetch(`${API_BASE_URL}/geofence-events`, { headers: getAuthHeaders() }).then(handleResponse),
+
+  // Admin: grant/revoke a customer's Customer Portal login
+  enableCustomerPortal: (id, password) => fetch(`${API_BASE_URL}/customers/${id}/enable-portal`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ password })
+  }).then(handleResponse),
+  disableCustomerPortal: (id) => fetch(`${API_BASE_URL}/customers/${id}/disable-portal`, {
+    method: 'POST',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+
+  // Customer Portal (Phase 8) — separate auth (getCustomerAuthHeaders), separate from staff api.*
+  customerPortal: {
+    login: (phone, password) => fetch(`${API_BASE_URL}/customer-portal/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, password })
+    }).then(handleResponse),
+    getMe: () => fetch(`${API_BASE_URL}/customer-portal/me`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
+    getPayments: () => fetch(`${API_BASE_URL}/customer-portal/payments`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
+    getCollections: () => fetch(`${API_BASE_URL}/customer-portal/collections`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
+    getComplaints: () => fetch(`${API_BASE_URL}/customer-portal/complaints`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
+    addComplaint: (data) => fetch(`${API_BASE_URL}/customer-portal/complaints`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders() },
+      body: JSON.stringify(data)
+    }).then(handleResponse),
+  },
 
   // Debts
   getDebts: () => fetch(`${API_BASE_URL}/debts`, { headers: getAuthHeaders() }).then(handleResponse),

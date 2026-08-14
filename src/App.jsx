@@ -56,10 +56,19 @@ import CollectorAssignmentsView from './components/CollectorAssignmentsView';
 import TodaysCollectionsView from './components/TodaysCollectionsView';
 import MyRouteTodayView from './components/MyRouteTodayView';
 import CashoutView from './components/CashoutView';
+import CustomerPortalApp from './components/CustomerPortalApp';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 
 const App = () => {
+  // Phase 8: Customer Portal is a completely separate, lightweight app — different auth
+  // (customer phone+password, not staff username+password), different token type, different
+  // data surface. Branching here (before any staff-app hooks/state) keeps it fully isolated
+  // from the staff SPA below rather than threading customer state through it.
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) {
+    return <CustomerPortalApp />;
+  }
+
   const { t, setLanguage, currentLanguage } = useLanguage();
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('gurmadUser');

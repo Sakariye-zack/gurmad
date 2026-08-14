@@ -187,6 +187,13 @@ const runMigrations = async () => {
       ALTER TABLE trucks ADD COLUMN IF NOT EXISTS road_tax_expiry DATE;
     `);
 
+    // Phase 8: Customer Portal — a customer only gets portal login credentials once an admin
+    // explicitly enables access (sets a password); nothing here changes existing customer rows.
+    await db.query(`
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS password VARCHAR(255);
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS portal_enabled BOOLEAN DEFAULT FALSE;
+    `);
+
     // Phase 6: geofence exit/enter events, one row per boundary crossing (not per ping) —
     // logged against the task so it can be traced to the truck/collector/zone at that moment.
     await db.query(`
@@ -577,6 +584,22 @@ const checkRole = (roles) => [
   }
 ];
 
+// --- Phase 8: Customer Portal auth ---
+// Deliberately a separate token/middleware from staff auth (authenticateToken/checkRole above):
+// a customer token carries `type: 'customer'` and only a customerId, never a role, so it can
+// never be mistaken for (or reused as) a staff token even if someone tried passing one to a
+// staff-only route — every customer-portal route checks `type === 'customer'` explicitly.
+const authenticateCustomer = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Access denied: No token provided' });
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err || decoded.type !== 'customer') return res.status(403).json({ error: 'Access denied: Invalid or expired token' });
+    req.customerId = decoded.customerId;
+    next();
+  });
+};
+
 // --- Phase 2: dynamic permission-based access control ---
 // Replaces hardcoded checkRole([...]) arrays with a lookup against the role_permissions table
 // built in Phase 1, so a custom role created via the Roles & Permissions UI actually gets
@@ -736,6 +759,140 @@ app.post('/api/auth/login/verify-2fa', loginLimiter, async (req, res) => {
     } else {
       res.status(401).json({ error: 'Invalid authentication code' });
     }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// PHASE 8: CUSTOMER PORTAL
+// A customer only exists here once portal_enabled is set (see POST
+// /api/customers/:id/enable-portal, admin-only, further below). Every route in this section
+// scopes strictly to req.customerId from the verified token — a customer can never pass an id
+// to see someone else's data.
+// ============================================================
+
+app.post('/api/customer-portal/login', loginLimiter, async (req, res) => {
+  const { phone, password } = req.body;
+  try {
+    const result = await db.query('SELECT * FROM customers WHERE phone = $1 AND portal_enabled = TRUE', [phone]);
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid phone number or password' });
+    }
+    const customer = result.rows[0];
+    const validPassword = await bcrypt.compare(password, customer.password || '');
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid phone number or password' });
+    }
+    const jwtToken = jwt.sign({ customerId: customer.id, type: 'customer' }, JWT_SECRET, { expiresIn: '24h' });
+    const { password: pw, ...safeCustomer } = customer;
+    res.json({ ...safeCustomer, token: jwtToken });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customer-portal/me', authenticateCustomer, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT c.*, e.name as collector_name FROM customers c LEFT JOIN employees e ON c.collector_id = e.id WHERE c.id = $1`,
+      [req.customerId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    const { password, ...safeCustomer } = result.rows[0];
+    res.json(safeCustomer);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customer-portal/payments', authenticateCustomer, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, amount, currency, status, payment_method, cash_amount, zaad_amount, edahab_amount,
+        debt_amount, slsh_amount, discount_amount, created_at
+       FROM invoices WHERE customer_id = $1 ORDER BY created_at DESC`,
+      [req.customerId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customer-portal/collections', authenticateCustomer, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT tc.collected, tc.collected_at, t.route_name, t.driver_name, t.collector_name, t.status
+       FROM task_customers tc
+       JOIN tasks t ON tc.task_id = t.id
+       WHERE tc.customer_id = $1
+       ORDER BY t.scheduled_at DESC
+       LIMIT 100`,
+      [req.customerId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/customer-portal/complaints', authenticateCustomer, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT id, title, description, status, priority, created_at FROM complaints WHERE customer_id = $1 ORDER BY created_at DESC',
+      [req.customerId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customer-portal/complaints', authenticateCustomer, async (req, res) => {
+  const { title, description } = req.body;
+  if (!title || !title.trim()) return res.status(400).json({ error: 'A title is required' });
+  try {
+    const result = await db.query(
+      'INSERT INTO complaints (customer_id, title, description, status) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.customerId, title.trim(), description || null, 'Pending']
+    );
+    // So staff see it show up the same way any other new complaint does.
+    await db.query('INSERT INTO notifications (user_id, title, message) VALUES (1, $1, $2)',
+      ['New Complaint', `A customer submitted a complaint: ${title.trim()}`]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin-only: grant/revoke a customer's portal login. Setting a password is required to enable;
+// disabling just flips the flag off (their old password is kept in case it's re-enabled later,
+// but portal_enabled = FALSE blocks login regardless).
+app.post('/api/customers/:id/enable-portal', checkRole(['admin']), async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  try {
+    const hashed = await bcrypt.hash(password, 10);
+    const result = await db.query(
+      'UPDATE customers SET password = $1, portal_enabled = TRUE WHERE id = $2 RETURNING id, name, phone, portal_enabled',
+      [hashed, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers/:id/disable-portal', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(
+      'UPDATE customers SET portal_enabled = FALSE WHERE id = $1 RETURNING id, name, phone, portal_enabled',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

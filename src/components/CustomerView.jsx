@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api';
 import { socket } from '../socket';
-import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet, Tag, Repeat, DollarSign } from 'lucide-react';
+import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet, Tag, Repeat, DollarSign, Lock, Unlock } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { exportToCSV } from '../utils/exportUtils';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -163,6 +163,32 @@ const CustomerView = ({ searchQuery = '', currentUser }) => {
   const [debtForm, setDebtForm] = useState({ amount: '', description: '', currency: 'USD' });
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastForm, setBroadcastForm] = useState({ targetType: 'all', targetValue: '', message: '', type: 'sms' });
+  const [isPortalModalOpen, setIsPortalModalOpen] = useState(false);
+  const [portalPassword, setPortalPassword] = useState('');
+
+  const handleEnablePortal = async (e) => {
+    e.preventDefault();
+    try {
+      await api.enableCustomerPortal(selectedCustomer.id, portalPassword);
+      toast.success('Customer Portal access enabled');
+      setIsPortalModalOpen(false);
+      setPortalPassword('');
+      setSelectedCustomer({ ...selectedCustomer, portal_enabled: true });
+    } catch (err) {
+      toast.error(err.message || 'Failed to enable portal access');
+    }
+  };
+
+  const handleDisablePortal = async () => {
+    if (!window.confirm('Revoke this customer\'s portal access?')) return;
+    try {
+      await api.disableCustomerPortal(selectedCustomer.id);
+      toast.success('Customer Portal access revoked');
+      setSelectedCustomer({ ...selectedCustomer, portal_enabled: false });
+    } catch (err) {
+      toast.error('Failed to revoke portal access');
+    }
+  };
   const [viewMode, setViewMode] = useState('list'); // 'list', 'details', or 'register'
   const [employees, setEmployees] = useState([]);
   const [localSearch, setLocalSearch] = useState('');
@@ -526,7 +552,40 @@ const CustomerView = ({ searchQuery = '', currentUser }) => {
                 {selectedCustomer.status || 'Unpaid'}
              </span>
           </div>
+
+          {(currentUser?.role === 'admin') && (
+            selectedCustomer.portal_enabled ? (
+              <button onClick={handleDisablePortal} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '100px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer' }}>
+                <Unlock size={16} /> Revoke Portal Access
+              </button>
+            ) : (
+              <button onClick={() => setIsPortalModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '100px', border: '1px solid #bbf7d0', backgroundColor: '#f0fdf4', color: '#15803d', fontWeight: 700, cursor: 'pointer' }}>
+                <Lock size={16} /> Enable Portal Access
+              </button>
+            )
+          )}
         </div>
+
+        {isPortalModalOpen && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+            <div className="card glass" style={{ width: '400px', borderTop: '4px solid var(--gurmad-green)' }}>
+              <h3 style={{ marginBottom: '0.5rem', fontWeight: 800 }}>Enable Customer Portal Access</h3>
+              <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.5rem' }}>
+                {selectedCustomer.name} will be able to log in at /portal using their phone number ({selectedCustomer.phone}) and the password you set below.
+              </p>
+              <form onSubmit={handleEnablePortal} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Password (min 6 characters)</label>
+                  <input required minLength={6} type="text" value={portalPassword} onChange={e => setPortalPassword(e.target.value)} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                  <button type="button" onClick={() => { setIsPortalModalOpen(false); setPortalPassword(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontWeight: 600 }}>Cancel</button>
+                  <button type="submit" className="btn-primary">Enable Access</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* TOP BANNER PROFILE */}
         <div className="card" style={{ 
