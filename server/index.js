@@ -184,6 +184,7 @@ const runMigrations = async () => {
     await db.query(`
       ALTER TABLE trucks ADD COLUMN IF NOT EXISTS insurance_expiry DATE;
       ALTER TABLE trucks ADD COLUMN IF NOT EXISTS registration_expiry DATE;
+      ALTER TABLE trucks ADD COLUMN IF NOT EXISTS road_tax_expiry DATE;
     `);
 
     // Complaints System
@@ -1847,11 +1848,11 @@ app.get('/api/trucks', checkRole(['admin', 'cashier', 'collector', 'gudoomiye'])
 });
 
 app.post('/api/trucks', checkRole(['admin']), async (req, res) => {
-  const { plate_number, model, driver_id, collector_id, insurance_expiry, registration_expiry } = req.body;
+  const { plate_number, model, driver_id, collector_id, insurance_expiry, registration_expiry, road_tax_expiry } = req.body;
   try {
     const result = await db.query(
-      'INSERT INTO trucks (plate_number, model, driver_id, collector_id, insurance_expiry, registration_expiry) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [plate_number, model, driver_id || null, collector_id || null, insurance_expiry || null, registration_expiry || null]
+      'INSERT INTO trucks (plate_number, model, driver_id, collector_id, insurance_expiry, registration_expiry, road_tax_expiry) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [plate_number, model, driver_id || null, collector_id || null, insurance_expiry || null, registration_expiry || null, road_tax_expiry || null]
     );
     await logAudit(req, 'CREATE', 'trucks', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
@@ -1862,13 +1863,13 @@ app.post('/api/trucks', checkRole(['admin']), async (req, res) => {
 
 app.put('/api/trucks/:id', checkRole(['admin']), async (req, res) => {
   try {
-    const { plate_number, model, status, driver_id, collector_id, insurance_expiry, registration_expiry } = req.body;
+    const { plate_number, model, status, driver_id, collector_id, insurance_expiry, registration_expiry, road_tax_expiry } = req.body;
     const oldRow = await db.query('SELECT * FROM trucks WHERE id = $1', [req.params.id]);
     const result = await db.query(
       `UPDATE trucks SET plate_number = $1, model = $2, status = $3, driver_id = $4, collector_id = $5,
-        insurance_expiry = $6, registration_expiry = $7 WHERE id = $8 RETURNING *`,
+        insurance_expiry = $6, registration_expiry = $7, road_tax_expiry = $8 WHERE id = $9 RETURNING *`,
       [plate_number, model, status || 'Active', driver_id || null, collector_id || null,
-       insurance_expiry || null, registration_expiry || null, req.params.id]
+       insurance_expiry || null, registration_expiry || null, road_tax_expiry || null, req.params.id]
     );
     await logAudit(req, 'UPDATE', 'trucks', req.params.id, oldRow.rows[0], result.rows[0]);
     res.json(result.rows[0]);

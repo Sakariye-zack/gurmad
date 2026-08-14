@@ -51,7 +51,7 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
   const [showMap, setShowMap] = useState(false);
 
   // Form States
-  const [newTruck, setNewTruck] = useState({ plate_number: '', model: '', insurance_expiry: '', registration_expiry: '' });
+  const [newTruck, setNewTruck] = useState({ plate_number: '', model: '', insurance_expiry: '', registration_expiry: '', road_tax_expiry: '' });
   const [newFuel, setNewFuel] = useState({ truck_id: '', liters: '', cost: '', odometer_reading: '' });
   const [newMaintenance, setNewMaintenance] = useState({ truck_id: '', description: '', cost: '', next_service_date: '' });
   const [newZone, setNewZone] = useState({ name: '', truck_id: '', collection_days: '', collection_time: '', area: '', neighborhood: '' });
@@ -221,7 +221,7 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                 try {
                   await api.addTruck(newTruck);
                   toast.success('Truck added');
-                  setNewTruck({ plate_number: '', model: '', insurance_expiry: '', registration_expiry: '' });
+                  setNewTruck({ plate_number: '', model: '', insurance_expiry: '', registration_expiry: '', road_tax_expiry: '' });
                   fetchData();
                 } catch(err) {
                   toast.error('Failed to add truck');
@@ -243,6 +243,10 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                 <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b' }}>Registration Expiry</label>
                 <input type="date" value={newTruck.registration_expiry} onChange={e => setNewTruck({...newTruck, registration_expiry: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
               </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b' }}>Road Tax Expiry (Cashuurta Dawladda)</label>
+                <input type="date" value={newTruck.road_tax_expiry} onChange={e => setNewTruck({...newTruck, road_tax_expiry: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
+              </div>
               <button type="submit" className="btn-primary" style={{ padding: '1rem', borderRadius: '12px', fontWeight: 800 }}>Save Truck</button>
             </form>
           </div>
@@ -257,7 +261,8 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
               const in30Days = new Date(today.getTime() + 30 * 86400000);
               const expiringDocs = trucks.filter(t =>
                 (t.insurance_expiry && new Date(t.insurance_expiry) <= in30Days) ||
-                (t.registration_expiry && new Date(t.registration_expiry) <= in30Days)
+                (t.registration_expiry && new Date(t.registration_expiry) <= in30Days) ||
+                (t.road_tax_expiry && new Date(t.road_tax_expiry) <= in30Days)
               );
               const overdueMaintenance = trucks.filter(t =>
                 maintenanceLogs.some(m => m.truck_id === t.id && m.next_service_date && new Date(m.next_service_date) <= today)
@@ -305,12 +310,13 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                       <td style={{ padding: '1rem 1.5rem', fontWeight: 700 }}>{t.plate_number}</td>
                       <td style={{ padding: '1rem 1.5rem' }}>{t.model}</td>
                       <td style={{ padding: '1rem 1.5rem' }}>
-                        {!t.insurance_expiry && !t.registration_expiry ? (
+                        {!t.insurance_expiry && !t.registration_expiry && !t.road_tax_expiry ? (
                           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Not on file</span>
                         ) : (
                           <>
                             {docBadge('Insurance', t.insurance_expiry)}
                             {docBadge('Registration', t.registration_expiry)}
+                            {docBadge('Road Tax', t.road_tax_expiry)}
                           </>
                         )}
                       </td>
