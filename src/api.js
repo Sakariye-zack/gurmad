@@ -342,6 +342,38 @@ export const api = {
     headers: getAuthHeaders()
   }).then(handleResponse),
 
+  // Purchase Requests
+  getPurchaseRequests: () => fetch(`${API_BASE_URL}/purchase-requests`, { headers: getAuthHeaders() }).then(handleResponse),
+  addPurchaseRequest: (data) => fetch(`${API_BASE_URL}/purchase-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updatePurchaseRequestStatus: (id, status) => fetch(`${API_BASE_URL}/purchase-requests/${id}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ status })
+  }).then(handleResponse),
+
+  // Purchase Orders
+  getPurchaseOrders: () => fetch(`${API_BASE_URL}/purchase-orders`, { headers: getAuthHeaders() }).then(handleResponse),
+  addPurchaseOrder: (data) => fetch(`${API_BASE_URL}/purchase-orders`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  receivePurchaseOrder: (id) => fetch(`${API_BASE_URL}/purchase-orders/${id}/receive`, {
+    method: 'PUT',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+  cancelPurchaseOrder: (id) => fetch(`${API_BASE_URL}/purchase-orders/${id}/cancel`, {
+    method: 'PUT',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+
+  // Stock Movements
+  getStockMovements: () => fetch(`${API_BASE_URL}/stock-movements`, { headers: getAuthHeaders() }).then(handleResponse),
+
   // Debts
   getDebts: () => fetch(`${API_BASE_URL}/debts`, { headers: getAuthHeaders() }).then(handleResponse),
   addDebt: (data) => fetch(`${API_BASE_URL}/debts`, {

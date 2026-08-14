@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Plus, Package2, Edit3, Trash2 } from 'lucide-react';
+import { Truck, Plus, Package2, Edit3, Trash2, FileText, ShoppingCart, ClipboardList } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../api';
 
-// Phase 4 (first slice): Suppliers and Assets, admin-managed. Purchase Requests/Orders/Goods
-// Receipts (the full procurement approval chain) are deliberately deferred — that's a multi-step
-// workflow that deserves its own pass rather than being rushed in alongside this.
+// Phase 4: Suppliers, Assets, and the full procurement chain — Purchase Request -> Purchase
+// Order -> Goods Receipt (which automatically updates Inventory and logs a Stock Movement).
 const SuppliersAssetsView = ({ searchQuery = '' }) => {
   const [activeTab, setActiveTab] = useState('Suppliers');
 
@@ -20,14 +19,89 @@ const SuppliersAssetsView = ({ searchQuery = '' }) => {
   const [editingAssetId, setEditingAssetId] = useState(null);
   const [newAsset, setNewAsset] = useState({ name: '', category: '', serial_number: '', value: '', location: '', assigned_employee_id: '', condition: 'Good', status: 'Active' });
 
+  const [purchaseRequests, setPurchaseRequests] = useState([]);
+  const [isPRModalOpen, setIsPRModalOpen] = useState(false);
+  const [newPR, setNewPR] = useState({ department: '', item_name: '', quantity: '', estimated_price: '', reason: '' });
+
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [isPOModalOpen, setIsPOModalOpen] = useState(false);
+  const [newPO, setNewPO] = useState({ purchase_request_id: '', supplier_id: '', item_name: '', quantity: '', unit_price: '' });
+
+  const [stockMovements, setStockMovements] = useState([]);
+
   useEffect(() => {
     fetchSuppliers();
     fetchAssets();
+    fetchPurchaseRequests();
+    fetchPurchaseOrders();
+    fetchStockMovements();
     api.getEmployees().then(setEmployees).catch(() => {});
   }, []);
 
   const fetchSuppliers = () => api.getSuppliers().then(setSuppliers).catch(err => console.error(err));
   const fetchAssets = () => api.getAssets().then(setAssets).catch(err => console.error(err));
+  const fetchPurchaseRequests = () => api.getPurchaseRequests().then(setPurchaseRequests).catch(err => console.error(err));
+  const fetchPurchaseOrders = () => api.getPurchaseOrders().then(setPurchaseOrders).catch(err => console.error(err));
+  const fetchStockMovements = () => api.getStockMovements().then(setStockMovements).catch(err => console.error(err));
+
+  const handlePRSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.addPurchaseRequest(newPR);
+      toast.success('Purchase request submitted');
+      setIsPRModalOpen(false);
+      setNewPR({ department: '', item_name: '', quantity: '', estimated_price: '', reason: '' });
+      fetchPurchaseRequests();
+    } catch (err) {
+      toast.error('Failed to submit purchase request');
+    }
+  };
+
+  const handleUpdatePRStatus = async (id, status) => {
+    try {
+      await api.updatePurchaseRequestStatus(id, status);
+      toast.success(`Request ${status.toLowerCase()}`);
+      fetchPurchaseRequests();
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const handlePOSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.addPurchaseOrder(newPO);
+      toast.success('Purchase order created');
+      setIsPOModalOpen(false);
+      setNewPO({ purchase_request_id: '', supplier_id: '', item_name: '', quantity: '', unit_price: '' });
+      fetchPurchaseOrders();
+    } catch (err) {
+      toast.error('Failed to create purchase order');
+    }
+  };
+
+  const handleReceivePO = async (id) => {
+    if (!window.confirm('Mark this purchase order as received? This will add the ordered quantity into Inventory.')) return;
+    try {
+      await api.receivePurchaseOrder(id);
+      toast.success('Received — inventory updated');
+      fetchPurchaseOrders();
+      fetchStockMovements();
+    } catch (err) {
+      toast.error(err.message || 'Failed to receive purchase order');
+    }
+  };
+
+  const handleCancelPO = async (id) => {
+    if (!window.confirm('Cancel this purchase order?')) return;
+    try {
+      await api.cancelPurchaseOrder(id);
+      toast.success('Purchase order cancelled');
+      fetchPurchaseOrders();
+    } catch (err) {
+      toast.error(err.message || 'Failed to cancel purchase order');
+    }
+  };
 
   const handleSupplierSubmit = async (e) => {
     e.preventDefault();
@@ -141,7 +215,7 @@ const SuppliersAssetsView = ({ searchQuery = '' }) => {
       </div>
 
       <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '12px', width: 'fit-content', marginBottom: '1.5rem' }}>
-        {['Suppliers', 'Assets'].map(tab => (
+        {['Suppliers', 'Assets', 'Purchase Requests', 'Purchase Orders', 'Stock Movements'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -241,6 +315,227 @@ const SuppliersAssetsView = ({ searchQuery = '' }) => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {activeTab === 'Purchase Requests' && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+            <div>
+              <h3 style={{ margin: 0, fontWeight: 700 }}>Purchase Requests</h3>
+              <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '4px 0 0 0' }}>Request an item — once approved, create a Purchase Order for it</p>
+            </div>
+            <button onClick={() => setIsPRModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Plus size={18} /> New Request
+            </button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>ITEM</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>DEPARTMENT</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>QTY</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>EST. PRICE</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>REQUESTED BY</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>STATUS</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b', textAlign: 'right' }}>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchaseRequests.length === 0 ? (
+                <tr><td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>No purchase requests found.</td></tr>
+              ) : purchaseRequests.map(pr => (
+                <tr key={pr.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '1rem', fontWeight: 700 }}>{pr.item_name}</td>
+                  <td style={{ padding: '1rem', color: '#64748b' }}>{pr.department || '—'}</td>
+                  <td style={{ padding: '1rem' }}>{pr.quantity}</td>
+                  <td style={{ padding: '1rem' }}>${parseFloat(pr.estimated_price || 0).toFixed(2)}</td>
+                  <td style={{ padding: '1rem', color: '#64748b' }}>{pr.requested_by_name || '—'}</td>
+                  <td style={{ padding: '1rem' }}>
+                    <span style={{
+                      padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 800,
+                      backgroundColor: pr.status === 'Approved' ? '#ecfdf5' : pr.status === 'Rejected' ? '#fef2f2' : '#fffbeb',
+                      color: pr.status === 'Approved' ? '#10b981' : pr.status === 'Rejected' ? '#ef4444' : '#f59e0b'
+                    }}>{pr.status.toUpperCase()}</span>
+                  </td>
+                  <td style={{ padding: '1rem', textAlign: 'right' }}>
+                    {pr.status === 'Pending' && (
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => handleUpdatePRStatus(pr.id, 'Approved')} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Approve</button>
+                        <button onClick={() => handleUpdatePRStatus(pr.id, 'Rejected')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Reject</button>
+                      </div>
+                    )}
+                    {pr.status === 'Approved' && (
+                      <button onClick={() => { setNewPO({ purchase_request_id: pr.id, supplier_id: '', item_name: pr.item_name, quantity: pr.quantity, unit_price: '' }); setActiveTab('Purchase Orders'); setIsPOModalOpen(true); }} style={{ backgroundColor: '#0ea5e9', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Create PO</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTab === 'Purchase Orders' && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+            <div>
+              <h3 style={{ margin: 0, fontWeight: 700 }}>Purchase Orders</h3>
+              <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '4px 0 0 0' }}>Marking an order "Received" automatically adds the stock into Inventory</p>
+            </div>
+            <button onClick={() => setIsPOModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Plus size={18} /> New Order
+            </button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>ITEM</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>SUPPLIER</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>QTY</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>TOTAL</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>STATUS</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b', textAlign: 'right' }}>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchaseOrders.length === 0 ? (
+                <tr><td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>No purchase orders found.</td></tr>
+              ) : purchaseOrders.map(po => (
+                <tr key={po.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '1rem', fontWeight: 700 }}>{po.item_name}</td>
+                  <td style={{ padding: '1rem', color: '#64748b' }}>{po.supplier_name || 'Unspecified'}</td>
+                  <td style={{ padding: '1rem' }}>{po.quantity}</td>
+                  <td style={{ padding: '1rem', fontWeight: 700 }}>${parseFloat(po.total_amount || 0).toFixed(2)}</td>
+                  <td style={{ padding: '1rem' }}>
+                    <span style={{
+                      padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 800,
+                      backgroundColor: po.status === 'Received' ? '#ecfdf5' : po.status === 'Cancelled' ? '#fef2f2' : '#e0f2fe',
+                      color: po.status === 'Received' ? '#10b981' : po.status === 'Cancelled' ? '#ef4444' : '#0284c7'
+                    }}>{po.status.toUpperCase()}</span>
+                  </td>
+                  <td style={{ padding: '1rem', textAlign: 'right' }}>
+                    {po.status === 'Ordered' && (
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <button onClick={() => handleReceivePO(po.id)} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Mark Received</button>
+                        <button onClick={() => handleCancelPO(po.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Cancel</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTab === 'Stock Movements' && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '1.5rem', borderBottom: '1px solid #f1f5f9' }}>
+            <h3 style={{ margin: 0, fontWeight: 700 }}>Stock Movements</h3>
+            <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '4px 0 0 0' }}>Read-only ledger of every inventory quantity change from a received purchase order</p>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>ITEM</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>TYPE</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>QTY</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>REFERENCE</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>BY</th>
+                <th style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>DATE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockMovements.length === 0 ? (
+                <tr><td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>No stock movements found.</td></tr>
+              ) : stockMovements.map(sm => (
+                <tr key={sm.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '1rem', fontWeight: 700 }}>{sm.item_name}</td>
+                  <td style={{ padding: '1rem' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, backgroundColor: sm.type === 'in' ? '#dcfce7' : '#fee2e2', color: sm.type === 'in' ? '#15803d' : '#b91c1c' }}>
+                      {sm.type === 'in' ? 'STOCK IN' : 'STOCK OUT'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '1rem', fontWeight: 700 }}>{sm.type === 'in' ? '+' : '-'}{sm.quantity}</td>
+                  <td style={{ padding: '1rem', color: '#64748b' }}>{sm.reference || '—'}</td>
+                  <td style={{ padding: '1rem', color: '#64748b' }}>{sm.created_by_name || '—'}</td>
+                  <td style={{ padding: '1rem', color: '#64748b', fontSize: '0.85rem' }}>{new Date(sm.created_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {isPRModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '420px', borderTop: '4px solid var(--gurmad-green)' }}>
+            <h3 style={{ marginBottom: '1.5rem', fontWeight: 800 }}>New Purchase Request</h3>
+            <form onSubmit={handlePRSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Item</label>
+                <input required value={newPR.item_name} onChange={e => setNewPR({...newPR, item_name: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Quantity</label>
+                  <input type="number" required value={newPR.quantity} onChange={e => setNewPR({...newPR, quantity: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Est. Price ($)</label>
+                  <input type="number" step="0.01" value={newPR.estimated_price} onChange={e => setNewPR({...newPR, estimated_price: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Department</label>
+                <input value={newPR.department} onChange={e => setNewPR({...newPR, department: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Reason</label>
+                <textarea value={newPR.reason} onChange={e => setNewPR({...newPR, reason: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '70px', resize: 'vertical' }}></textarea>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setIsPRModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" className="btn-primary">Submit Request</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isPOModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '420px', borderTop: '4px solid var(--gurmad-green)' }}>
+            <h3 style={{ marginBottom: '1.5rem', fontWeight: 800 }}>New Purchase Order</h3>
+            <form onSubmit={handlePOSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Item</label>
+                <input required value={newPO.item_name} onChange={e => setNewPO({...newPO, item_name: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Supplier</label>
+                <select value={newPO.supplier_id} onChange={e => setNewPO({...newPO, supplier_id: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <option value="">-- Unspecified --</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Quantity</label>
+                  <input type="number" required value={newPO.quantity} onChange={e => setNewPO({...newPO, quantity: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Unit Price ($)</label>
+                  <input type="number" step="0.01" required value={newPO.unit_price} onChange={e => setNewPO({...newPO, unit_price: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setIsPOModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" className="btn-primary">Create Order</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

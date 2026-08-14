@@ -187,6 +187,51 @@ const runMigrations = async () => {
       ALTER TABLE trucks ADD COLUMN IF NOT EXISTS road_tax_expiry DATE;
     `);
 
+    // Phase 4 completion: the full procurement chain (Purchase Request -> Purchase Order ->
+    // Goods Receipt), plus a Stock Movement ledger so every inventory quantity change (whether
+    // from a received PO or a manual adjustment) is traceable to who/when/why.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS purchase_requests (
+        id SERIAL PRIMARY KEY,
+        requested_by INTEGER REFERENCES users(id),
+        department VARCHAR(100),
+        item_name VARCHAR(255) NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        estimated_price NUMERIC DEFAULT 0,
+        reason TEXT,
+        status VARCHAR(20) DEFAULT 'Pending',
+        approved_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id SERIAL PRIMARY KEY,
+        purchase_request_id INTEGER REFERENCES purchase_requests(id) ON DELETE SET NULL,
+        supplier_id INTEGER REFERENCES suppliers(id),
+        item_name VARCHAR(255) NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        unit_price NUMERIC DEFAULT 0,
+        total_amount NUMERIC DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'Ordered',
+        created_by INTEGER REFERENCES users(id),
+        received_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS stock_movements (
+        id SERIAL PRIMARY KEY,
+        inventory_id INTEGER REFERENCES inventory(id) ON DELETE CASCADE,
+        type VARCHAR(10) NOT NULL,
+        quantity INTEGER NOT NULL,
+        reference VARCHAR(255),
+        purchase_order_id INTEGER REFERENCES purchase_orders(id),
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Complaints System
     await db.query(`
       CREATE TABLE IF NOT EXISTS complaints (
@@ -2746,6 +2791,154 @@ app.delete('/api/assets/:id', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('DELETE FROM assets WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Purchase Requests (Phase 4 completion) ---
+app.get('/api/purchase-requests', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT pr.*, u.full_name as requested_by_name, a.full_name as approved_by_name
+      FROM purchase_requests pr
+      LEFT JOIN users u ON pr.requested_by = u.id
+      LEFT JOIN users a ON pr.approved_by = a.id
+      ORDER BY pr.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/purchase-requests', checkRole(['admin']), async (req, res) => {
+  const { department, item_name, quantity, estimated_price, reason } = req.body;
+  try {
+    const result = await db.query(
+      `INSERT INTO purchase_requests (requested_by, department, item_name, quantity, estimated_price, reason)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [req.user.id, department || null, item_name, quantity || 1, estimated_price || 0, reason || null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/purchase-requests/:id/status', checkRole(['admin']), async (req, res) => {
+  const { status } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE purchase_requests SET status = $1, approved_by = $2 WHERE id = $3 RETURNING *',
+      [status, req.user.id, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Purchase Orders (Phase 4 completion) ---
+app.get('/api/purchase-orders', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT po.*, s.name as supplier_name
+      FROM purchase_orders po
+      LEFT JOIN suppliers s ON po.supplier_id = s.id
+      ORDER BY po.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/purchase-orders', checkRole(['admin']), async (req, res) => {
+  const { purchase_request_id, supplier_id, item_name, quantity, unit_price } = req.body;
+  try {
+    const qty = parseInt(quantity) || 1;
+    const price = parseFloat(unit_price) || 0;
+    const result = await db.query(
+      `INSERT INTO purchase_orders (purchase_request_id, supplier_id, item_name, quantity, unit_price, total_amount, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [purchase_request_id || null, supplier_id || null, item_name, qty, price, qty * price, req.user.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Marking a PO "Received" is the one action that actually moves inventory — it upserts the
+// matching inventory item (matched by item_name, case-insensitive) by the ordered quantity and
+// writes a stock_movements row so the increase is traceable back to this exact PO.
+app.put('/api/purchase-orders/:id/receive', checkRole(['admin']), async (req, res) => {
+  try {
+    const poRes = await db.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
+    const po = poRes.rows[0];
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+    if (po.status === 'Received') return res.status(400).json({ error: 'This purchase order was already received' });
+
+    let invRes = await db.query('SELECT * FROM inventory WHERE LOWER(item_name) = LOWER($1)', [po.item_name]);
+    let inventoryItem;
+    if (invRes.rows.length > 0) {
+      inventoryItem = invRes.rows[0];
+      const newQty = parseInt(inventoryItem.quantity || 0) + po.quantity;
+      const updated = await db.query(
+        `UPDATE inventory SET quantity = $1, status = $2 WHERE id = $3 RETURNING *`,
+        [newQty, newQty < 10 ? 'Low Stock' : 'In Stock', inventoryItem.id]
+      );
+      inventoryItem = updated.rows[0];
+    } else {
+      const created = await db.query(
+        `INSERT INTO inventory (item_name, quantity, unit, price_per_unit, status) VALUES ($1, $2, 'Pcs', $3, $4) RETURNING *`,
+        [po.item_name, po.quantity, po.unit_price, po.quantity < 10 ? 'Low Stock' : 'In Stock']
+      );
+      inventoryItem = created.rows[0];
+    }
+
+    await db.query(
+      `INSERT INTO stock_movements (inventory_id, type, quantity, reference, purchase_order_id, created_by)
+       VALUES ($1, 'in', $2, $3, $4, $5)`,
+      [inventoryItem.id, po.quantity, `Received from PO #${po.id}`, po.id, req.user.id]
+    );
+
+    const result = await db.query(
+      `UPDATE purchase_orders SET status = 'Received', received_at = NOW() WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    res.json({ purchaseOrder: result.rows[0], inventoryItem });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/purchase-orders/:id/cancel', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(
+      `UPDATE purchase_orders SET status = 'Cancelled' WHERE id = $1 AND status != 'Received' RETURNING *`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Cannot cancel a received purchase order' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Stock Movements (Phase 4 completion) — read-only ledger ---
+app.get('/api/stock-movements', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT sm.*, i.item_name, u.full_name as created_by_name
+      FROM stock_movements sm
+      JOIN inventory i ON sm.inventory_id = i.id
+      LEFT JOIN users u ON sm.created_by = u.id
+      ORDER BY sm.created_at DESC
+      LIMIT 200
+    `);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
