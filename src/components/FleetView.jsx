@@ -51,7 +51,7 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
   const [showMap, setShowMap] = useState(false);
 
   // Form States
-  const [newTruck, setNewTruck] = useState({ plate_number: '', model: '' });
+  const [newTruck, setNewTruck] = useState({ plate_number: '', model: '', insurance_expiry: '', registration_expiry: '' });
   const [newFuel, setNewFuel] = useState({ truck_id: '', liters: '', cost: '', odometer_reading: '' });
   const [newMaintenance, setNewMaintenance] = useState({ truck_id: '', description: '', cost: '', next_service_date: '' });
   const [newZone, setNewZone] = useState({ name: '', truck_id: '', collection_days: '', collection_time: '', area: '', neighborhood: '' });
@@ -221,7 +221,7 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                 try {
                   await api.addTruck(newTruck);
                   toast.success('Truck added');
-                  setNewTruck({ plate_number: '', model: '' });
+                  setNewTruck({ plate_number: '', model: '', insurance_expiry: '', registration_expiry: '' });
                   fetchData();
                 } catch(err) {
                   toast.error('Failed to add truck');
@@ -235,6 +235,14 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                 <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b' }}>Model</label>
                 <input required value={newTruck.model} onChange={e => setNewTruck({...newTruck, model: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid #e2e8f0' }} placeholder="e.g. Isuzu NQR" />
               </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b' }}>Insurance Expiry</label>
+                <input type="date" value={newTruck.insurance_expiry} onChange={e => setNewTruck({...newTruck, insurance_expiry: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b' }}>Registration Expiry</label>
+                <input type="date" value={newTruck.registration_expiry} onChange={e => setNewTruck({...newTruck, registration_expiry: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
+              </div>
               <button type="submit" className="btn-primary" style={{ padding: '1rem', borderRadius: '12px', fontWeight: 800 }}>Save Truck</button>
             </form>
           </div>
@@ -244,20 +252,68 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
             <div style={{ padding: '1.5rem', borderBottom: '1px solid #f1f5f9' }}>
               <h3 style={{ fontWeight: 800, margin: 0 }}>Registered Trucks</h3>
             </div>
+            {(() => {
+              const today = new Date();
+              const in30Days = new Date(today.getTime() + 30 * 86400000);
+              const expiringDocs = trucks.filter(t =>
+                (t.insurance_expiry && new Date(t.insurance_expiry) <= in30Days) ||
+                (t.registration_expiry && new Date(t.registration_expiry) <= in30Days)
+              );
+              const overdueMaintenance = trucks.filter(t =>
+                maintenanceLogs.some(m => m.truck_id === t.id && m.next_service_date && new Date(m.next_service_date) <= today)
+              );
+              if (expiringDocs.length === 0 && overdueMaintenance.length === 0) return null;
+              return (
+                <div style={{ margin: '1rem 1.5rem', padding: '1rem', borderRadius: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <AlertTriangle size={18} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ fontSize: '0.85rem', color: '#991b1b' }}>
+                    {expiringDocs.length > 0 && <div><strong>{expiringDocs.length} truck(s)</strong> have insurance/registration expiring within 30 days (or already expired): {expiringDocs.map(t => t.plate_number).join(', ')}</div>}
+                    {overdueMaintenance.length > 0 && <div style={{ marginTop: expiringDocs.length > 0 ? '4px' : 0 }}><strong>{overdueMaintenance.length} truck(s)</strong> are overdue for scheduled maintenance: {overdueMaintenance.map(t => t.plate_number).join(', ')}</div>}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#f8fafc', fontSize: '0.75rem', color: '#64748b' }}>
                   <tr>
                     <th style={{ padding: '1.2rem 1.5rem' }}>Plate Number</th>
                     <th style={{ padding: '1.2rem 1.5rem' }}>Model</th>
+                    <th style={{ padding: '1.2rem 1.5rem' }}>Documents</th>
                     <th style={{ padding: '1.2rem 1.5rem', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {trucks.map(t => (
+                  {trucks.map(t => {
+                    const today = new Date();
+                    const in30Days = new Date(today.getTime() + 30 * 86400000);
+                    const docBadge = (label, date) => {
+                      if (!date) return null;
+                      const d = new Date(date);
+                      const expired = d <= today;
+                      const soon = !expired && d <= in30Days;
+                      const color = expired ? '#ef4444' : soon ? '#f59e0b' : '#10b981';
+                      const bg = expired ? '#fef2f2' : soon ? '#fffbeb' : '#f0fdf4';
+                      return (
+                        <div key={label} style={{ fontSize: '0.7rem', fontWeight: 700, color, backgroundColor: bg, padding: '2px 8px', borderRadius: '8px', display: 'inline-block', marginRight: '4px', marginBottom: '2px' }}>
+                          {label}: {d.toLocaleDateString()}
+                        </div>
+                      );
+                    };
+                    return (
                     <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '1rem 1.5rem', fontWeight: 700 }}>{t.plate_number}</td>
                       <td style={{ padding: '1rem 1.5rem' }}>{t.model}</td>
+                      <td style={{ padding: '1rem 1.5rem' }}>
+                        {!t.insurance_expiry && !t.registration_expiry ? (
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Not on file</span>
+                        ) : (
+                          <>
+                            {docBadge('Insurance', t.insurance_expiry)}
+                            {docBadge('Registration', t.registration_expiry)}
+                          </>
+                        )}
+                      </td>
                       <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
                         <button onClick={async () => {
                           if(!window.confirm('Delete this truck?')) return;
@@ -267,9 +323,9 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  );})}
                   {trucks.length === 0 && (
-                    <tr><td colSpan="3" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No trucks found.</td></tr>
+                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>No trucks found.</td></tr>
                   )}
                 </tbody>
               </table>

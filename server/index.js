@@ -179,6 +179,13 @@ const runMigrations = async () => {
       );
     `);
 
+    // Phase 5: truck documents (insurance/registration expiry) — fuel and maintenance logging
+    // already existed before this phase; this closes the "truck documents" gap from the proposal.
+    await db.query(`
+      ALTER TABLE trucks ADD COLUMN IF NOT EXISTS insurance_expiry DATE;
+      ALTER TABLE trucks ADD COLUMN IF NOT EXISTS registration_expiry DATE;
+    `);
+
     // Complaints System
     await db.query(`
       CREATE TABLE IF NOT EXISTS complaints (
@@ -1840,11 +1847,11 @@ app.get('/api/trucks', checkRole(['admin', 'cashier', 'collector', 'gudoomiye'])
 });
 
 app.post('/api/trucks', checkRole(['admin']), async (req, res) => {
-  const { plate_number, model, driver_id, collector_id } = req.body;
+  const { plate_number, model, driver_id, collector_id, insurance_expiry, registration_expiry } = req.body;
   try {
     const result = await db.query(
-      'INSERT INTO trucks (plate_number, model, driver_id, collector_id) VALUES ($1, $2, $3, $4) RETURNING *',
-      [plate_number, model, driver_id || null, collector_id || null]
+      'INSERT INTO trucks (plate_number, model, driver_id, collector_id, insurance_expiry, registration_expiry) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [plate_number, model, driver_id || null, collector_id || null, insurance_expiry || null, registration_expiry || null]
     );
     await logAudit(req, 'CREATE', 'trucks', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
@@ -1855,11 +1862,13 @@ app.post('/api/trucks', checkRole(['admin']), async (req, res) => {
 
 app.put('/api/trucks/:id', checkRole(['admin']), async (req, res) => {
   try {
-    const { plate_number, model, status, driver_id, collector_id } = req.body;
+    const { plate_number, model, status, driver_id, collector_id, insurance_expiry, registration_expiry } = req.body;
     const oldRow = await db.query('SELECT * FROM trucks WHERE id = $1', [req.params.id]);
     const result = await db.query(
-      'UPDATE trucks SET plate_number = $1, model = $2, status = $3, driver_id = $4, collector_id = $5 WHERE id = $6 RETURNING *',
-      [plate_number, model, status || 'Active', driver_id || null, collector_id || null, req.params.id]
+      `UPDATE trucks SET plate_number = $1, model = $2, status = $3, driver_id = $4, collector_id = $5,
+        insurance_expiry = $6, registration_expiry = $7 WHERE id = $8 RETURNING *`,
+      [plate_number, model, status || 'Active', driver_id || null, collector_id || null,
+       insurance_expiry || null, registration_expiry || null, req.params.id]
     );
     await logAudit(req, 'UPDATE', 'trucks', req.params.id, oldRow.rows[0], result.rows[0]);
     res.json(result.rows[0]);
