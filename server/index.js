@@ -309,17 +309,18 @@ const runMigrations = async () => {
         ['payroll', 'view'],
         ['expenses', 'view'], ['expenses', 'create'],
         ['debts', 'view'], ['debts', 'create'],
+        ['tasks', 'view'],
         ['map', 'view'],
       ],
       collector: [
         ['customers', 'view'], ['customers', 'create'], ['customers', 'edit'],
-        ['tasks', 'view'],
+        ['tasks', 'view'], ['tasks', 'create'],
         ['map', 'view'],
       ],
       gudoomiye: [
         ['customers', 'view'], ['customers', 'create'],
-        ['billing', 'view'],
-        ['cashout', 'view'], ['cashout', 'approve'],
+        ['billing', 'view'], ['billing', 'create'],
+        ['cashout', 'view'], ['cashout', 'create'], ['cashout', 'approve'],
         ['debts', 'view'],
         ['tasks', 'view'],
         ['map', 'view'],
@@ -445,6 +446,64 @@ const checkRole = (roles) => [
     next();
   }
 ];
+
+// --- Phase 2: dynamic permission-based access control ---
+// Replaces hardcoded checkRole([...]) arrays with a lookup against the role_permissions table
+// built in Phase 1, so a custom role created via the Roles & Permissions UI actually gets
+// enforced on real routes, not just displayed. The JWT itself is left unchanged (still just
+// id/username/role/zone) so existing tokens keep working — role_id is looked up per request
+// from `users`, and a short in-memory cache avoids hitting the DB on every single call.
+const rolePermsCache = new Map(); // role_id -> { set: Set<"module.action">, expires: number }
+const ROLE_PERMS_TTL_MS = 30000;
+
+const getRolePermissions = async (roleId) => {
+  const cached = rolePermsCache.get(roleId);
+  if (cached && cached.expires > Date.now()) return cached.set;
+  const rows = await db.query(
+    `SELECT p.module, p.action FROM role_permissions rp
+     JOIN permissions p ON rp.permission_id = p.id
+     WHERE rp.role_id = $1`,
+    [roleId]
+  );
+  const set = new Set(rows.rows.map(r => `${r.module}.${r.action}`));
+  rolePermsCache.set(roleId, { set, expires: Date.now() + ROLE_PERMS_TTL_MS });
+  return set;
+};
+
+const requirePermission = (module, action) => [
+  authenticateToken,
+  async (req, res, next) => {
+    try {
+      if (!req.user) return res.status(403).json({ error: 'Access denied: Insufficient permissions' });
+      // Super Admin always passes, without a DB round-trip, matching its "full access everywhere" seed.
+      if (req.user.role.toLowerCase() === 'admin') return next();
+
+      const userRow = await db.query('SELECT role_id FROM users WHERE id = $1', [req.user.id]);
+      const roleId = userRow.rows[0]?.role_id;
+      if (!roleId) return res.status(403).json({ error: 'Access denied: no role assigned' });
+
+      const perms = await getRolePermissions(roleId);
+      if (!perms.has(`${module}.${action}`)) {
+        return res.status(403).json({ error: 'Access denied: Insufficient permissions' });
+      }
+      next();
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+];
+
+// Centralizes the "is this user restricted to one zone" check that used to be copy-pasted as
+// `isGudoomiye ? 'WHERE zone = $1' : ''` in every route — a Gudoomiye/Zone Accountant is scoped
+// to req.user.zone, a Cashier is scoped to their paired collector(s)/zone_group (see
+// getCashierScope), and everyone else (Admin, Collector on their own records) sees company-wide.
+const getZoneScope = (req) => {
+  const role = req.user.role.toLowerCase();
+  if (role === 'gudoomiye' || role === 'zone_accountant') {
+    return { restricted: true, zone: req.user.zone };
+  }
+  return { restricted: false, zone: null };
+};
 
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
@@ -781,11 +840,13 @@ const getCashierScope = async (cashierId) => {
 };
 
 // --- Customers ---
-app.get('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']), async (req, res) => {
+// Phase 2: migrated onto the dynamic permission engine — any role (including a custom one
+// created via Roles & Permissions) with "customers.view" granted can call this, instead of a
+// hardcoded role-name list. Zone scoping still comes from getZoneScope (Gudoomiye/Zone
+// Accountant restricted to their own zone; Cashier scoped separately via getCashierScope below).
+app.get('/api/customers', requirePermission('customers', 'view'), async (req, res) => {
   try {
-    // zone_accountant is a read-only role scoped identically to gudoomiye (their own zone) —
-    // it just never appears in any create/edit/delete/approve checkRole array.
-    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
+    const { restricted: isGudoomiye } = getZoneScope(req);
     const isCashier = req.user.role.toLowerCase() === 'cashier';
 
     if (isCashier) {
@@ -819,7 +880,7 @@ app.get('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye
 });
 
 
-app.post('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
+app.post('/api/customers', requirePermission('customers', 'create'), async (req, res) => {
   try {
     const b = req.body;
     const safeNull = (v) => (v === '' || v === undefined ? null : v);
@@ -986,9 +1047,9 @@ app.get('/api/invoices/stats', checkRole(['admin', 'cashier', 'gudoomiye']), asy
   }
 });
 
-app.get('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accountant']), async (req, res) => {
+app.get('/api/invoices', requirePermission('billing', 'view'), async (req, res) => {
   try {
-    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
+    const { restricted: isGudoomiye } = getZoneScope(req);
     const isCashier = req.user.role.toLowerCase() === 'cashier';
 
     if (isCashier) {
@@ -1033,7 +1094,7 @@ app.get('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accou
   }
 });
 
-app.post('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
+app.post('/api/invoices', requirePermission('billing', 'create'), async (req, res) => {
   const { customer_id, phone, splitPayments, currency, collector_name, truck_name, zone, house_no, discount_amount = 0 } = req.body;
   const { cash = 0, zaad = 0, edahab = 0, debt = 0, slsh = 0 } = splitPayments || {};
 
@@ -1406,11 +1467,11 @@ app.post('/api/expenses', checkRole(['admin', 'cashier']), upload.single('invoic
 });
 
 // --- Tasks ---
-app.get('/api/tasks', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
+app.get('/api/tasks', requirePermission('tasks', 'view'), async (req, res) => {
   try {
     // A gudoomiye should only see the tasks dispatched in their own zone — route_name carries
     // the zone group label (e.g. "Group1"), same as everywhere else this is scoped.
-    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const { restricted: isGudoomiye } = getZoneScope(req);
     const result = await db.query(`
       SELECT t.*, lh.lat, lh.lng
       FROM tasks t
@@ -1430,7 +1491,7 @@ app.get('/api/tasks', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']),
   }
 });
 
-app.post('/api/tasks', checkRole(['admin', 'collector']), async (req, res) => {
+app.post('/api/tasks', requirePermission('tasks', 'create'), async (req, res) => {
   const { driver_name, collector_name, vehicle_plate, route_name, customer_ids, zone_id, truck_id } = req.body;
   try {
     const result = await db.query(
@@ -2536,9 +2597,9 @@ app.put('/api/debts/:id/status', checkRole(['admin', 'cashier']), async (req, re
 // --- Cashouts (Taariikhda Xisaab-celinta) ---
 // Step 8 of the workflow: the Gudoomiye finalizes/settles the cashout for their own zone.
 // Admin can do it for any zone; Cashier can still record it during the transition period.
-app.get('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accountant']), async (req, res) => {
+app.get('/api/cashouts', requirePermission('cashout', 'view'), async (req, res) => {
   try {
-    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
+    const { restricted: isGudoomiye } = getZoneScope(req);
     const result = await db.query(
       isGudoomiye ? 'SELECT * FROM cashouts WHERE zone = $1 ORDER BY created_at DESC' : 'SELECT * FROM cashouts ORDER BY created_at DESC',
       isGudoomiye ? [req.user.zone] : []
@@ -2549,7 +2610,7 @@ app.get('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accou
   }
 });
 
-app.post('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
+app.post('/api/cashouts', requirePermission('cashout', 'create'), async (req, res) => {
   const { collector_name, cashier_name, expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason, processed_by, zone } = req.body;
 
   let resolvedZone = zone || null;
