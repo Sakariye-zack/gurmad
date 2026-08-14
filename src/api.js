@@ -331,6 +331,24 @@ export const api = {
     method: 'PUT',
     headers: getAuthHeaders()
   }).then(handleResponse),
+
+  // Roles & Permissions (dynamic RBAC)
+  getRoles: () => fetch(`${API_BASE_URL}/roles`, { headers: getAuthHeaders() }).then(handleResponse),
+  getPermissions: () => fetch(`${API_BASE_URL}/permissions`, { headers: getAuthHeaders() }).then(handleResponse),
+  createRole: (label) => fetch(`${API_BASE_URL}/roles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ label })
+  }).then(handleResponse),
+  updateRolePermissions: (id, permissions) => fetch(`${API_BASE_URL}/roles/${id}/permissions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ permissions })
+  }).then(handleResponse),
+  deleteRole: (id) => fetch(`${API_BASE_URL}/roles/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
   resetUserPassword: (id, newPassword) => fetch(`${API_BASE_URL}/users/${id}/reset-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },

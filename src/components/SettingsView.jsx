@@ -71,6 +71,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
   
   // User Management State
   const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]); // dynamic roles list (Roles & Permissions page)
   const [editingUser, setEditingUser] = useState(null);
   const [newPass, setNewPass] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -288,6 +289,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
   useEffect(() => {
     if (activeTab === 'usr' && currentUser.role === 'admin') {
       api.getUsers().then(setUsers);
+      api.getRoles().then(setRoles).catch(() => {});
     }
   }, [activeTab]);
 
@@ -1236,19 +1238,28 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                       </div>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>SYSTEM ROLE</label>
-                        <select 
+                        <select
                           value={newUserData.role}
                           onChange={e => setNewUserData({...newUserData, role: e.target.value})}
                           className="card" style={{ width: '100%', padding: '0.85rem', borderRadius: '8px' }}
                         >
-                          <option value="admin">System Administrator</option>
-                          <option value="gudoomiye">Gudoomiye (Zone Chairman)</option>
-                          <option value="collector">Collector (Field App)</option>
-                          <option value="cashier">Cashier (Accounting)</option>
-                          <option value="manager">Operations Manager</option>
+                          {roles.length > 0 ? roles.map(r => (
+                            <option key={r.id} value={r.key}>{r.label}</option>
+                          )) : (
+                            // Fallback while /api/roles hasn't loaded yet, so the form still works
+                            <>
+                              <option value="admin">System Administrator</option>
+                              <option value="gudoomiye">Gudoomiye (Chairman)</option>
+                              <option value="collector">Collector (Field App)</option>
+                              <option value="cashier">Cashier (Accounting)</option>
+                            </>
+                          )}
                         </select>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          Need a role that isn't listed? Create it first under <strong>Roles & Permissions</strong>.
+                        </p>
                       </div>
-                      {newUserData.role === 'gudoomiye' && (
+                      {(newUserData.role === 'gudoomiye' || newUserData.role === 'zone_accountant') && (
                         <div>
                           <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>ZONE / GROUP (their office)</label>
                           <input

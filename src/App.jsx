@@ -23,7 +23,8 @@ import {
   MessageSquare,
   Sun,
   Moon,
-  X
+  X,
+  Shield
 } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
 import { api } from './api';
@@ -35,6 +36,7 @@ import TaskView from './components/TaskView';
 import MapView from './components/MapView';
 import ReportsView from './components/ReportsView';
 import SettingsView from './components/SettingsView';
+import RolesView from './components/RolesView';
 import HRMView from './components/HRMView';
 import OnboardEmployeeView from './components/OnboardEmployeeView';
 import AttendanceView from './components/AttendanceView';
@@ -244,17 +246,17 @@ const App = () => {
   const menuGroups = [
     { 
       type: 'item',
-      id: 'dashboard', 
-      label: t('dashboard'), 
-      icon: LayoutDashboard, 
-      roles: ['admin', 'cashier', 'collector', 'gudoomiye']
+      id: 'dashboard',
+      label: t('dashboard'),
+      icon: LayoutDashboard,
+      roles: ['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']
     },
     {
       type: 'item',
       id: 'customers',
       label: t('customers'),
       icon: Users,
-      roles: ['admin', 'cashier', 'collector', 'gudoomiye']
+      roles: ['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']
     },
     {
       type: 'item',
@@ -268,16 +270,16 @@ const App = () => {
       id: 'operations',
       label: t('operations'),
       icon: Truck,
-      roles: ['admin', 'collector', 'cashier', 'gudoomiye'],
+      roles: ['admin', 'collector', 'cashier', 'gudoomiye', 'zone_accountant'],
       items: [
         { id: 'zones', label: t('manage_zones'), icon: MapIcon, roles: ['admin'] },
         { id: 'fleet', label: t('register_trucks'), icon: Truck, roles: ['admin'] },
         { id: 'collector_assignments', label: 'Collector Assignments', icon: MapIcon, roles: ['admin', 'gudoomiye'] },
-        { id: 'cashier_assignments', label: 'Cashier Assignments', icon: Wallet, roles: ['admin', 'gudoomiye'] },
+        { id: 'cashier_assignments', label: 'Cashier Assignments', icon: Wallet, roles: ['admin', 'gudoomiye', 'zone_accountant'] },
         { id: 'tasks', label: 'Collector Tasks', icon: ClipboardList, roles: ['admin', 'collector', 'gudoomiye'] },
         { id: 'todays_collections', label: "Today's Collections", icon: Users, roles: ['cashier'] },
         { id: 'my_route_today', label: 'My Route Today', icon: MapIcon, roles: ['collector'] },
-        { id: 'map', label: 'Operations Map', icon: MapIcon, roles: ['admin', 'collector', 'cashier', 'gudoomiye'] }
+        { id: 'map', label: 'Operations Map', icon: MapIcon, roles: ['admin', 'collector', 'cashier', 'gudoomiye', 'zone_accountant'] }
       ]
     },
 
@@ -286,13 +288,13 @@ const App = () => {
       id: 'accounting',
       label: t('accounting'),
       icon: Receipt,
-      roles: ['admin', 'cashier', 'collector', 'gudoomiye'],
+      roles: ['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant'],
       items: [
-        { id: 'billing', label: t('billing_invoices'), icon: Receipt, roles: ['admin', 'cashier', 'gudoomiye'] },
+        { id: 'billing', label: t('billing_invoices'), icon: Receipt, roles: ['admin', 'cashier', 'gudoomiye', 'zone_accountant'] },
         { id: 'payroll', label: 'Employee Payroll', icon: Wallet, roles: ['admin', 'cashier'] },
         { id: 'expenses', label: t('expense_tracker'), icon: Wallet, roles: ['admin', 'cashier'] },
-        { id: 'debts', label: t('debts'), icon: ClipboardList, roles: ['admin', 'cashier', 'gudoomiye'] },
-        { id: 'cashout', label: 'Cashier Cashout', icon: Wallet, roles: ['admin', 'cashier', 'gudoomiye'] },
+        { id: 'debts', label: t('debts'), icon: ClipboardList, roles: ['admin', 'cashier', 'gudoomiye', 'zone_accountant'] },
+        { id: 'cashout', label: 'Cashier Cashout', icon: Wallet, roles: ['admin', 'cashier', 'gudoomiye', 'zone_accountant'] },
         { id: 'reports', label: t('financial_reports'), icon: BarChart3, roles: ['admin'] },
       ]
     },
@@ -329,12 +331,19 @@ const App = () => {
       icon: FolderOpen, 
       roles: ['admin'] 
     },
-    { 
+    {
       type: 'item',
-      id: 'settings', 
-      label: t('system_settings'), 
-      icon: Settings, 
-      roles: ['admin', 'cashier'] 
+      id: 'settings',
+      label: t('system_settings'),
+      icon: Settings,
+      roles: ['admin', 'cashier']
+    },
+    {
+      type: 'item',
+      id: 'roles',
+      label: 'Roles & Permissions',
+      icon: Shield,
+      roles: ['admin']
     },
     { 
       type: 'item',
@@ -402,6 +411,7 @@ const App = () => {
            localStorage.setItem('gurmadUser', JSON.stringify(updatedUser));
          }} 
       />;
+      case 'roles': return <RolesView />;
       case 'landing_mgmt': return <LandingManagementView />;
       case 'archive': return <ArchiveView searchQuery={globalSearch} />;
       case 'complaints': return <ComplaintsView searchQuery={globalSearch} />;
@@ -1011,6 +1021,10 @@ const App = () => {
                     onClick={() => {
                       setCurrentUser(null);
                       localStorage.removeItem('gurmadUser');
+                      // Reset the tab so the next login (possibly a different role) always
+                      // lands on Dashboard, instead of whatever page the previous user was on —
+                      // that page might not even be in the new user's sidebar/permissions.
+                      setActiveTab('dashboard');
                       toast.success('Logged out successfully');
                     }}
                     style={{

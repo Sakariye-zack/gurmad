@@ -62,7 +62,7 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
   const [selectedGroup, setSelectedGroup] = useState('');
 
   useEffect(() => {
-    const needsInvoices = currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye';
+    const needsInvoices = currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant';
     Promise.all([
       api.getStats(),
       api.getStatsHistory(),
@@ -135,7 +135,10 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
         { label: t('total_expenses'), value: formatValue(dbStats.totalExpenses), sub: t('optimal'), icon: Wallet, color: '#ef4444', bg: '#fee2e2' },
         { label: 'Pending Invoices', value: pendingInvoicesCount.toString(), sub: pendingInvoicesCount > 0 ? 'Action required' : 'All clear', icon: Clock, color: '#f97316', bg: '#ffedd5' },
       ];
-    } else if (currentUser?.role === 'gudoomiye') {
+    } else if (currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant') {
+      // Zone Accountant gets the same zone-scoped financial view as Gudoomiye/Chairman — the
+      // backend already scopes /api/stats identically for both roles — but the page below
+      // renders no action buttons for zone_accountant since it's a view-only role.
       return [
         { label: 'Zone Revenue', value: formatValue(dbStats.revenue), sub: currentUser.zone || '', icon: DollarSign, color: 'var(--gurmad-green)', bg: '#dcfce7' },
         { label: t('active_customers'), value: dbStats.customerCount.toString(), sub: currentUser.zone || '', icon: Users, color: 'var(--gurmad-orange)', bg: '#fef3c7' },
@@ -251,7 +254,7 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
       </div>
 
       {/* Cashier Stats Table (money collected, broken down by which collector it was for) */}
-      {(currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye') && (
+      {(currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant') && (
         <div className="card" style={{ padding: '1.5rem', marginBottom: '1rem', border: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
@@ -311,8 +314,8 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
         </div>
       )}
 
-      {/* Quick Actions Bar */}
-      {currentUser?.role !== 'collector' && (
+      {/* Quick Actions Bar — zone_accountant is view-only, no create/log actions */}
+      {currentUser?.role !== 'collector' && currentUser?.role !== 'zone_accountant' && (
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
            <button onClick={() => window.dispatchEvent(new CustomEvent('switchTab', { detail: 'customers' }))} style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
              <PlusCircle size={18} color="var(--gurmad-green)" /> Add Customer

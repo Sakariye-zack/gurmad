@@ -236,6 +236,126 @@ const runMigrations = async () => {
       ALTER TABLE payroll ADD COLUMN IF NOT EXISTS needs_review BOOLEAN DEFAULT FALSE;
     `);
 
+    // --- Dynamic Roles & Permissions (Phase 1 of the RBAC upgrade) ---
+    // `users.role` (string) is kept as-is so every existing checkRole([...]) call keeps working
+    // unchanged; `role_id` is purely additive, feeding the new Roles & Permissions admin UI and
+    // any newly-added role (e.g. zone_accountant) without touching existing route behavior.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS roles (
+        id SERIAL PRIMARY KEY,
+        key VARCHAR(50) UNIQUE NOT NULL,
+        label VARCHAR(100) NOT NULL,
+        is_system BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS permissions (
+        id SERIAL PRIMARY KEY,
+        module VARCHAR(50) NOT NULL,
+        action VARCHAR(30) NOT NULL,
+        label VARCHAR(150) NOT NULL,
+        UNIQUE(module, action)
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS role_permissions (
+        role_id INTEGER REFERENCES roles(id) ON DELETE CASCADE,
+        permission_id INTEGER REFERENCES permissions(id) ON DELETE CASCADE,
+        PRIMARY KEY (role_id, permission_id)
+      );
+    `);
+    await db.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS role_id INTEGER REFERENCES roles(id);
+    `);
+
+    // Seed the 5 system roles (idempotent — safe to run every start)
+    const systemRoles = [
+      ['admin', 'Super Admin'],
+      ['cashier', 'Cashier'],
+      ['collector', 'Collector'],
+      ['gudoomiye', 'Gudoomiye (Chairman)'],
+      ['zone_accountant', 'Zone Accountant'],
+    ];
+    for (const [key, label] of systemRoles) {
+      await db.query(
+        `INSERT INTO roles (key, label, is_system) VALUES ($1, $2, TRUE)
+         ON CONFLICT (key) DO NOTHING`,
+        [key, label]
+      );
+    }
+
+    // Seed the permission catalog (module + action -> label)
+    const modules = ['customers', 'billing', 'cashout', 'payroll', 'expenses', 'debts', 'tasks', 'map', 'reports', 'employees', 'users', 'settings'];
+    const actions = ['view', 'create', 'edit', 'delete', 'approve'];
+    for (const mod of modules) {
+      for (const act of actions) {
+        await db.query(
+          `INSERT INTO permissions (module, action, label) VALUES ($1, $2, $3)
+           ON CONFLICT (module, action) DO NOTHING`,
+          [mod, act, `${act.charAt(0).toUpperCase() + act.slice(1)} ${mod}`]
+        );
+      }
+    }
+
+    // Seed role_permissions to mirror each existing role's CURRENT effective access, so nothing
+    // changes behaviorally on cutover — this table only backs the new Roles UI and zone_accountant.
+    const roleGrants = {
+      admin: modules.flatMap(m => actions.map(a => [m, a])), // full access everywhere
+      cashier: [
+        ['customers', 'view'], ['customers', 'create'], ['customers', 'edit'],
+        ['billing', 'view'], ['billing', 'create'],
+        ['cashout', 'view'], ['cashout', 'create'],
+        ['payroll', 'view'],
+        ['expenses', 'view'], ['expenses', 'create'],
+        ['debts', 'view'], ['debts', 'create'],
+        ['map', 'view'],
+      ],
+      collector: [
+        ['customers', 'view'], ['customers', 'create'], ['customers', 'edit'],
+        ['tasks', 'view'],
+        ['map', 'view'],
+      ],
+      gudoomiye: [
+        ['customers', 'view'], ['customers', 'create'],
+        ['billing', 'view'],
+        ['cashout', 'view'], ['cashout', 'approve'],
+        ['debts', 'view'],
+        ['tasks', 'view'],
+        ['map', 'view'],
+        ['reports', 'view'],
+      ],
+      zone_accountant: [
+        ['customers', 'view'],
+        ['billing', 'view'],
+        ['cashout', 'view'],
+        ['debts', 'view'],
+        ['reports', 'view'],
+      ],
+    };
+    for (const [roleKey, grants] of Object.entries(roleGrants)) {
+      const roleRow = await db.query('SELECT id FROM roles WHERE key = $1', [roleKey]);
+      const roleId = roleRow.rows[0]?.id;
+      if (!roleId) continue;
+      for (const [mod, act] of grants) {
+        const permRow = await db.query('SELECT id FROM permissions WHERE module = $1 AND action = $2', [mod, act]);
+        const permId = permRow.rows[0]?.id;
+        if (!permId) continue;
+        await db.query(
+          `INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2)
+           ON CONFLICT DO NOTHING`,
+          [roleId, permId]
+        );
+      }
+    }
+
+    // Backfill role_id on existing user accounts from their current role string
+    await db.query(`
+      UPDATE users SET role_id = roles.id
+      FROM roles
+      WHERE users.role = roles.key AND users.role_id IS NULL;
+    `);
+
     console.log('Database migrations completed successfully');
   } catch (err) {
     console.error('Migration failed:', err);
@@ -469,9 +589,12 @@ app.post('/api/users', checkRole(['admin']), async (req, res) => {
   try {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    // role_id is looked up from the roles table by key so req.user.role (JWT) keeps working
+    // unchanged for every existing checkRole([...]) call — role_id is additive, not a replacement.
+    const roleRow = await db.query('SELECT id FROM roles WHERE key = $1', [role]);
     const result = await db.query(
-      'INSERT INTO users (username, password, full_name, role, zone) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, full_name, role, zone, created_at, is_active',
-      [username, hashedPassword, full_name, role, zone || null]
+      'INSERT INTO users (username, password, full_name, role, role_id, zone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, full_name, role, role_id, zone, created_at, is_active',
+      [username, hashedPassword, full_name, role, roleRow.rows[0]?.id || null, zone || null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -515,9 +638,16 @@ app.post('/api/users/:id/full-reset', checkRole(['admin']), async (req, res) => 
 app.put('/api/users/:id', checkRole(['admin']), async (req, res) => {
   const { full_name, role, zone } = req.body;
   try {
+    let roleId = null;
+    if (role) {
+      const roleRow = await db.query('SELECT id FROM roles WHERE key = $1', [role]);
+      roleId = roleRow.rows[0]?.id || null;
+    }
     const result = await db.query(
-      'UPDATE users SET full_name = COALESCE($1, full_name), role = COALESCE($2, role), zone = $3 WHERE id = $4 RETURNING id, username, full_name, role, zone',
-      [full_name || null, role || null, zone || null, req.params.id]
+      `UPDATE users SET full_name = COALESCE($1, full_name), role = COALESCE($2, role),
+        role_id = COALESCE($3, role_id), zone = $4 WHERE id = $5
+       RETURNING id, username, full_name, role, role_id, zone`,
+      [full_name || null, role || null, roleId, zone || null, req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
     res.json(result.rows[0]);
@@ -533,6 +663,93 @@ app.put('/api/users/:id/toggle-status', checkRole(['admin']), async (req, res) =
     const newStatus = !user.rows[0].is_active;
     const result = await db.query('UPDATE users SET is_active = $1 WHERE id = $2 RETURNING id, is_active', [newStatus, req.params.id]);
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Dynamic Roles & Permissions (Phase 1 RBAC foundation) ---
+// Lets a Super Admin create new roles and adjust any role's permissions without a developer,
+// per the master proposal. This is additive: existing routes still enforce access via their own
+// hardcoded checkRole([...]) arrays — role_permissions here backs the new admin UI and the
+// zone_accountant role only (see the checkRole arrays each route already carries).
+app.get('/api/roles', checkRole(['admin']), async (req, res) => {
+  try {
+    const roles = await db.query('SELECT id, key, label, is_system FROM roles ORDER BY is_system DESC, label ASC');
+    const grants = await db.query(`
+      SELECT rp.role_id, p.module, p.action
+      FROM role_permissions rp
+      JOIN permissions p ON rp.permission_id = p.id
+    `);
+    const permsByRole = {};
+    grants.rows.forEach(g => {
+      if (!permsByRole[g.role_id]) permsByRole[g.role_id] = [];
+      permsByRole[g.role_id].push(`${g.module}.${g.action}`);
+    });
+    res.json(roles.rows.map(r => ({ ...r, permissions: permsByRole[r.id] || [] })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/permissions', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query('SELECT id, module, action, label FROM permissions ORDER BY module ASC, action ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/roles', checkRole(['admin']), async (req, res) => {
+  const { label } = req.body;
+  if (!label || !label.trim()) return res.status(400).json({ error: 'Role name is required' });
+  try {
+    const key = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (!key) return res.status(400).json({ error: 'Role name must contain at least one letter or number' });
+    const result = await db.query(
+      `INSERT INTO roles (key, label, is_system) VALUES ($1, $2, FALSE) RETURNING id, key, label, is_system`,
+      [key, label.trim()]
+    );
+    res.json({ ...result.rows[0], permissions: [] });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'A role with that name already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/roles/:id/permissions', checkRole(['admin']), async (req, res) => {
+  const { permissions } = req.body; // array of "module.action" strings
+  if (!Array.isArray(permissions)) return res.status(400).json({ error: 'permissions must be an array' });
+  try {
+    // Resolve "module.action" strings to permission ids, skipping anything unrecognized
+    const permIds = [];
+    for (const key of permissions) {
+      const [mod, act] = String(key).split('.');
+      const row = await db.query('SELECT id FROM permissions WHERE module = $1 AND action = $2', [mod, act]);
+      if (row.rows[0]) permIds.push(row.rows[0].id);
+    }
+    await db.query('DELETE FROM role_permissions WHERE role_id = $1', [req.params.id]);
+    for (const permId of permIds) {
+      await db.query('INSERT INTO role_permissions (role_id, permission_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.params.id, permId]);
+    }
+    res.json({ success: true, permissions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/roles/:id', checkRole(['admin']), async (req, res) => {
+  try {
+    const role = await db.query('SELECT is_system FROM roles WHERE id = $1', [req.params.id]);
+    if (role.rows.length === 0) return res.status(404).json({ error: 'Role not found' });
+    if (role.rows[0].is_system) return res.status(403).json({ error: 'System roles cannot be deleted' });
+    const inUse = await db.query('SELECT COUNT(*) FROM users WHERE role_id = $1', [req.params.id]);
+    if (parseInt(inUse.rows[0].count) > 0) {
+      return res.status(409).json({ error: 'Cannot delete a role that is still assigned to users' });
+    }
+    await db.query('DELETE FROM roles WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -564,9 +781,11 @@ const getCashierScope = async (cashierId) => {
 };
 
 // --- Customers ---
-app.get('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
+app.get('/api/customers', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
-    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    // zone_accountant is a read-only role scoped identically to gudoomiye (their own zone) —
+    // it just never appears in any create/edit/delete/approve checkRole array.
+    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
     const isCashier = req.user.role.toLowerCase() === 'cashier';
 
     if (isCashier) {
@@ -767,9 +986,9 @@ app.get('/api/invoices/stats', checkRole(['admin', 'cashier', 'gudoomiye']), asy
   }
 });
 
-app.get('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
+app.get('/api/invoices', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
-    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
     const isCashier = req.user.role.toLowerCase() === 'cashier';
 
     if (isCashier) {
@@ -1017,9 +1236,9 @@ app.delete('/api/collector-assignments/:id', checkRole(['admin']), async (req, r
 });
 
 // --- Cashier Assignments (which zone/group a cashier collects money for) ---
-app.get('/api/cashier-assignments', checkRole(['admin', 'gudoomiye', 'cashier']), async (req, res) => {
+app.get('/api/cashier-assignments', checkRole(['admin', 'gudoomiye', 'cashier', 'zone_accountant']), async (req, res) => {
   try {
-    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
     const isCashier = req.user.role.toLowerCase() === 'cashier';
     const whereClause = isGudoomiye ? 'WHERE ca.zone_group = $1' : (isCashier ? 'WHERE ca.cashier_id = $1' : '');
     const result = await db.query(`
@@ -1887,9 +2106,9 @@ app.put('/api/payroll/:id', checkRole(['admin', 'cashier']), async (req, res) =>
 });
 
 // --- Stats for Dashboard & Reports ---
-app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
+app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
-    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
     const zone = req.user.zone;
 
     const revenueRes = isGudoomiye
@@ -1948,7 +2167,7 @@ app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']),
   }
 });
 
-app.get('/api/stats/history', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
+app.get('/api/stats/history', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
     const history = [];
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1982,7 +2201,7 @@ app.get('/api/stats/history', checkRole(['admin', 'cashier', 'collector', 'gudoo
     res.status(500).json({ error: err.message });
   }
 });
-app.get('/api/dashboard/extended', checkRole(['admin', 'cashier', 'collector', 'gudoomiye']), async (req, res) => {
+app.get('/api/dashboard/extended', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -2220,7 +2439,7 @@ app.delete('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
 });
 
 // --- Debts (Daymaha) ---
-app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
+app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT d.id::text as id, d.customer_id, 
@@ -2251,7 +2470,7 @@ app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, 
       WHERE i.status = 'Unpaid'
       ORDER BY created_at DESC
     `);
-    const rows = req.user.role.toLowerCase() === 'gudoomiye'
+    const rows = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase())
       ? result.rows.filter(r => r.zone === req.user.zone)
       : result.rows;
     res.json(rows);
@@ -2317,9 +2536,9 @@ app.put('/api/debts/:id/status', checkRole(['admin', 'cashier']), async (req, re
 // --- Cashouts (Taariikhda Xisaab-celinta) ---
 // Step 8 of the workflow: the Gudoomiye finalizes/settles the cashout for their own zone.
 // Admin can do it for any zone; Cashier can still record it during the transition period.
-app.get('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
+app.get('/api/cashouts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
-    const isGudoomiye = req.user.role.toLowerCase() === 'gudoomiye';
+    const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
     const result = await db.query(
       isGudoomiye ? 'SELECT * FROM cashouts WHERE zone = $1 ORDER BY created_at DESC' : 'SELECT * FROM cashouts ORDER BY created_at DESC',
       isGudoomiye ? [req.user.zone] : []
