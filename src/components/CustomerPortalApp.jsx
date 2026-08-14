@@ -61,6 +61,8 @@ const CustomerPortalApp = () => {
   const [loading, setLoading] = useState(false);
   const [showComplaintForm, setShowComplaintForm] = useState(false);
   const [newComplaint, setNewComplaint] = useState({ title: '', description: '' });
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [companyLogo, setCompanyLogo] = useState('');
   const [logoError, setLogoError] = useState(false);
 
@@ -78,11 +80,12 @@ const CustomerPortalApp = () => {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [me, pay, col, comp] = await Promise.all([
+      const [me, pay, col, comp, notifs] = await Promise.all([
         api.customerPortal.getMe(),
         api.customerPortal.getPayments(),
         api.customerPortal.getCollections(),
         api.customerPortal.getComplaints(),
+        api.customerPortal.getNotifications().catch(() => []),
       ]);
       const updated = { ...customer, ...me };
       setCustomer(updated);
@@ -90,6 +93,7 @@ const CustomerPortalApp = () => {
       setPayments(pay);
       setCollections(col);
       setComplaints(comp);
+      setNotifications(notifs);
     } catch (err) {
       if (err.message && err.message.toLowerCase().includes('access denied')) {
         handleLogout();
@@ -97,6 +101,28 @@ const CustomerPortalApp = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const openNotifications = async () => {
+    setShowNotifications(true);
+    if (unreadCount > 0) {
+      try {
+        await api.customerPortal.markAllNotificationsRead();
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      } catch (err) { /* non-critical */ }
+    }
+  };
+
+  const timeAgo = (dateStr) => {
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Hadda';
+    if (mins < 60) return `${mins}m ka hor`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ka hor`;
+    return `${Math.floor(hrs / 24)}d ka hor`;
   };
 
   const handleLogin = async (e) => {
@@ -236,9 +262,19 @@ const CustomerPortalApp = () => {
               <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a' }}>{customer.name}</div>
             </div>
           </div>
-          <button onClick={handleLogout} style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
-            <LogOut size={16} color="#64748b" />
-          </button>
+          <div style={{ display: 'flex', gap: '9px' }}>
+            <button onClick={openNotifications} style={{ position: 'relative', width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
+              <Bell size={16} color="#64748b" />
+              {unreadCount > 0 && (
+                <span style={{ position: 'absolute', top: '-4px', right: '-4px', minWidth: '17px', height: '17px', borderRadius: '9px', background: '#ef4444', color: 'white', fontSize: '0.62rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: '2px solid #f8fafc' }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            <button onClick={handleLogout} style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
+              <LogOut size={16} color="#64748b" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable content */}
@@ -444,6 +480,37 @@ const CustomerPortalApp = () => {
             );
           })}
         </div>
+
+        {/* Notifications panel */}
+        {showNotifications && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 20, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setShowNotifications(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', maxHeight: '78%', display: 'flex', flexDirection: 'column', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
+              <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Bell size={18} color={GREEN} /> Ogeysiisyada
+                </div>
+                <button onClick={() => setShowNotifications(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b', fontWeight: 700 }}>✕</button>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '0.8rem 1.3rem 1.6rem' }}>
+                {notifications.length === 0 ? (
+                  <EmptyState icon={Bell} text="Ogeysiis kuma jiro weli" />
+                ) : notifications.map(n => (
+                  <div key={n.id} style={{ display: 'flex', gap: '11px', padding: '0.9rem 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '11px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Bell size={16} color={GREEN} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{n.title}</div>
+                      {n.message && <div style={{ fontSize: '0.82rem', color: '#64748b', margin: '3px 0 0 0' }}>{n.message}</div>}
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '5px', fontWeight: 600 }}>{timeAgo(n.created_at)}</div>
+                    </div>
+                    {!n.is_read && <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: GREEN, flexShrink: 0, marginTop: '5px' }} />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

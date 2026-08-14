@@ -443,6 +443,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders() },
       body: JSON.stringify(data)
     }).then(handleResponse),
+    getNotifications: () => fetch(`${API_BASE_URL}/customer-portal/notifications`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
+    markNotificationRead: (id) => fetch(`${API_BASE_URL}/customer-portal/notifications/${id}/read`, {
+      method: 'PUT', headers: getCustomerAuthHeaders()
+    }).then(handleResponse),
+    markAllNotificationsRead: () => fetch(`${API_BASE_URL}/customer-portal/notifications/read-all`, {
+      method: 'PUT', headers: getCustomerAuthHeaders()
+    }).then(handleResponse),
   },
 
   // Debts

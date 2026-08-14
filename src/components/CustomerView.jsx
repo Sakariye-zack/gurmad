@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api';
 import { socket } from '../socket';
-import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet, Tag, Repeat, DollarSign, Lock, Unlock } from 'lucide-react';
+import { Search, Plus, MapPin, Phone, MoreHorizontal, Filter, Home, Map as MapIcon, User, XCircle, Edit3, Trash2, Calendar, MessageSquare, Wallet, CheckCircle2, AlertCircle, Navigation, CreditCard, FileSpreadsheet, Tag, Repeat, DollarSign, Lock, Unlock, KeyRound } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { exportToCSV } from '../utils/exportUtils';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -164,18 +164,23 @@ const CustomerView = ({ searchQuery = '', currentUser }) => {
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [broadcastForm, setBroadcastForm] = useState({ targetType: 'all', targetValue: '', message: '', type: 'sms' });
   const [isPortalModalOpen, setIsPortalModalOpen] = useState(false);
+  const [isResetMode, setIsResetMode] = useState(false);
   const [portalPassword, setPortalPassword] = useState('');
 
+  // Enable and Reset Password both hit the same backend endpoint — it always overwrites the
+  // password and sets portal_enabled = TRUE, so "reset" is just calling it again on a customer
+  // who already has portal access. isResetMode only changes the modal's text/labels.
   const handleEnablePortal = async (e) => {
     e.preventDefault();
     try {
       await api.enableCustomerPortal(selectedCustomer.id, portalPassword);
-      toast.success('Customer Portal access enabled');
+      toast.success(isResetMode ? 'Password reset successfully' : 'Customer Portal access enabled');
       setIsPortalModalOpen(false);
       setPortalPassword('');
+      setIsResetMode(false);
       setSelectedCustomer({ ...selectedCustomer, portal_enabled: true });
     } catch (err) {
-      toast.error(err.message || 'Failed to enable portal access');
+      toast.error(err.message || 'Failed to save password');
     }
   };
 
@@ -555,11 +560,16 @@ const CustomerView = ({ searchQuery = '', currentUser }) => {
 
           {(currentUser?.role === 'admin') && (
             selectedCustomer.portal_enabled ? (
-              <button onClick={handleDisablePortal} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '100px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer' }}>
-                <Unlock size={16} /> Revoke Portal Access
-              </button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => { setIsResetMode(true); setIsPortalModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '100px', border: '1px solid #bfdbfe', backgroundColor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, cursor: 'pointer' }}>
+                  <KeyRound size={16} /> Reset Password
+                </button>
+                <button onClick={handleDisablePortal} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '100px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', color: '#b91c1c', fontWeight: 700, cursor: 'pointer' }}>
+                  <Unlock size={16} /> Revoke Portal Access
+                </button>
+              </div>
             ) : (
-              <button onClick={() => setIsPortalModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '100px', border: '1px solid #bbf7d0', backgroundColor: '#f0fdf4', color: '#15803d', fontWeight: 700, cursor: 'pointer' }}>
+              <button onClick={() => { setIsResetMode(false); setIsPortalModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '100px', border: '1px solid #bbf7d0', backgroundColor: '#f0fdf4', color: '#15803d', fontWeight: 700, cursor: 'pointer' }}>
                 <Lock size={16} /> Enable Portal Access
               </button>
             )
@@ -568,19 +578,21 @@ const CustomerView = ({ searchQuery = '', currentUser }) => {
 
         {isPortalModalOpen && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-            <div className="card glass" style={{ width: '400px', borderTop: '4px solid var(--gurmad-green)' }}>
-              <h3 style={{ marginBottom: '0.5rem', fontWeight: 800 }}>Enable Customer Portal Access</h3>
+            <div className="card glass" style={{ width: '400px', borderTop: `4px solid ${isResetMode ? '#3b82f6' : 'var(--gurmad-green)'}` }}>
+              <h3 style={{ marginBottom: '0.5rem', fontWeight: 800 }}>{isResetMode ? 'Reset Portal Password' : 'Enable Customer Portal Access'}</h3>
               <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.5rem' }}>
-                {selectedCustomer.name} will be able to log in at /portal using their phone number ({selectedCustomer.phone}) and the password you set below.
+                {isResetMode
+                  ? `${selectedCustomer.name} will keep logging in with their phone number (${selectedCustomer.phone}) — only the password changes to what you set below.`
+                  : `${selectedCustomer.name} will be able to log in at /portal using their phone number (${selectedCustomer.phone}) and the password you set below.`}
               </p>
               <form onSubmit={handleEnablePortal} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Password (min 6 characters)</label>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>{isResetMode ? 'New Password (min 6 characters)' : 'Password (min 6 characters)'}</label>
                   <input required minLength={6} type="text" value={portalPassword} onChange={e => setPortalPassword(e.target.value)} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }} />
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                  <button type="button" onClick={() => { setIsPortalModalOpen(false); setPortalPassword(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontWeight: 600 }}>Cancel</button>
-                  <button type="submit" className="btn-primary">Enable Access</button>
+                  <button type="button" onClick={() => { setIsPortalModalOpen(false); setPortalPassword(''); setIsResetMode(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontWeight: 600 }}>Cancel</button>
+                  <button type="submit" className="btn-primary">{isResetMode ? 'Reset Password' : 'Enable Access'}</button>
                 </div>
               </form>
             </div>

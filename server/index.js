@@ -194,6 +194,21 @@ const runMigrations = async () => {
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS portal_enabled BOOLEAN DEFAULT FALSE;
     `);
 
+    // Customer Portal notifications — separate from the staff `notifications` table (which is
+    // user_id-based); this one is customer_id-based and feeds the portal's bell icon. Populated
+    // automatically when a payment is recorded against a customer or their complaint's status
+    // changes (see POST /api/invoices and PUT /api/complaints/:id/status).
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS customer_notifications (
+        id SERIAL PRIMARY KEY,
+        customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        message TEXT,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Document & Financial Documents module: consolidates the proposal's ~20 page-types
     // (Invoices, Receipts, Contracts, Licenses, etc.) into one generic, categorized document
     // record — category is the fixed high-level bucket (Customer/Employee/Supplier/Fleet/
@@ -912,9 +927,44 @@ app.post('/api/customer-portal/complaints', authenticateCustomer, async (req, re
   }
 });
 
+app.get('/api/customer-portal/notifications', authenticateCustomer, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM customer_notifications WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [req.customerId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/customer-portal/notifications/:id/read', authenticateCustomer, async (req, res) => {
+  try {
+    await db.query(
+      'UPDATE customer_notifications SET is_read = TRUE WHERE id = $1 AND customer_id = $2',
+      [req.params.id, req.customerId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/customer-portal/notifications/read-all', authenticateCustomer, async (req, res) => {
+  try {
+    await db.query('UPDATE customer_notifications SET is_read = TRUE WHERE customer_id = $1', [req.customerId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Admin-only: grant/revoke a customer's portal login. Setting a password is required to enable;
 // disabling just flips the flag off (their old password is kept in case it's re-enabled later,
-// but portal_enabled = FALSE blocks login regardless).
+// but portal_enabled = FALSE blocks login regardless). This route always overwrites the password
+// and sets portal_enabled = TRUE, so the frontend also calls it — unchanged — as the "Reset
+// Password" action on an already-enabled customer; no separate reset endpoint is needed.
 app.post('/api/customers/:id/enable-portal', checkRole(['admin']), async (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -1560,6 +1610,22 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
         await sendWhatsAppSafe(cust.whatsapp || cust.phone, body);
       } catch (err) {
         console.error('[WhatsApp] Invoice receipt/debt reminder failed:', err.message);
+      }
+    })();
+
+    // Bell-icon notification inside the Customer Portal itself (separate from the WhatsApp
+    // message above — this is what powers the in-app unread badge).
+    (async () => {
+      try {
+        const debtAmt = parseFloat(debt) || 0;
+        const notifTitle = debtAmt > 0 ? 'Lacag qayb ah ayaa laga qaatay' : 'Lacagtaada waa la aqbalay';
+        const notifMsg = debtAmt > 0
+          ? `Waxaad wali nagu leedahay dayn dhan $${debtAmt.toFixed(2)}. Fadlan naga soo xaqiiji marka aad diyaar u tahay.`
+          : `Waan ku mahadsanahay lacagtii $${totalAmount.toFixed(2)} ee aad maanta bixisay.`;
+        await db.query('INSERT INTO customer_notifications (customer_id, title, message) VALUES ($1, $2, $3)',
+          [customerId, notifTitle, notifMsg]);
+      } catch (err) {
+        console.error('[Portal Notification] Invoice notification failed:', err.message);
       }
     })();
 
@@ -3833,7 +3899,14 @@ app.put('/api/complaints/:id/status', checkRole(['admin', 'cashier']), async (re
       'UPDATE complaints SET status = $1 WHERE id = $2 RETURNING *',
       [status, req.params.id]
     );
-    res.json(result.rows[0]);
+    const complaint = result.rows[0];
+    if (complaint?.customer_id) {
+      db.query('INSERT INTO customer_notifications (customer_id, title, message) VALUES ($1, $2, $3)',
+        [complaint.customer_id, 'Cabashadaada waa la cusboonaysiiyay',
+         `Xaaladda "${complaint.title}": ${status}`]
+      ).catch(err => console.error('[Portal Notification] Complaint notification failed:', err.message));
+    }
+    res.json(complaint);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
