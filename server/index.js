@@ -209,6 +209,13 @@ const runMigrations = async () => {
       );
     `);
 
+    // Two-way complaint replies: staff can now write a reply the customer sees in the Portal,
+    // instead of the customer only seeing a bare status change.
+    await db.query(`
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS admin_reply TEXT;
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS replied_at TIMESTAMP;
+    `);
+
     // Document & Financial Documents module: consolidates the proposal's ~20 page-types
     // (Invoices, Receipts, Contracts, Licenses, etc.) into one generic, categorized document
     // record — category is the fixed high-level bucket (Customer/Employee/Supplier/Fleet/
@@ -853,6 +860,27 @@ app.post('/api/customer-portal/login', loginLimiter, async (req, res) => {
   }
 });
 
+// Zones store collection_days as a comma-separated list of 3-letter day codes (Sun..Sat) — see
+// the day-picker in FleetView's zone form. Finds the soonest matching weekday from today
+// (today counts if it's a collection day), returns null if the zone has no schedule set.
+const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function computeNextPickup(collectionDaysStr, collectionTime) {
+  if (!collectionDaysStr) return null;
+  const days = collectionDaysStr.split(',').map(d => d.trim()).filter(Boolean);
+  const dayIndexes = days.map(d => DAY_CODES.findIndex(c => c.toLowerCase() === d.toLowerCase().slice(0, 3))).filter(i => i >= 0);
+  if (dayIndexes.length === 0) return null;
+  const today = new Date();
+  const todayIdx = today.getDay();
+  let bestOffset = 7;
+  for (const idx of dayIndexes) {
+    const offset = (idx - todayIdx + 7) % 7;
+    if (offset < bestOffset) bestOffset = offset;
+  }
+  const nextDate = new Date(today);
+  nextDate.setDate(today.getDate() + bestOffset);
+  return { date: nextDate.toISOString().slice(0, 10), day: DAY_CODES[nextDate.getDay()], time: collectionTime || null, isToday: bestOffset === 0 };
+}
+
 app.get('/api/customer-portal/me', authenticateCustomer, async (req, res) => {
   try {
     const result = await db.query(
@@ -861,7 +889,35 @@ app.get('/api/customer-portal/me', authenticateCustomer, async (req, res) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
     const { password, ...safeCustomer } = result.rows[0];
-    res.json(safeCustomer);
+
+    let nextPickup = null;
+    if (safeCustomer.zone) {
+      const zoneRes = await db.query('SELECT collection_days, collection_time FROM zones WHERE name = $1 LIMIT 1', [safeCustomer.zone]);
+      if (zoneRes.rows.length > 0) {
+        nextPickup = computeNextPickup(zoneRes.rows[0].collection_days, zoneRes.rows[0].collection_time);
+      }
+    }
+
+    res.json({ ...safeCustomer, next_pickup: nextPickup });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Customer self-service password change — different from the admin-driven enable/reset-portal
+// routes: this one requires knowing the *current* password, matching a normal "change password"
+// flow rather than an admin override.
+app.put('/api/customer-portal/change-password', authenticateCustomer, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  try {
+    const custRes = await db.query('SELECT password FROM customers WHERE id = $1', [req.customerId]);
+    if (custRes.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    const valid = await bcrypt.compare(currentPassword || '', custRes.rows[0].password || '');
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await db.query('UPDATE customers SET password = $1 WHERE id = $2', [hashed, req.customerId]);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -901,7 +957,7 @@ app.get('/api/customer-portal/collections', authenticateCustomer, async (req, re
 app.get('/api/customer-portal/complaints', authenticateCustomer, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, title, description, status, priority, created_at FROM complaints WHERE customer_id = $1 ORDER BY created_at DESC',
+      'SELECT id, title, description, status, priority, admin_reply, replied_at, created_at FROM complaints WHERE customer_id = $1 ORDER BY created_at DESC',
       [req.customerId]
     );
     res.json(result.rows);
@@ -3905,6 +3961,29 @@ app.put('/api/complaints/:id/status', checkRole(['admin', 'cashier']), async (re
         [complaint.customer_id, 'Cabashadaada waa la cusboonaysiiyay',
          `Xaaladda "${complaint.title}": ${status}`]
       ).catch(err => console.error('[Portal Notification] Complaint notification failed:', err.message));
+    }
+    res.json(complaint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Two-way reply: staff writes a message the customer sees under their complaint in the Portal
+// (separate from status, since a status badge alone doesn't tell the customer *what* happened).
+app.put('/api/complaints/:id/reply', checkRole(['admin', 'cashier']), async (req, res) => {
+  const { reply } = req.body;
+  if (!reply || !reply.trim()) return res.status(400).json({ error: 'Reply cannot be empty' });
+  try {
+    const result = await db.query(
+      'UPDATE complaints SET admin_reply = $1, replied_at = NOW() WHERE id = $2 RETURNING *',
+      [reply.trim(), req.params.id]
+    );
+    const complaint = result.rows[0];
+    if (!complaint) return res.status(404).json({ error: 'Complaint not found' });
+    if (complaint.customer_id) {
+      db.query('INSERT INTO customer_notifications (customer_id, title, message) VALUES ($1, $2, $3)',
+        [complaint.customer_id, 'Cabashadaada waa laga jawaabay', reply.trim()]
+      ).catch(err => console.error('[Portal Notification] Complaint reply notification failed:', err.message));
     }
     res.json(complaint);
   } catch (err) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft } from 'lucide-react';
+import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { api } from '../api';
 
@@ -63,6 +63,9 @@ const CustomerPortalApp = () => {
   const [newComplaint, setNewComplaint] = useState({ title: '', description: '' });
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [isChangingPw, setIsChangingPw] = useState(false);
   const [companyLogo, setCompanyLogo] = useState('');
   const [logoError, setLogoError] = useState(false);
 
@@ -115,6 +118,40 @@ const CustomerPortalApp = () => {
     }
   };
 
+  // Receipt "download": opens a print-formatted window and lets the browser's own print dialog
+  // save it as a PDF — no server-side PDF library needed for a single-page receipt.
+  const downloadReceipt = (p) => {
+    const win = window.open('', '_blank', 'width=420,height=640');
+    if (!win) { toast.error('Please allow pop-ups to download the receipt'); return; }
+    win.document.write(`
+      <html><head><title>Receipt #${p.id}</title>
+      <style>
+        body { font-family: -apple-system, Arial, sans-serif; padding: 2rem; color: #0f172a; }
+        h1 { color: #3FAE2A; font-size: 1.3rem; margin: 0 0 4px; }
+        .sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        td { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+        td:first-child { color: #64748b; }
+        td:last-child { text-align: right; font-weight: 700; }
+        .total { font-size: 1.4rem; font-weight: 900; color: #3FAE2A; text-align: right; margin-top: 1rem; }
+      </style></head>
+      <body>
+        <h1>GURMAD Waste Management</h1>
+        <div class="sub">Receipt #${p.id} — ${new Date(p.created_at).toLocaleString()}</div>
+        <table>
+          <tr><td>Customer</td><td>${customer.name}</td></tr>
+          <tr><td>Phone</td><td>${customer.phone}</td></tr>
+          <tr><td>Payment Method</td><td>${p.payment_method || '-'}</td></tr>
+          <tr><td>Status</td><td>${p.status}</td></tr>
+        </table>
+        <div class="total">$${parseFloat(p.amount).toFixed(2)}</div>
+      </body></html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  };
+
   const timeAgo = (dateStr) => {
     const diffMs = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diffMs / 60000);
@@ -137,6 +174,25 @@ const CustomerPortalApp = () => {
       toast.error(err.message || 'Login failed');
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      toast.error('Password-yadu isku mid ma aha');
+      return;
+    }
+    setIsChangingPw(true);
+    try {
+      await api.customerPortal.changePassword(pwForm.currentPassword, pwForm.newPassword);
+      toast.success('Password-kaaga waa la beddelay');
+      setShowChangePassword(false);
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      toast.error(err.message || 'Failed to change password');
+    } finally {
+      setIsChangingPw(false);
     }
   };
 
@@ -253,7 +309,7 @@ const CustomerPortalApp = () => {
 
         {/* Status-bar style header */}
         <div style={{ padding: '1.4rem 1.3rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
+          <button onClick={() => setShowChangePassword(true)} style={{ display: 'flex', alignItems: 'center', gap: '11px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
             <div style={{ width: '42px', height: '42px', borderRadius: '13px', background: `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.1rem', fontWeight: 900, flexShrink: 0 }}>
               {customer.name?.[0]?.toUpperCase() || 'G'}
             </div>
@@ -261,7 +317,7 @@ const CustomerPortalApp = () => {
               <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>Ku soo dhawoow</div>
               <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a' }}>{customer.name}</div>
             </div>
-          </div>
+          </button>
           <div style={{ display: 'flex', gap: '9px' }}>
             <button onClick={openNotifications} style={{ position: 'relative', width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
               <Bell size={16} color="#64748b" />
@@ -325,6 +381,21 @@ const CustomerPortalApp = () => {
                 ))}
               </div>
 
+              {customer.next_pickup && (
+                <Card style={{ padding: '1.2rem 1.3rem', display: 'flex', alignItems: 'center', gap: '13px', background: customer.next_pickup.isToday ? '#f0fdf4' : 'white', border: customer.next_pickup.isToday ? '1px solid #bbf7d0' : '1px solid #f1f5f9' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '14px', background: customer.next_pickup.isToday ? GREEN : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Truck size={19} color={customer.next_pickup.isToday ? 'white' : GREEN} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Booqashada Xigta</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                      {customer.next_pickup.isToday ? 'Maanta' : new Date(customer.next_pickup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+                      {customer.next_pickup.time && <span style={{ color: '#94a3b8', fontWeight: 600 }}> · {customer.next_pickup.time}</span>}
+                    </div>
+                  </div>
+                </Card>
+              )}
+
               <Card style={{ padding: '1.3rem' }}>
                 <div style={{ fontWeight: 800, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a', fontSize: '0.95rem' }}>
                   <Tag size={16} color={GREEN} /> My Service
@@ -378,7 +449,14 @@ const CustomerPortalApp = () => {
                           <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>{p.payment_method} • {new Date(p.created_at).toLocaleDateString()}</div>
                         </div>
                       </div>
-                      <Badge variant={p.status === 'Paid' ? 'good' : 'bad'}>{p.status}</Badge>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Badge variant={p.status === 'Paid' ? 'good' : 'bad'}>{p.status}</Badge>
+                        {p.status === 'Paid' && (
+                          <button onClick={() => downloadReceipt(p)} title="Download Receipt" style={{ width: '30px', height: '30px', borderRadius: '10px', border: '1px solid #f1f5f9', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Download size={13} color="#64748b" />
+                          </button>
+                        )}
+                      </div>
                     </Card>
                   ))}
                 </div>
@@ -453,6 +531,12 @@ const CustomerPortalApp = () => {
                           <Badge variant={variant}>{c.status}</Badge>
                         </div>
                         {c.description && <div style={{ fontSize: '0.83rem', color: '#64748b', marginTop: '7px', lineHeight: 1.5 }}>{c.description}</div>}
+                        {c.admin_reply && (
+                          <div style={{ marginTop: '10px', padding: '0.8rem', borderRadius: '13px', background: '#eff6ff', border: '1px solid #dbeafe' }}>
+                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1d4ed8', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Jawaabta Gurmad</div>
+                            <div style={{ fontSize: '0.83rem', color: '#1e3a5f', lineHeight: 1.5 }}>{c.admin_reply}</div>
+                          </div>
+                        )}
                         <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '9px', fontWeight: 600 }}>{new Date(c.created_at).toLocaleDateString()}</div>
                       </Card>
                     );
@@ -508,6 +592,37 @@ const CustomerPortalApp = () => {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Change Password panel */}
+        {showChangePassword && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 20, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setShowChangePassword(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '26px 26px 0 0', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
+              <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <KeyRound size={18} color={GREEN} /> Beddel Password
+                </div>
+                <button onClick={() => setShowChangePassword(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}><X size={15} /></button>
+              </div>
+              <form onSubmit={handleChangePassword} style={{ padding: '1.3rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Password-ka hadda</label>
+                  <input required type="password" value={pwForm.currentPassword} onChange={e => setPwForm({...pwForm, currentPassword: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Password cusub (ugu yaraan 6 xaraf)</label>
+                  <input required minLength={6} type="password" value={pwForm.newPassword} onChange={e => setPwForm({...pwForm, newPassword: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Ku celi password-ka cusub</label>
+                  <input required minLength={6} type="password" value={pwForm.confirmPassword} onChange={e => setPwForm({...pwForm, confirmPassword: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                </div>
+                <button type="submit" disabled={isChangingPw} style={{ padding: '0.9rem', borderRadius: '16px', border: 'none', background: isChangingPw ? '#86c976' : GREEN, color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: isChangingPw ? 'default' : 'pointer', marginTop: '0.3rem' }}>
+                  {isChangingPw ? 'Beddelaya...' : 'Beddel Password'}
+                </button>
+              </form>
             </div>
           </div>
         )}

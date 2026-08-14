@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Plus, CheckCircle2, Clock, AlertCircle, User, Search, X } from 'lucide-react';
+import { MessageSquare, Plus, CheckCircle2, Clock, AlertCircle, User, Search, X, Reply } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../api';
 
@@ -12,6 +12,8 @@ const ComplaintsView = ({ searchQuery = '' }) => {
   const [newComplaint, setNewComplaint] = useState({
     customer_id: '', title: '', description: '', priority: 'Medium', assigned_to: ''
   });
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [replyText, setReplyText] = useState('');
 
   useEffect(() => {
     loadData();
@@ -64,6 +66,24 @@ const ComplaintsView = ({ searchQuery = '' }) => {
       loadData();
     } catch (err) {
       toast.error('Failed to update status');
+    }
+  };
+
+  const openReply = (complaint) => {
+    setReplyingTo(complaint);
+    setReplyText(complaint.admin_reply || '');
+  };
+
+  const handleReplySubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.replyToComplaint(replyingTo.id, replyText);
+      toast.success('Reply sent to customer');
+      setReplyingTo(null);
+      setReplyText('');
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to send reply');
     }
   };
 
@@ -144,6 +164,11 @@ const ComplaintsView = ({ searchQuery = '' }) => {
                   <td style={{ padding: '1rem' }}>
                     <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{c.title}</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description}</div>
+                    {c.admin_reply && (
+                      <div style={{ fontSize: '0.75rem', color: '#1d4ed8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Reply size={11} /> Replied
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: '1rem' }}>
                     <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 800, backgroundColor: ps.bg, color: ps.color }}>
@@ -169,6 +194,9 @@ const ComplaintsView = ({ searchQuery = '' }) => {
                       {c.status !== 'Resolved' && (
                         <button onClick={() => handleStatusUpdate(c.id, 'Resolved')} style={{ backgroundColor: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Resolve</button>
                       )}
+                      <button onClick={() => openReply(c)} style={{ backgroundColor: c.admin_reply ? '#eff6ff' : '#f8fafc', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Reply size={12} /> {c.admin_reply ? 'Edit Reply' : 'Reply'}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -220,6 +248,26 @@ const ComplaintsView = ({ searchQuery = '' }) => {
                 </div>
               </div>
               <button type="submit" className="btn-primary" style={{ backgroundColor: '#ef4444', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}>Submit Complaint</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reply Modal — the customer sees this text under their complaint in the Portal */}
+      {replyingTo && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '460px', borderTop: '4px solid #3b82f6' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <h3 style={{ margin: 0, fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}><Reply size={18} color="#3b82f6" /> Reply to {replyingTo.customer_name}</h3>
+              <button onClick={() => setReplyingTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={20} /></button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>"{replyingTo.title}" — {replyingTo.description}</p>
+            <form onSubmit={handleReplySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <textarea required value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Qor jawaabta aad u dirayso customer-ka..." style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '110px', boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setReplyingTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ backgroundColor: '#3b82f6', boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>Send Reply</button>
+              </div>
             </form>
           </div>
         </div>

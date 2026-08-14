@@ -450,6 +450,11 @@ export const api = {
     markAllNotificationsRead: () => fetch(`${API_BASE_URL}/customer-portal/notifications/read-all`, {
       method: 'PUT', headers: getCustomerAuthHeaders()
     }).then(handleResponse),
+    changePassword: (currentPassword, newPassword) => fetch(`${API_BASE_URL}/customer-portal/change-password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders() },
+      body: JSON.stringify({ currentPassword, newPassword })
+    }).then(handleResponse),
   },
 
   // Debts
@@ -632,6 +637,11 @@ export const api = {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ status })
+  }).then(handleResponse),
+  replyToComplaint: (id, reply) => fetch(`${API_BASE_URL}/complaints/${id}/reply`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ reply })
   }).then(handleResponse),
 
   // Collector Assignments
