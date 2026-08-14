@@ -151,6 +151,34 @@ const runMigrations = async () => {
       );
     `);
 
+    // Suppliers & Assets (Phase 4): first slice of Procurement/Inventory — plain admin-managed
+    // records for now, matching how the existing /api/inventory routes are gated (checkRole
+    // admin-only), since no Procurement/Storekeeper login role exists yet in this system.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        contact VARCHAR(100),
+        category VARCHAR(100),
+        status VARCHAR(20) DEFAULT 'Active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS assets (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        category VARCHAR(100),
+        serial_number VARCHAR(100),
+        value NUMERIC DEFAULT 0,
+        location VARCHAR(150),
+        assigned_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+        condition VARCHAR(50) DEFAULT 'Good',
+        status VARCHAR(20) DEFAULT 'Active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Complaints System
     await db.query(`
       CREATE TABLE IF NOT EXISTS complaints (
@@ -2610,6 +2638,103 @@ app.put('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
 app.delete('/api/inventory/:id', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query('DELETE FROM inventory WHERE id = $1 RETURNING *', [req.params.id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Suppliers (Phase 4) ---
+app.get('/api/suppliers', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM suppliers ORDER BY name ASC');
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/suppliers', checkRole(['admin']), async (req, res) => {
+  const { name, contact, category, status } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO suppliers (name, contact, category, status) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, contact || null, category || null, status || 'Active']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/suppliers/:id', checkRole(['admin']), async (req, res) => {
+  const { name, contact, category, status } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE suppliers SET name = $1, contact = $2, category = $3, status = $4 WHERE id = $5 RETURNING *',
+      [name, contact, category, status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/suppliers/:id', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM suppliers WHERE id = $1 RETURNING *', [req.params.id]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Assets (Phase 4) ---
+app.get('/api/assets', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT a.*, e.name as assigned_employee_name
+      FROM assets a
+      LEFT JOIN employees e ON a.assigned_employee_id = e.id
+      ORDER BY a.name ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/assets', checkRole(['admin']), async (req, res) => {
+  const { name, category, serial_number, value, location, assigned_employee_id, condition, status } = req.body;
+  try {
+    const result = await db.query(
+      `INSERT INTO assets (name, category, serial_number, value, location, assigned_employee_id, condition, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [name, category || null, serial_number || null, value || 0, location || null, assigned_employee_id || null, condition || 'Good', status || 'Active']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/assets/:id', checkRole(['admin']), async (req, res) => {
+  const { name, category, serial_number, value, location, assigned_employee_id, condition, status } = req.body;
+  try {
+    const result = await db.query(
+      `UPDATE assets SET name = $1, category = $2, serial_number = $3, value = $4, location = $5,
+        assigned_employee_id = $6, condition = $7, status = $8 WHERE id = $9 RETURNING *`,
+      [name, category, serial_number, value, location, assigned_employee_id || null, condition, status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/assets/:id', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query('DELETE FROM assets WHERE id = $1 RETURNING *', [req.params.id]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

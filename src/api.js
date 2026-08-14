@@ -303,7 +303,41 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  deleteInventory: (id) => fetch(`${API_BASE_URL}/inventory/${id}`, { 
+  deleteInventory: (id) => fetch(`${API_BASE_URL}/inventory/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+
+  // Suppliers
+  getSuppliers: () => fetch(`${API_BASE_URL}/suppliers`, { headers: getAuthHeaders() }).then(handleResponse),
+  addSupplier: (data) => fetch(`${API_BASE_URL}/suppliers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateSupplier: (id, data) => fetch(`${API_BASE_URL}/suppliers/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  deleteSupplier: (id) => fetch(`${API_BASE_URL}/suppliers/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  }).then(handleResponse),
+
+  // Assets
+  getAssets: () => fetch(`${API_BASE_URL}/assets`, { headers: getAuthHeaders() }).then(handleResponse),
+  addAsset: (data) => fetch(`${API_BASE_URL}/assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateAsset: (id, data) => fetch(`${API_BASE_URL}/assets/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  deleteAsset: (id) => fetch(`${API_BASE_URL}/assets/${id}`, {
     method: 'DELETE',
     headers: getAuthHeaders()
   }).then(handleResponse),

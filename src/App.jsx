@@ -41,6 +41,7 @@ import HRMView from './components/HRMView';
 import OnboardEmployeeView from './components/OnboardEmployeeView';
 import AttendanceView from './components/AttendanceView';
 import InventoryView from './components/InventoryView';
+import SuppliersAssetsView from './components/SuppliersAssetsView';
 import DebtView from './components/DebtView';
 import LoginView from './components/LoginView';
 import FleetView from './components/FleetView';
@@ -310,14 +311,21 @@ const App = () => {
         { id: 'attendance', label: t('attendance'), icon: Fingerprint, roles: ['admin', 'collector'] },
       ]
     },
-    { 
+    {
       type: 'item',
-      id: 'inventory', 
-      label: t('inventory'), 
-      icon: Package, 
-      roles: ['admin'] 
+      id: 'inventory',
+      label: t('inventory'),
+      icon: Package,
+      roles: ['admin']
     },
-    { 
+    {
+      type: 'item',
+      id: 'suppliers_assets',
+      label: 'Suppliers & Assets',
+      icon: Truck,
+      roles: ['admin']
+    },
+    {
       type: 'item',
       id: 'landing_mgmt', 
       label: t('landing_page'), 
@@ -396,6 +404,7 @@ const App = () => {
       case 'payroll': return <PayrollView />;
       case 'expenses': return <ExpenseView searchQuery={globalSearch} />;
       case 'inventory': return <InventoryView searchQuery={globalSearch} />;
+      case 'suppliers_assets': return <SuppliersAssetsView searchQuery={globalSearch} />;
       case 'debts': return <DebtView searchQuery={globalSearch} />;
       case 'cashout': return <CashoutView currentUser={currentUser} />;
       case 'reports': return <ReportsView searchQuery={globalSearch} />;
