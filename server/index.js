@@ -192,6 +192,7 @@ const runMigrations = async () => {
     await db.query(`
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS password VARCHAR(255);
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS portal_enabled BOOLEAN DEFAULT FALSE;
+      ALTER TABLE customers ADD COLUMN IF NOT EXISTS photo VARCHAR(255);
     `);
 
     // Customer Portal notifications — separate from the staff `notifications` table (which is
@@ -918,6 +919,21 @@ app.put('/api/customer-portal/change-password', authenticateCustomer, async (req
     const hashed = await bcrypt.hash(newPassword, 10);
     await db.query('UPDATE customers SET password = $1 WHERE id = $2', [hashed, req.customerId]);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Customer self-service photo upload — reuses the image-only `upload` middleware (not
+// uploadDocument, since this is strictly a profile photo, not a document).
+app.post('/api/customer-portal/photo', authenticateCustomer, upload.single('photo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
+  try {
+    const result = await db.query(
+      'UPDATE customers SET photo = $1 WHERE id = $2 RETURNING id, photo',
+      [req.file.filename, req.customerId]
+    );
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

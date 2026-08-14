@@ -455,6 +455,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders() },
       body: JSON.stringify({ currentPassword, newPassword })
     }).then(handleResponse),
+    uploadPhoto: (formData) => fetch(`${API_BASE_URL}/customer-portal/photo`, {
+      method: 'POST', headers: getCustomerAuthHeaders(), body: formData
+    }).then(handleResponse),
   },
 
   // Debts

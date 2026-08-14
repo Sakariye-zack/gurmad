@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X } from 'lucide-react';
+import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X, Camera } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
+import jsPDF from 'jspdf';
 import { api } from '../api';
 
 // Phase 8: Customer Portal — a completely separate, lightweight app served at /portal, with its
@@ -68,17 +69,23 @@ const CustomerPortalApp = () => {
   const [isChangingPw, setIsChangingPw] = useState(false);
   const [companyLogo, setCompanyLogo] = useState('');
   const [logoError, setLogoError] = useState(false);
+  const [company, setCompany] = useState({ name: 'Gurmad Waste Management', phone: '', email: '' });
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const photoInputRef = React.useRef(null);
 
   useEffect(() => {
     if (customer) fetchAll();
   }, [customer?.id]);
 
-  // Company logo on the login screen — same /api/settings + /api/uploads pattern the staff
-  // sidebar uses (App.jsx), just fetched without auth since this is the public login screen.
+  // Company logo/name/contact — same /api/settings + /api/uploads pattern the staff sidebar
+  // uses (App.jsx), fetched without auth (public route) for both the login screen and the
+  // in-app receipt PDF, which needs the real company details, not placeholders.
   useEffect(() => {
-    if (customer) return;
-    api.getSettings().then(data => setCompanyLogo(data.system_logo || '')).catch(() => {});
-  }, [customer]);
+    api.getSettings().then(data => {
+      setCompanyLogo(data.system_logo || '');
+      setCompany({ name: data.company_name || 'Gurmad Waste Management', phone: data.contact_phone || '', email: data.support_email || '' });
+    }).catch(() => {});
+  }, []);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -118,38 +125,144 @@ const CustomerPortalApp = () => {
     }
   };
 
-  // Receipt "download": opens a print-formatted window and lets the browser's own print dialog
-  // save it as a PDF — no server-side PDF library needed for a single-page receipt.
-  const downloadReceipt = (p) => {
-    const win = window.open('', '_blank', 'width=420,height=640');
-    if (!win) { toast.error('Please allow pop-ups to download the receipt'); return; }
-    win.document.write(`
-      <html><head><title>Receipt #${p.id}</title>
-      <style>
-        body { font-family: -apple-system, Arial, sans-serif; padding: 2rem; color: #0f172a; }
-        h1 { color: #3FAE2A; font-size: 1.3rem; margin: 0 0 4px; }
-        .sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        td { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
-        td:first-child { color: #64748b; }
-        td:last-child { text-align: right; font-weight: 700; }
-        .total { font-size: 1.4rem; font-weight: 900; color: #3FAE2A; text-align: right; margin-top: 1rem; }
-      </style></head>
-      <body>
-        <h1>GURMAD Waste Management</h1>
-        <div class="sub">Receipt #${p.id} — ${new Date(p.created_at).toLocaleString()}</div>
-        <table>
-          <tr><td>Customer</td><td>${customer.name}</td></tr>
-          <tr><td>Phone</td><td>${customer.phone}</td></tr>
-          <tr><td>Payment Method</td><td>${p.payment_method || '-'}</td></tr>
-          <tr><td>Status</td><td>${p.status}</td></tr>
-        </table>
-        <div class="total">$${parseFloat(p.amount).toFixed(2)}</div>
-      </body></html>
-    `);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 300);
+  // Fetches an image URL and returns it as a data: URL, so it can be embedded in the PDF
+  // (jsPDF's addImage needs a data URL or raw bytes, not a plain <img src>).
+  const urlToDataURL = (url) => fetch(url)
+    .then(res => res.blob())
+    .then(blob => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    }));
+
+  // Real invoice/receipt PDF, generated entirely client-side with jsPDF and saved directly via
+  // doc.save() — a genuine file download triggered by the click, not a new window, so it can't
+  // be blocked by a pop-up blocker the way window.open()-based printing was.
+  const downloadReceipt = async (p) => {
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const green = [63, 174, 42];
+      const gray = [100, 116, 139];
+      const dark = [15, 23, 42];
+      let y = 50;
+
+      // Logo
+      if (companyLogo) {
+        try {
+          const dataUrl = await urlToDataURL(`/api/uploads/${companyLogo}`);
+          const fmt = dataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(dataUrl, fmt, 40, y - 10, 44, 44);
+        } catch (e) { /* logo optional — fall through without it */ }
+      }
+
+      const textX = companyLogo ? 96 : 40;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...green);
+      doc.text(company.name, textX, y + 8);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...gray);
+      const contactLine = [company.phone, company.email].filter(Boolean).join('  ·  ');
+      if (contactLine) doc.text(contactLine, textX, y + 24);
+
+      y += 60;
+      doc.setDrawColor(230, 230, 230); doc.line(40, y, pageWidth - 40, y);
+      y += 30;
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(...dark);
+      doc.text('RECEIPT', 40, y);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...gray);
+      doc.text(`Receipt #${p.id}`, pageWidth - 40, y - 12, { align: 'right' });
+      doc.text(new Date(p.created_at).toLocaleString(), pageWidth - 40, y + 2, { align: 'right' });
+
+      y += 30;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...gray);
+      doc.text('BILL TO', 40, y);
+      y += 16;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.setTextColor(...dark);
+      doc.text(customer.name || '-', 40, y);
+      y += 16;
+      doc.setFontSize(9); doc.setTextColor(...gray);
+      doc.text(customer.phone || '-', 40, y);
+      if (customer.area || customer.house_no) {
+        y += 14;
+        doc.text(`House ${customer.house_no || '-'}, ${customer.area || '-'}`, 40, y);
+      }
+
+      y += 34;
+      doc.setDrawColor(240, 240, 240); doc.setFillColor(248, 250, 252);
+      doc.rect(40, y, pageWidth - 80, 22, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...gray);
+      doc.text('DESCRIPTION', 48, y + 15);
+      doc.text('AMOUNT', pageWidth - 48, y + 15, { align: 'right' });
+      y += 22;
+
+      // Breakdown by payment method — only rows with a non-zero amount are printed.
+      const rows = [
+        ['Cash', p.cash_amount],
+        ['ZAAD', p.zaad_amount],
+        ['eDahab', p.edahab_amount],
+        ['SLSH', p.slsh_amount],
+        ['Debt (unpaid)', p.debt_amount],
+      ].filter(([, amt]) => parseFloat(amt) > 0);
+      if (rows.length === 0) rows.push([p.payment_method || 'Payment', p.amount]);
+
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...dark);
+      for (const [label, amt] of rows) {
+        y += 22;
+        doc.text(label, 48, y);
+        doc.text(`$${parseFloat(amt).toFixed(2)}`, pageWidth - 48, y, { align: 'right' });
+        doc.setDrawColor(245, 245, 245); doc.line(40, y + 8, pageWidth - 40, y + 8);
+      }
+      if (parseFloat(p.discount_amount) > 0) {
+        y += 22;
+        doc.setTextColor(...gray);
+        doc.text('Discount', 48, y);
+        doc.text(`-$${parseFloat(p.discount_amount).toFixed(2)}`, pageWidth - 48, y, { align: 'right' });
+        doc.setDrawColor(245, 245, 245); doc.line(40, y + 8, pageWidth - 40, y + 8);
+      }
+
+      y += 34;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...gray);
+      doc.text('TOTAL', 48, y);
+      doc.setFontSize(18); doc.setTextColor(...green);
+      doc.text(`$${parseFloat(p.amount).toFixed(2)}`, pageWidth - 48, y, { align: 'right' });
+
+      y += 16;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(p.status === 'Paid' ? green[0] : 200, p.status === 'Paid' ? green[1] : 80, p.status === 'Paid' ? green[2] : 80);
+      doc.text(`Status: ${p.status}`, pageWidth - 48, y, { align: 'right' });
+
+      y += 60;
+      doc.setDrawColor(230, 230, 230); doc.line(40, y, pageWidth - 40, y);
+      y += 20;
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(...gray);
+      doc.text('Waan ku mahadsanahay adeegga aad naga heshay. / Thank you for your business.', 40, y);
+
+      doc.save(`Receipt-${p.id}.pdf`);
+    } catch (err) {
+      toast.error('Failed to generate receipt');
+    }
+  };
+
+  // Customer profile photo upload — reuses the file input pattern, no crop/preview step, just
+  // pick a photo and it uploads immediately.
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
+      const result = await api.customerPortal.uploadPhoto(formData);
+      const updated = { ...customer, photo: result.photo };
+      setCustomer(updated);
+      localStorage.setItem('gurmadCustomer', JSON.stringify(updated));
+      toast.success('Sawirkaaga waa la beddelay');
+    } catch (err) {
+      toast.error(err.message || 'Failed to upload photo');
+    } finally {
+      setIsUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
   };
 
   const timeAgo = (dateStr) => {
@@ -309,15 +422,23 @@ const CustomerPortalApp = () => {
 
         {/* Status-bar style header */}
         <div style={{ padding: '1.4rem 1.3rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button onClick={() => setShowChangePassword(true)} style={{ display: 'flex', alignItems: 'center', gap: '11px', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
-            <div style={{ width: '42px', height: '42px', borderRadius: '13px', background: `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.1rem', fontWeight: 900, flexShrink: 0 }}>
-              {customer.name?.[0]?.toUpperCase() || 'G'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <div style={{ width: '42px', height: '42px', borderRadius: '13px', background: customer.photo ? '#f1f5f9' : `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.1rem', fontWeight: 900, overflow: 'hidden' }}>
+                {customer.photo ? (
+                  <img src={`/api/uploads/${customer.photo}`} alt={customer.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (customer.name?.[0]?.toUpperCase() || 'G')}
+              </div>
+              <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} title="Beddel sawirka" style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', border: '2px solid #f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
+                <Camera size={9} color={GREEN} />
+              </button>
+              <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
             </div>
-            <div>
+            <button onClick={() => setShowChangePassword(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>Ku soo dhawoow</div>
               <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a' }}>{customer.name}</div>
-            </div>
-          </button>
+            </button>
+          </div>
           <div style={{ display: 'flex', gap: '9px' }}>
             <button onClick={openNotifications} style={{ position: 'relative', width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
               <Bell size={16} color="#64748b" />
