@@ -387,6 +387,32 @@ export const api = {
   // Stock Movements
   getStockMovements: () => fetch(`${API_BASE_URL}/stock-movements`, { headers: getAuthHeaders() }).then(handleResponse),
 
+  // Documents module
+  getDocuments: (filters = {}) => {
+    const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
+    return fetch(`${API_BASE_URL}/documents${qs ? '?' + qs : ''}`, { headers: getAuthHeaders() }).then(handleResponse);
+  },
+  getExpiringDocuments: () => fetch(`${API_BASE_URL}/documents/expiring`, { headers: getAuthHeaders() }).then(handleResponse),
+  getDocumentVersions: (id) => fetch(`${API_BASE_URL}/documents/${id}/versions`, { headers: getAuthHeaders() }).then(handleResponse),
+  addDocument: (formData) => fetch(`${API_BASE_URL}/documents`, {
+    method: 'POST', headers: getAuthHeaders(), body: formData
+  }).then(handleResponse),
+  updateDocument: (id, formData) => fetch(`${API_BASE_URL}/documents/${id}`, {
+    method: 'PUT', headers: getAuthHeaders(), body: formData
+  }).then(handleResponse),
+  updateDocumentStatus: (id, status) => fetch(`${API_BASE_URL}/documents/${id}/status`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ status })
+  }).then(handleResponse),
+  signDocument: (id, signed_by) => fetch(`${API_BASE_URL}/documents/${id}/sign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ signed_by })
+  }).then(handleResponse),
+  newDocumentVersion: (id, formData) => fetch(`${API_BASE_URL}/documents/${id}/new-version`, {
+    method: 'POST', headers: getAuthHeaders(), body: formData
+  }).then(handleResponse),
+  deleteDocument: (id) => fetch(`${API_BASE_URL}/documents/${id}`, {
+    method: 'DELETE', headers: getAuthHeaders()
+  }).then(handleResponse),
+
   // Geofence Events
   getGeofenceEvents: () => fetch(`${API_BASE_URL}/geofence-events`, { headers: getAuthHeaders() }).then(handleResponse),
 

@@ -42,6 +42,7 @@ import OnboardEmployeeView from './components/OnboardEmployeeView';
 import AttendanceView from './components/AttendanceView';
 import InventoryView from './components/InventoryView';
 import SuppliersAssetsView from './components/SuppliersAssetsView';
+import DocumentsView from './components/DocumentsView';
 import DebtView from './components/DebtView';
 import LoginView from './components/LoginView';
 import FleetView from './components/FleetView';
@@ -336,7 +337,14 @@ const App = () => {
     },
     {
       type: 'item',
-      id: 'landing_mgmt', 
+      id: 'documents',
+      label: 'Documents',
+      icon: FolderOpen,
+      roles: ['admin']
+    },
+    {
+      type: 'item',
+      id: 'landing_mgmt',
       label: t('landing_page'), 
       icon: Globe, 
       roles: ['admin'] 
@@ -414,6 +422,7 @@ const App = () => {
       case 'expenses': return <ExpenseView searchQuery={globalSearch} />;
       case 'inventory': return <InventoryView searchQuery={globalSearch} />;
       case 'suppliers_assets': return <SuppliersAssetsView searchQuery={globalSearch} />;
+      case 'documents': return <DocumentsView searchQuery={globalSearch} />;
       case 'debts': return <DebtView searchQuery={globalSearch} />;
       case 'cashout': return <CashoutView currentUser={currentUser} />;
       case 'reports': return <ReportsView searchQuery={globalSearch} />;

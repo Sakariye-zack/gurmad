@@ -194,6 +194,40 @@ const runMigrations = async () => {
       ALTER TABLE customers ADD COLUMN IF NOT EXISTS portal_enabled BOOLEAN DEFAULT FALSE;
     `);
 
+    // Document & Financial Documents module: consolidates the proposal's ~20 page-types
+    // (Invoices, Receipts, Contracts, Licenses, etc.) into one generic, categorized document
+    // record — category is the fixed high-level bucket (Customer/Employee/Supplier/Fleet/
+    // Company), document_type is the specific kind within it (free text, so new types don't
+    // need a schema change). "Signed" is a recorded attestation (signer name + date), not a
+    // cryptographic e-signature — esign_provider/envelope_id are reserved for wiring in a real
+    // provider (DocuSign/HelloSign) later, once API credentials exist.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS documents (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        category VARCHAR(30) NOT NULL,
+        document_type VARCHAR(100),
+        related_customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+        related_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+        related_supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+        related_truck_id INTEGER REFERENCES trucks(id) ON DELETE SET NULL,
+        file_path VARCHAR(255),
+        status VARCHAR(30) NOT NULL DEFAULT 'Draft',
+        version INTEGER NOT NULL DEFAULT 1,
+        parent_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+        created_by INTEGER REFERENCES users(id),
+        approved_by INTEGER REFERENCES users(id),
+        approved_at TIMESTAMP,
+        signed_by VARCHAR(150),
+        signed_at TIMESTAMP,
+        esign_provider VARCHAR(30),
+        esign_envelope_id VARCHAR(150),
+        esign_status VARCHAR(30),
+        expiry_date DATE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Phase 6: geofence exit/enter events, one row per boundary crossing (not per ping) —
     // logged against the task so it can be traced to the truck/collector/zone at that moment.
     await db.query(`
@@ -526,6 +560,18 @@ const fileFilter = (req, file, cb) => {
   }
 };
 const upload = multer({ storage: storage, fileFilter: fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Documents module needs PDFs/Word docs too, not just images — separate multer instance so the
+// image-only restriction above (used for photos/receipts elsewhere) is untouched.
+const documentFileFilter = (req, file, cb) => {
+  const allowed = ['image/', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  if (allowed.some(a => file.mimetype.startsWith(a))) {
+    cb(null, true);
+  } else {
+    cb(new Error('Kaliya PDF, Word, ama sawirro ayaa la ogol yahay!'), false);
+  }
+};
+const uploadDocument = multer({ storage: storage, fileFilter: documentFileFilter, limits: { fileSize: 15 * 1024 * 1024 } });
 
 // Expose uploads directory to frontend.
 // KNOWN RESIDUAL RISK: this stays unauthenticated because ~15 frontend components load
@@ -3220,6 +3266,208 @@ app.get('/api/stock-movements', checkRole(['admin']), async (req, res) => {
       LIMIT 200
     `);
     res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// DOCUMENTS & FINANCIAL DOCUMENTS MODULE
+// Consolidates the proposal's Invoices/Receipts/Contracts/Licenses/etc. pages into one
+// categorized, versioned document record with a Draft -> Review -> Approve -> Sign -> Archive
+// workflow. "Sign" here records an attestation (signer name + date + optional evidence file),
+// not a cryptographic e-signature — see esign_provider/esign_envelope_id, reserved for wiring in
+// DocuSign/HelloSign once real API credentials exist.
+// ============================================================
+
+const VALID_DOC_STATUSES = ['Draft', 'Pending Review', 'Approved', 'Pending Signature', 'Signed', 'Archived'];
+
+app.get('/api/documents', checkRole(['admin']), async (req, res) => {
+  const { category, status, search, related_customer_id, related_employee_id, related_supplier_id, related_truck_id } = req.query;
+  try {
+    const clauses = [];
+    const params = [];
+    if (category) { params.push(category); clauses.push(`d.category = $${params.length}`); }
+    if (status) { params.push(status); clauses.push(`d.status = $${params.length}`); }
+    if (search) { params.push(`%${search}%`); clauses.push(`(d.title ILIKE $${params.length} OR d.document_type ILIKE $${params.length})`); }
+    if (related_customer_id) { params.push(related_customer_id); clauses.push(`d.related_customer_id = $${params.length}`); }
+    if (related_employee_id) { params.push(related_employee_id); clauses.push(`d.related_employee_id = $${params.length}`); }
+    if (related_supplier_id) { params.push(related_supplier_id); clauses.push(`d.related_supplier_id = $${params.length}`); }
+    if (related_truck_id) { params.push(related_truck_id); clauses.push(`d.related_truck_id = $${params.length}`); }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+    const result = await db.query(`
+      SELECT d.*,
+        c.name as customer_name, e.name as employee_name, s.name as supplier_name, t.plate_number as truck_plate,
+        cu.full_name as created_by_name, au.full_name as approved_by_name
+      FROM documents d
+      LEFT JOIN customers c ON d.related_customer_id = c.id
+      LEFT JOIN employees e ON d.related_employee_id = e.id
+      LEFT JOIN suppliers s ON d.related_supplier_id = s.id
+      LEFT JOIN trucks t ON d.related_truck_id = t.id
+      LEFT JOIN users cu ON d.created_by = cu.id
+      LEFT JOIN users au ON d.approved_by = au.id
+      ${where}
+      ORDER BY d.created_at DESC
+    `, params);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/expiring', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT id, title, category, document_type, expiry_date
+      FROM documents
+      WHERE expiry_date IS NOT NULL AND expiry_date <= CURRENT_DATE + INTERVAL '30 days' AND status != 'Archived'
+      ORDER BY expiry_date ASC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/:id/versions', checkRole(['admin']), async (req, res) => {
+  try {
+    // Walk up to the root of the version chain, then return every version under it.
+    let rootId = req.params.id;
+    let current = await db.query('SELECT parent_document_id FROM documents WHERE id = $1', [rootId]);
+    while (current.rows[0]?.parent_document_id) {
+      rootId = current.rows[0].parent_document_id;
+      current = await db.query('SELECT parent_document_id FROM documents WHERE id = $1', [rootId]);
+    }
+    const result = await db.query(
+      `WITH RECURSIVE chain AS (
+         SELECT * FROM documents WHERE id = $1
+         UNION ALL
+         SELECT d.* FROM documents d JOIN chain c ON d.parent_document_id = c.id
+       )
+       SELECT id, title, version, status, created_at FROM chain ORDER BY version ASC`,
+      [rootId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/documents', checkRole(['admin']), uploadDocument.single('file'), async (req, res) => {
+  const { title, category, document_type, related_customer_id, related_employee_id, related_supplier_id, related_truck_id, expiry_date } = req.body;
+  if (!title || !category) return res.status(400).json({ error: 'Title and category are required' });
+  try {
+    const result = await db.query(
+      `INSERT INTO documents
+        (title, category, document_type, related_customer_id, related_employee_id, related_supplier_id, related_truck_id,
+         file_path, expiry_date, created_by, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Draft') RETURNING *`,
+      [
+        title, category, document_type || null,
+        related_customer_id || null, related_employee_id || null, related_supplier_id || null, related_truck_id || null,
+        req.file ? req.file.filename : null, expiry_date || null, req.user.id
+      ]
+    );
+    await logAudit(req, 'CREATE', 'documents', result.rows[0].id, null, result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/documents/:id', checkRole(['admin']), uploadDocument.single('file'), async (req, res) => {
+  const { title, document_type, expiry_date } = req.body;
+  try {
+    const oldRow = await db.query('SELECT * FROM documents WHERE id = $1', [req.params.id]);
+    if (oldRow.rows.length === 0) return res.status(404).json({ error: 'Document not found' });
+    const filePath = req.file ? req.file.filename : oldRow.rows[0].file_path;
+    const result = await db.query(
+      `UPDATE documents SET title = COALESCE($1, title), document_type = $2, expiry_date = $3, file_path = $4 WHERE id = $5 RETURNING *`,
+      [title || null, document_type || null, expiry_date || null, filePath, req.params.id]
+    );
+    await logAudit(req, 'UPDATE', 'documents', req.params.id, oldRow.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Workflow transition — validated against VALID_DOC_STATUSES but the actual "who can move it
+// where" business rule is deliberately loose (admin can move it any direction) since this
+// module has one role (admin) using it today; per-step approval-role separation is a natural
+// extension once other roles start using Documents.
+app.put('/api/documents/:id/status', checkRole(['admin']), async (req, res) => {
+  const { status } = req.body;
+  if (!VALID_DOC_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  try {
+    const oldRow = await db.query('SELECT * FROM documents WHERE id = $1', [req.params.id]);
+    if (oldRow.rows.length === 0) return res.status(404).json({ error: 'Document not found' });
+
+    const isApproving = status === 'Approved' && oldRow.rows[0].status !== 'Approved';
+    const result = await db.query(
+      `UPDATE documents SET status = $1, approved_by = CASE WHEN $2 THEN $3 ELSE approved_by END,
+        approved_at = CASE WHEN $2 THEN NOW() ELSE approved_at END
+       WHERE id = $4 RETURNING *`,
+      [status, isApproving, req.user.id, req.params.id]
+    );
+    await logAudit(req, 'STATUS_CHANGE', 'documents', req.params.id, oldRow.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Records that a document was signed — NOT a cryptographic e-signature (see module note above).
+app.post('/api/documents/:id/sign', checkRole(['admin']), async (req, res) => {
+  const { signed_by } = req.body;
+  if (!signed_by || !signed_by.trim()) return res.status(400).json({ error: 'Signer name is required' });
+  try {
+    const oldRow = await db.query('SELECT * FROM documents WHERE id = $1', [req.params.id]);
+    if (oldRow.rows.length === 0) return res.status(404).json({ error: 'Document not found' });
+    const result = await db.query(
+      `UPDATE documents SET status = 'Signed', signed_by = $1, signed_at = NOW() WHERE id = $2 RETURNING *`,
+      [signed_by.trim(), req.params.id]
+    );
+    await logAudit(req, 'SIGN', 'documents', req.params.id, oldRow.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Creates a new version linked to the previous one — the old row is left untouched (so its
+// history stays intact), the new row starts back at 'Draft'.
+app.post('/api/documents/:id/new-version', checkRole(['admin']), uploadDocument.single('file'), async (req, res) => {
+  try {
+    const prevRes = await db.query('SELECT * FROM documents WHERE id = $1', [req.params.id]);
+    const prev = prevRes.rows[0];
+    if (!prev) return res.status(404).json({ error: 'Document not found' });
+    const result = await db.query(
+      `INSERT INTO documents
+        (title, category, document_type, related_customer_id, related_employee_id, related_supplier_id, related_truck_id,
+         file_path, expiry_date, created_by, status, version, parent_document_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Draft', $11, $12) RETURNING *`,
+      [
+        prev.title, prev.category, prev.document_type,
+        prev.related_customer_id, prev.related_employee_id, prev.related_supplier_id, prev.related_truck_id,
+        req.file ? req.file.filename : prev.file_path, prev.expiry_date, req.user.id,
+        prev.version + 1, prev.id
+      ]
+    );
+    await logAudit(req, 'NEW_VERSION', 'documents', result.rows[0].id, prev, result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/documents/:id', checkRole(['admin']), async (req, res) => {
+  try {
+    const oldRow = await db.query('SELECT * FROM documents WHERE id = $1', [req.params.id]);
+    const result = await db.query('DELETE FROM documents WHERE id = $1 RETURNING *', [req.params.id]);
+    await logAudit(req, 'DELETE', 'documents', req.params.id, oldRow.rows[0], null);
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
