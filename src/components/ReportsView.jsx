@@ -36,6 +36,9 @@ const ReportsView = ({ searchQuery = '' }) => {
   const [debts, setDebts] = useState([]);
   const [attendanceToday, setAttendanceToday] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [fuelLogs, setFuelLogs] = useState([]);
+  const [maintenanceLogs, setMaintenanceLogs] = useState([]);
+  const [trucks, setTrucks] = useState([]);
   const [settings, setSettings] = useState({ exchange_rate: '8500' });
   const [currency, setCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
@@ -84,7 +87,7 @@ const ReportsView = ({ searchQuery = '' }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [stats, invs, exps, colStats, dbt, attn, inv, zns, sData] = await Promise.all([
+      const [stats, invs, exps, colStats, dbt, attn, inv, zns, sData, fuel, maint, trks] = await Promise.all([
         api.getStats(),
         api.getInvoices(),
         api.getExpenses(),
@@ -93,9 +96,12 @@ const ReportsView = ({ searchQuery = '' }) => {
         api.getAttendanceToday(),
         api.getInventory(),
         api.getZones(),
-        api.getSettings()
+        api.getSettings(),
+        api.getFuelLogs().catch(() => []),
+        api.getMaintenanceLogs().catch(() => []),
+        api.getTrucks().catch(() => [])
       ]);
-      
+
       setReportData(stats);
       setInvoices(invs);
       setExpenses(exps);
@@ -104,6 +110,9 @@ const ReportsView = ({ searchQuery = '' }) => {
       setAttendanceToday(attn);
       setInventory(inv);
       setSettings(sData);
+      setFuelLogs(fuel);
+      setMaintenanceLogs(maint);
+      setTrucks(trks);
 
       // Process Zone Data
       const zoneMap = {};
@@ -560,6 +569,63 @@ const ReportsView = ({ searchQuery = '' }) => {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Fleet Report (Phase 7) — rolls up Phase 5's fuel/maintenance logging into one cost view */}
+      <div className="card" style={{ padding: 0 }}>
+        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontWeight: 700 }}>Fleet Costs — Fuel & Maintenance</h3>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>All Time</span>
+        </div>
+        {(() => {
+          const totalFuel = fuelLogs.reduce((sum, f) => sum + (parseFloat(f.cost) || 0), 0);
+          const totalMaintenance = maintenanceLogs.reduce((sum, m) => sum + (parseFloat(m.cost) || 0), 0);
+          const perTruck = trucks.map(t => {
+            const fCost = fuelLogs.filter(f => f.truck_id === t.id).reduce((s, f) => s + (parseFloat(f.cost) || 0), 0);
+            const mCost = maintenanceLogs.filter(m => m.truck_id === t.id).reduce((s, m) => s + (parseFloat(m.cost) || 0), 0);
+            return { ...t, fCost, mCost, total: fCost + mCost };
+          }).filter(t => t.total > 0).sort((a, b) => b.total - a.total);
+          return (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', padding: '1.5rem' }}>
+                <div style={{ padding: '1rem', borderRadius: '12px', backgroundColor: '#fef3c7' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#b45309', textTransform: 'uppercase' }}>Total Fuel Cost</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#92400e' }}>{formatValue(totalFuel)}</div>
+                </div>
+                <div style={{ padding: '1rem', borderRadius: '12px', backgroundColor: '#dbeafe' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase' }}>Total Maintenance Cost</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e3a8a' }}>{formatValue(totalMaintenance)}</div>
+                </div>
+                <div style={{ padding: '1rem', borderRadius: '12px', backgroundColor: '#dcfce7' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#15803d', textTransform: 'uppercase' }}>Combined Fleet Cost</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#14532d' }}>{formatValue(totalFuel + totalMaintenance)}</div>
+                </div>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead style={{ backgroundColor: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  <tr>
+                    <th style={{ padding: '1rem' }}>TRUCK</th>
+                    <th style={{ padding: '1rem' }}>FUEL COST</th>
+                    <th style={{ padding: '1rem' }}>MAINTENANCE COST</th>
+                    <th style={{ padding: '1rem' }}>TOTAL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perTruck.length === 0 ? (
+                    <tr><td colSpan="4" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No fuel or maintenance records yet.</td></tr>
+                  ) : perTruck.map(t => (
+                    <tr key={t.id} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.9rem' }}>
+                      <td style={{ padding: '1rem', fontWeight: 600 }}>{t.plate_number}</td>
+                      <td style={{ padding: '1rem' }}>{formatValue(t.fCost)}</td>
+                      <td style={{ padding: '1rem' }}>{formatValue(t.mCost)}</td>
+                      <td style={{ padding: '1rem', fontWeight: 700 }}>{formatValue(t.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          );
+        })()}
       </div>
 
       {/* Recent Activity Section */}
