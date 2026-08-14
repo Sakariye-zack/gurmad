@@ -24,9 +24,20 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [newLeave, setNewLeave] = useState({ employee_id: '', leave_type: 'Sick', start_date: '', end_date: '', reason: '' });
 
-  useEffect(() => { 
-    fetchEmployees(); 
+  const [advances, setAdvances] = useState([]);
+  const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
+  const [newAdvance, setNewAdvance] = useState({ employee_id: '', amount: '', reason: '', repayment_period: '' });
+
+  const [expenseClaims, setExpenseClaims] = useState([]);
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [newClaim, setNewClaim] = useState({ employee_id: '', category: 'Transport', amount: '', description: '' });
+  const [claimReceiptFile, setClaimReceiptFile] = useState(null);
+
+  useEffect(() => {
+    fetchEmployees();
     fetchLeaveRequests();
+    fetchAdvances();
+    fetchExpenseClaims();
   }, []);
 
   const fetchEmployees = () => {
@@ -59,6 +70,64 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
       await api.updateLeaveStatus(id, status);
       toast.success(`Leave request ${status.toLowerCase()}`);
       fetchLeaveRequests();
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const fetchAdvances = () => {
+    api.getAdvances().then(setAdvances).catch(err => console.error(err));
+  };
+
+  const handleAdvanceSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.addAdvance(newAdvance);
+      toast.success('Advance request submitted!');
+      setIsAdvanceModalOpen(false);
+      setNewAdvance({ employee_id: '', amount: '', reason: '', repayment_period: '' });
+      fetchAdvances();
+    } catch (err) {
+      toast.error('Failed to submit advance request');
+    }
+  };
+
+  const handleUpdateAdvanceStatus = async (id, status) => {
+    try {
+      await api.updateAdvanceStatus(id, status);
+      toast.success(`Advance ${status.toLowerCase()}`);
+      fetchAdvances();
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const fetchExpenseClaims = () => {
+    api.getExpenseClaims().then(setExpenseClaims).catch(err => console.error(err));
+  };
+
+  const handleClaimSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const formData = new FormData();
+      Object.entries(newClaim).forEach(([k, v]) => formData.append(k, v));
+      if (claimReceiptFile) formData.append('receipt_image', claimReceiptFile);
+      await api.addExpenseClaim(formData);
+      toast.success('Expense claim submitted!');
+      setIsClaimModalOpen(false);
+      setNewClaim({ employee_id: '', category: 'Transport', amount: '', description: '' });
+      setClaimReceiptFile(null);
+      fetchExpenseClaims();
+    } catch (err) {
+      toast.error('Failed to submit expense claim');
+    }
+  };
+
+  const handleUpdateClaimStatus = async (id, status) => {
+    try {
+      await api.updateExpenseClaimStatus(id, status);
+      toast.success(`Claim ${status.toLowerCase()}`);
+      fetchExpenseClaims();
     } catch (err) {
       toast.error('Failed to update status');
     }
@@ -203,7 +272,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         {/* Role Tabs */}
         <div style={{ display: 'flex', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '12px' }}>
-          {['All', 'Management', 'Drivers', 'Collectors', 'Leave Requests'].map(tab => (
+          {['All', 'Management', 'Drivers', 'Collectors', 'Leave Requests', 'Advances', 'Expense Claims'].map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -469,7 +538,7 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
       )}
 
       {/* ====== Leave Requests View ====== */}
-      {activeTab === 'Leave Requests' ? (
+      {activeTab === 'Leave Requests' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="card" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -588,7 +657,215 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
             </div>
           )}
         </div>
-      ) : (
+      )}
+
+      {/* ====== Advances View ====== */}
+      {activeTab === 'Advances' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="card" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: 0, fontWeight: 800 }}>Employee Advances</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>Salary advance requests — reviewed manually before any payroll deduction</p>
+            </div>
+            <button onClick={() => setIsAdvanceModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Plus size={18} /> New Request
+            </button>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>EMPLOYEE</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>AMOUNT</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>REPAYMENT</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>REASON</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>STATUS</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {advances.length === 0 ? (
+                  <tr><td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>No advance requests found.</td></tr>
+                ) : (
+                  advances.map(a => (
+                    <tr key={a.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{ fontWeight: 700 }}>{a.employee_name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{a.employee_role}</div>
+                      </td>
+                      <td style={{ padding: '1rem', fontWeight: 700 }}>${parseFloat(a.amount).toFixed(2)}</td>
+                      <td style={{ padding: '1rem', fontSize: '0.85rem' }}>{a.repayment_period || '—'}</td>
+                      <td style={{ padding: '1rem', fontSize: '0.85rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.reason}</td>
+                      <td style={{ padding: '1rem' }}>
+                        <span style={{
+                          padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 800,
+                          backgroundColor: a.status === 'Approved' ? '#ecfdf5' : a.status === 'Rejected' ? '#fef2f2' : '#fffbeb',
+                          color: a.status === 'Approved' ? '#10b981' : a.status === 'Rejected' ? '#ef4444' : '#f59e0b'
+                        }}>
+                          {a.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ padding: '1rem', textAlign: 'right' }}>
+                        {a.status === 'Pending' && (
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button onClick={() => handleUpdateAdvanceStatus(a.id, 'Approved')} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Approve</button>
+                            <button onClick={() => handleUpdateAdvanceStatus(a.id, 'Rejected')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Reject</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {isAdvanceModalOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+              <div className="card glass" style={{ width: '450px', borderTop: '4px solid var(--gurmad-green)' }}>
+                <h3 style={{ marginBottom: '1.5rem', fontWeight: 800 }}>Submit Advance Request</h3>
+                <form onSubmit={handleAdvanceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Select Employee</label>
+                    <select required value={newAdvance.employee_id} onChange={e => setNewAdvance({...newAdvance, employee_id: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <option value="">-- Choose Employee --</option>
+                      {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Amount ($)</label>
+                    <input type="number" step="0.01" required value={newAdvance.amount} onChange={e => setNewAdvance({...newAdvance, amount: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Repayment Period</label>
+                    <input type="text" placeholder="e.g. 3 months, deduct $50/month" value={newAdvance.repayment_period} onChange={e => setNewAdvance({...newAdvance, repayment_period: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Reason</label>
+                    <textarea placeholder="Briefly explain the reason for the advance..." value={newAdvance.reason} onChange={e => setNewAdvance({...newAdvance, reason: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '80px', resize: 'vertical' }}></textarea>
+                  </div>
+                  <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                    <button type="button" onClick={() => setIsAdvanceModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                    <button type="submit" className="btn-primary">Submit Request</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ====== Expense Claims View ====== */}
+      {activeTab === 'Expense Claims' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="card" style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: 0, fontWeight: 800 }}>Employee Expense Claims</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '4px' }}>Reimbursement requests for money an employee already spent</p>
+            </div>
+            <button onClick={() => setIsClaimModalOpen(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Plus size={18} /> New Claim
+            </button>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>EMPLOYEE</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>CATEGORY</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>AMOUNT</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>DESCRIPTION</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>STATUS</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenseClaims.length === 0 ? (
+                  <tr><td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>No expense claims found.</td></tr>
+                ) : (
+                  expenseClaims.map(c => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '1rem' }}>
+                        <div style={{ fontWeight: 700 }}>{c.employee_name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.employee_role}</div>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, backgroundColor: '#f1f5f9', color: '#475569' }}>{c.category}</span>
+                      </td>
+                      <td style={{ padding: '1rem', fontWeight: 700 }}>${parseFloat(c.amount).toFixed(2)}</td>
+                      <td style={{ padding: '1rem', fontSize: '0.85rem', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description}</td>
+                      <td style={{ padding: '1rem' }}>
+                        <span style={{
+                          padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 800,
+                          backgroundColor: c.status === 'Approved' ? '#ecfdf5' : c.status === 'Rejected' ? '#fef2f2' : '#fffbeb',
+                          color: c.status === 'Approved' ? '#10b981' : c.status === 'Rejected' ? '#ef4444' : '#f59e0b'
+                        }}>
+                          {c.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ padding: '1rem', textAlign: 'right' }}>
+                        {c.status === 'Pending' && (
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <button onClick={() => handleUpdateClaimStatus(c.id, 'Approved')} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Approve</button>
+                            <button onClick={() => handleUpdateClaimStatus(c.id, 'Rejected')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Reject</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {isClaimModalOpen && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+              <div className="card glass" style={{ width: '450px', borderTop: '4px solid var(--gurmad-green)' }}>
+                <h3 style={{ marginBottom: '1.5rem', fontWeight: 800 }}>Submit Expense Claim</h3>
+                <form onSubmit={handleClaimSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Select Employee</label>
+                    <select required value={newClaim.employee_id} onChange={e => setNewClaim({...newClaim, employee_id: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <option value="">-- Choose Employee --</option>
+                      {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Category</label>
+                    <select required value={newClaim.category} onChange={e => setNewClaim({...newClaim, category: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <option>Transport</option>
+                      <option>Fuel</option>
+                      <option>Meals</option>
+                      <option>Repairs</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Amount ($)</label>
+                    <input type="number" step="0.01" required value={newClaim.amount} onChange={e => setNewClaim({...newClaim, amount: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Description</label>
+                    <textarea placeholder="What was this expense for?" value={newClaim.description} onChange={e => setNewClaim({...newClaim, description: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '70px', resize: 'vertical' }}></textarea>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Receipt (optional)</label>
+                    <input type="file" accept="image/*" onChange={e => setClaimReceiptFile(e.target.files[0])} style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                    <button type="button" onClick={() => setIsClaimModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                    <button type="submit" className="btn-primary">Submit Claim</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!['Leave Requests', 'Advances', 'Expense Claims'].includes(activeTab) && (
         /* ====== Directory Table ====== */
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>

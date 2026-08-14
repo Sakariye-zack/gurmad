@@ -106,6 +106,38 @@ const runMigrations = async () => {
       );
     `);
 
+    // Employee Advances (Phase 3): salary advance requests, tracked separately from payroll so
+    // an admin can see outstanding balances before running payroll — deduction is manual/reviewed,
+    // never auto-applied, matching the same conservative choice already made for payroll.needs_review.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS employee_advances (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+        amount NUMERIC NOT NULL,
+        reason TEXT,
+        repayment_period VARCHAR(50),
+        status VARCHAR(20) DEFAULT 'Pending',
+        approved_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Employee Expense Claims (Phase 3): reimbursement requests for money an employee already
+    // spent out of pocket — distinct from the `expenses` table, which is company-initiated spend.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS expense_claims (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+        category VARCHAR(50) NOT NULL,
+        amount NUMERIC NOT NULL,
+        description TEXT,
+        receipt_image VARCHAR(255),
+        status VARCHAR(20) DEFAULT 'Pending',
+        approved_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // Inventory System
     await db.query(`
       CREATE TABLE IF NOT EXISTS inventory (
@@ -310,11 +342,13 @@ const runMigrations = async () => {
         ['expenses', 'view'], ['expenses', 'create'],
         ['debts', 'view'], ['debts', 'create'],
         ['tasks', 'view'],
+        ['employees', 'view'], ['employees', 'create'],
         ['map', 'view'],
       ],
       collector: [
         ['customers', 'view'], ['customers', 'create'], ['customers', 'edit'],
         ['tasks', 'view'], ['tasks', 'create'],
+        ['employees', 'view'],
         ['map', 'view'],
       ],
       gudoomiye: [
@@ -323,6 +357,7 @@ const runMigrations = async () => {
         ['cashout', 'view'], ['cashout', 'create'], ['cashout', 'approve'],
         ['debts', 'view'],
         ['tasks', 'view'],
+        ['employees', 'view'],
         ['map', 'view'],
         ['reports', 'view'],
       ],
@@ -1949,7 +1984,7 @@ app.post('/api/employees', checkRole(['admin']), upload.fields([
 });
 
 // --- Leave Management ---
-app.get('/api/leave-requests', checkRole(['admin', 'cashier']), async (req, res) => {
+app.get('/api/leave-requests', requirePermission('employees', 'view'), async (req, res) => {
   try {
     const result = await db.query(`
       SELECT lr.*, e.name as employee_name, e.role as employee_role
@@ -1963,7 +1998,7 @@ app.get('/api/leave-requests', checkRole(['admin', 'cashier']), async (req, res)
   }
 });
 
-app.post('/api/leave-requests', checkRole(['admin', 'cashier']), async (req, res) => {
+app.post('/api/leave-requests', requirePermission('employees', 'create'), async (req, res) => {
   const { employee_id, leave_type, start_date, end_date, reason } = req.body;
   try {
     const result = await db.query(
@@ -1976,11 +2011,93 @@ app.post('/api/leave-requests', checkRole(['admin', 'cashier']), async (req, res
   }
 });
 
-app.put('/api/leave-requests/:id/status', checkRole(['admin']), async (req, res) => {
+app.put('/api/leave-requests/:id/status', requirePermission('employees', 'approve'), async (req, res) => {
   const { status } = req.body;
   try {
     const result = await db.query(
       'UPDATE leave_requests SET status = $1 WHERE id = $2 RETURNING *',
+      [status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Employee Advances (Phase 3) ---
+app.get('/api/employee-advances', requirePermission('employees', 'view'), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT a.*, e.name as employee_name, e.role as employee_role
+      FROM employee_advances a
+      JOIN employees e ON a.employee_id = e.id
+      ORDER BY a.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/employee-advances', requirePermission('employees', 'create'), async (req, res) => {
+  const { employee_id, amount, reason, repayment_period } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO employee_advances (employee_id, amount, reason, repayment_period) VALUES ($1, $2, $3, $4) RETURNING *',
+      [employee_id, amount, reason, repayment_period]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/employee-advances/:id/status', requirePermission('employees', 'approve'), async (req, res) => {
+  const { status } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE employee_advances SET status = $1 WHERE id = $2 RETURNING *',
+      [status, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Employee Expense Claims (Phase 3) — reimbursement requests, distinct from company `expenses` ---
+app.get('/api/expense-claims', requirePermission('employees', 'view'), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT c.*, e.name as employee_name, e.role as employee_role
+      FROM expense_claims c
+      JOIN employees e ON c.employee_id = e.id
+      ORDER BY c.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/expense-claims', requirePermission('employees', 'create'), upload.single('receipt_image'), async (req, res) => {
+  const { employee_id, category, amount, description } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO expense_claims (employee_id, category, amount, description, receipt_image) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [employee_id, category, amount, description, req.file ? req.file.filename : null]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/expense-claims/:id/status', requirePermission('employees', 'approve'), async (req, res) => {
+  const { status } = req.body;
+  try {
+    const result = await db.query(
+      'UPDATE expense_claims SET status = $1 WHERE id = $2 RETURNING *',
       [status, req.params.id]
     );
     res.json(result.rows[0]);

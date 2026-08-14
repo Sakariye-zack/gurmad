@@ -204,7 +204,34 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ status })
   }).then(handleResponse),
-  
+
+  // Employee Advances
+  getAdvances: () => fetch(`${API_BASE_URL}/employee-advances`, { headers: getAuthHeaders() }).then(handleResponse),
+  addAdvance: (data) => fetch(`${API_BASE_URL}/employee-advances`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateAdvanceStatus: (id, status) => fetch(`${API_BASE_URL}/employee-advances/${id}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ status })
+  }).then(handleResponse),
+
+  // Employee Expense Claims (reimbursements — distinct from company Expense Tracker)
+  getExpenseClaims: () => fetch(`${API_BASE_URL}/expense-claims`, { headers: getAuthHeaders() }).then(handleResponse),
+  addExpenseClaim: (formData) => fetch(`${API_BASE_URL}/expense-claims`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: formData
+  }).then(handleResponse),
+  updateExpenseClaimStatus: (id, status) => fetch(`${API_BASE_URL}/expense-claims/${id}/status`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify({ status })
+  }).then(handleResponse),
+
+
   // Attendance
   getAttendance: () => fetch(`${API_BASE_URL}/attendance`, { headers: getAuthHeaders() }).then(handleResponse),
   getAttendanceToday: () => fetch(`${API_BASE_URL}/attendance/today`, { headers: getAuthHeaders() }).then(handleResponse),
