@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
+import toast from 'react-hot-toast';
 import { api } from '../api';
 import { 
   Download, 
@@ -12,7 +14,9 @@ import {
   Box,
   AlertCircle,
   Clock,
-  XCircle
+  XCircle,
+  Trophy,
+  FileDown
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -39,6 +43,9 @@ const ReportsView = ({ searchQuery = '' }) => {
   const [fuelLogs, setFuelLogs] = useState([]);
   const [maintenanceLogs, setMaintenanceLogs] = useState([]);
   const [trucks, setTrucks] = useState([]);
+  const [zonePerformance, setZonePerformance] = useState([]);
+  const [complaints, setComplaints] = useState([]);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [settings, setSettings] = useState({ exchange_rate: '8500' });
   const [currency, setCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
@@ -87,7 +94,7 @@ const ReportsView = ({ searchQuery = '' }) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [stats, invs, exps, colStats, dbt, attn, inv, zns, sData, fuel, maint, trks] = await Promise.all([
+      const [stats, invs, exps, colStats, dbt, attn, inv, zns, sData, fuel, maint, trks, zonePerf, comps] = await Promise.all([
         api.getStats(),
         api.getInvoices(),
         api.getExpenses(),
@@ -99,7 +106,9 @@ const ReportsView = ({ searchQuery = '' }) => {
         api.getSettings(),
         api.getFuelLogs().catch(() => []),
         api.getMaintenanceLogs().catch(() => []),
-        api.getTrucks().catch(() => [])
+        api.getTrucks().catch(() => []),
+        api.getZonePerformance().catch(() => []),
+        api.getComplaints().catch(() => [])
       ]);
 
       setReportData(stats);
@@ -113,6 +122,8 @@ const ReportsView = ({ searchQuery = '' }) => {
       setFuelLogs(fuel);
       setMaintenanceLogs(maint);
       setTrucks(trks);
+      setZonePerformance(zonePerf);
+      setComplaints(comps);
 
       // Process Zone Data
       const zoneMap = {};
@@ -265,6 +276,183 @@ const ReportsView = ({ searchQuery = '' }) => {
     document.body.removeChild(link);
   };
 
+  // Executive Summary — a single company-snapshot PDF (revenue/expenses/profit, zone-by-zone
+  // performance, debt aging, top debtors, pending complaints, collector leaderboard) generated
+  // entirely client-side with jsPDF from data already loaded on this page. Meant to be the thing
+  // an owner can download and read (or forward on WhatsApp) without logging into the dashboard.
+  const urlToDataURLReport = (url) => fetch(url)
+    .then(res => res.blob())
+    .then(blob => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    }));
+
+  const handleDownloadExecutiveSummary = async () => {
+    setIsGeneratingSummary(true);
+    try {
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const green = [63, 174, 42];
+      const gray = [100, 116, 139];
+      const dark = [15, 23, 42];
+      const marginX = 40;
+      let y = 50;
+
+      const ensureSpace = (needed) => {
+        if (y + needed > pageHeight - 40) { doc.addPage(); y = 50; }
+      };
+
+      // Header
+      if (settings.system_logo) {
+        try {
+          const dataUrl = await urlToDataURLReport(`/api/uploads/${settings.system_logo}`);
+          const fmt = dataUrl.includes('image/png') ? 'PNG' : 'JPEG';
+          doc.addImage(dataUrl, fmt, marginX, y - 12, 40, 40);
+        } catch (e) { /* logo optional */ }
+      }
+      const textX = settings.system_logo ? marginX + 52 : marginX;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...green);
+      doc.text(settings.company_name || 'Gurmad Waste Management', textX, y + 4);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...gray);
+      doc.text('Executive Summary', textX, y + 20);
+      doc.text(new Date().toLocaleString(), pageWidth - marginX, y + 4, { align: 'right' });
+      y += 55;
+      doc.setDrawColor(230, 230, 230); doc.line(marginX, y, pageWidth - marginX, y);
+      y += 28;
+
+      // Financial snapshot
+      const netProfit = parseFloat(reportData.revenue || 0) - parseFloat(reportData.totalExpenses || 0);
+      const snapshot = [
+        ['Total Revenue', formatValue(reportData.revenue)],
+        ['Total Expenses', formatValue(reportData.totalExpenses)],
+        ['Net Profit', formatValue(netProfit)],
+        ['Active Customers', String(reportData.customerCount)],
+      ];
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...dark);
+      doc.text('Financial Snapshot', marginX, y);
+      y += 20;
+      const colW = (pageWidth - marginX * 2) / 4;
+      snapshot.forEach(([label, val], i) => {
+        const x = marginX + i * colW;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...gray);
+        doc.text(label.toUpperCase(), x, y);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...(label === 'Net Profit' ? green : dark));
+        doc.text(String(val), x, y + 18);
+      });
+      y += 45;
+
+      // Zone Performance
+      if (zonePerformance.length > 0) {
+        ensureSpace(30 + zonePerformance.length * 20);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...dark);
+        doc.text('Zone Performance', marginX, y);
+        y += 18;
+        doc.setFillColor(248, 250, 252); doc.rect(marginX, y, pageWidth - marginX * 2, 20, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...gray);
+        doc.text('ZONE', marginX + 8, y + 13);
+        doc.text('CUSTOMERS', marginX + 180, y + 13);
+        doc.text('SERVED TODAY', marginX + 300, y + 13);
+        doc.text('REVENUE TODAY', pageWidth - marginX - 8, y + 13, { align: 'right' });
+        y += 20;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...dark);
+        zonePerformance.forEach(z => {
+          ensureSpace(20);
+          doc.text(z.name, marginX + 8, y + 14);
+          doc.text(String(z.customer_count), marginX + 180, y + 14);
+          doc.text(`${z.served_today} / ${z.customer_count}`, marginX + 300, y + 14);
+          doc.text(formatValue(z.revenue_today), pageWidth - marginX - 8, y + 14, { align: 'right' });
+          doc.setDrawColor(245, 245, 245); doc.line(marginX, y + 20, pageWidth - marginX, y + 20);
+          y += 20;
+        });
+        y += 20;
+      }
+
+      // Debt Aging
+      const agingBuckets = ['0-30', '31-60', '61-90', '90+'].map(bucket => {
+        const inBucket = debts.filter(d => {
+          if (d.status !== 'Unpaid') return false;
+          const days = Math.floor((Date.now() - new Date(d.created_at).getTime()) / 86400000);
+          if (bucket === '0-30') return days <= 30;
+          if (bucket === '31-60') return days > 30 && days <= 60;
+          if (bucket === '61-90') return days > 60 && days <= 90;
+          return days > 90;
+        });
+        return { bucket, count: inBucket.length, total: inBucket.filter(d => d.currency === 'USD').reduce((s, d) => s + parseFloat(d.amount), 0) };
+      });
+      ensureSpace(80);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...dark);
+      doc.text('Debt Aging', marginX, y);
+      y += 20;
+      const bucketW = (pageWidth - marginX * 2) / 4;
+      agingBuckets.forEach((b, i) => {
+        const x = marginX + i * bucketW;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...gray);
+        doc.text(`${b.bucket} DAYS`, x, y);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...(b.bucket === '90+' ? [185, 28, 28] : dark));
+        doc.text(`$${b.total.toFixed(2)}`, x, y + 16);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...gray);
+        doc.text(`${b.count} debt${b.count !== 1 ? 's' : ''}`, x, y + 28);
+      });
+      y += 50;
+
+      // Top Debtors
+      const topDebtors = debts.filter(d => d.status === 'Unpaid' && d.currency === 'USD')
+        .sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount)).slice(0, 5);
+      if (topDebtors.length > 0) {
+        ensureSpace(30 + topDebtors.length * 16);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...dark);
+        doc.text('Top 5 Debtors', marginX, y);
+        y += 18;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        topDebtors.forEach(d => {
+          doc.setTextColor(...dark);
+          doc.text(d.debtor_name, marginX + 8, y + 12);
+          doc.setTextColor(185, 28, 28);
+          doc.text(`$${parseFloat(d.amount).toFixed(2)}`, pageWidth - marginX - 8, y + 12, { align: 'right' });
+          y += 18;
+        });
+        y += 15;
+      }
+
+      // Collector Leaderboard (top 5)
+      const topCollectors = collectorStats.slice().sort((a, b) => parseFloat(b.total_collected || 0) - parseFloat(a.total_collected || 0)).slice(0, 5);
+      if (topCollectors.length > 0) {
+        ensureSpace(30 + topCollectors.length * 16);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...dark);
+        doc.text('Top Collectors', marginX, y);
+        y += 18;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+        topCollectors.forEach((c, i) => {
+          doc.setTextColor(...dark);
+          doc.text(`${i + 1}. ${c.collector}`, marginX + 8, y + 12);
+          doc.setTextColor(...green);
+          doc.text(formatValue(c.total_collected), pageWidth - marginX - 8, y + 12, { align: 'right' });
+          y += 18;
+        });
+        y += 15;
+      }
+
+      // Pending Complaints
+      const pendingComplaints = complaints.filter(c => c.status !== 'Resolved').length;
+      ensureSpace(30);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...dark);
+      doc.text('Customer Complaints', marginX, y);
+      y += 18;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(pendingComplaints > 0 ? 185 : 21, pendingComplaints > 0 ? 28 : 128, pendingComplaints > 0 ? 28 : 61);
+      doc.text(`${pendingComplaints} pending complaint${pendingComplaints !== 1 ? 's' : ''}`, marginX, y);
+
+      doc.save(`Gurmad-Executive-Summary-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success('Executive Summary downloaded');
+    } catch (err) {
+      toast.error('Failed to generate summary');
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
   if (loading) return <div className="card glass">Generating live reports...</div>;
 
   return (
@@ -387,6 +575,10 @@ const ReportsView = ({ searchQuery = '' }) => {
           <button onClick={handleExportCSV} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Download size={18} />
             Export CSV
+          </button>
+          <button onClick={handleDownloadExecutiveSummary} disabled={isGeneratingSummary} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileDown size={18} />
+            {isGeneratingSummary ? 'Generating...' : 'Executive Summary (PDF)'}
           </button>
         </div>
       </div>
@@ -534,17 +726,22 @@ const ReportsView = ({ searchQuery = '' }) => {
         </table>
       </div>
 
-      {/* Collector Real-time Tracking */}
+      {/* Collector Leaderboard — same data the old "Collections Received per Collector" table
+          showed, now ranked highest-to-lowest with medal styling for the top 3 so it actually
+          reads as a leaderboard instead of an unordered list. */}
       <div className="card" style={{ padding: 0 }}>
         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ fontWeight: 700 }}>Collections Received per Collector</h3>
+          <h3 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Trophy size={18} color="#f59e0b" /> Collector Leaderboard
+          </h3>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>All Time Revenue Data</span>
         </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead style={{ backgroundColor: 'var(--bg-secondary)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             <tr>
+              <th style={{ padding: '1rem' }}>RANK</th>
               <th style={{ padding: '1rem' }}>COLLECTOR / ASSIGNED PERSONNEL</th>
-              <th style={{ padding: '2rem' }}>COLLECTIONS COUNT</th>
+              <th style={{ padding: '1rem' }}>COLLECTIONS COUNT</th>
               <th style={{ padding: '1rem' }}>TOTAL REVENUE</th>
               <th style={{ padding: '1rem', textAlign: 'right' }}>ACTIONS</th>
             </tr>
@@ -552,21 +749,35 @@ const ReportsView = ({ searchQuery = '' }) => {
           <tbody>
             {collectorStats
               .filter(c => (c.collector || '').toLowerCase().includes(searchQuery.toLowerCase()))
-              .map((row, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.9rem' }}>
-                <td style={{ padding: '1rem', fontWeight: 600 }}>{row.collector}</td>
-                <td style={{ padding: '2rem' }}>{row.transaction_count} deposits</td>
-                <td style={{ padding: '1rem', fontWeight: 700, color: 'var(--gurmad-green)' }}>{formatValue(row.total_collected)}</td>
-                <td style={{ padding: '1rem', textAlign: 'right' }}>
-                  <button
-                    onClick={() => openDailyModal(row.collector)}
-                    style={{ padding: '0.4rem 0.9rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'white', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
-                  >
-                    View List
-                  </button>
-                </td>
-              </tr>
-            ))}
+              .slice()
+              .sort((a, b) => parseFloat(b.total_collected || 0) - parseFloat(a.total_collected || 0))
+              .map((row, i) => {
+                const medal = [{ bg: '#fef3c7', fg: '#b45309', label: '🥇' }, { bg: '#f1f5f9', fg: '#64748b', label: '🥈' }, { bg: '#fff7ed', fg: '#c2410c', label: '🥉' }][i];
+                return (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.9rem' }}>
+                    <td style={{ padding: '1rem' }}>
+                      {medal ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', borderRadius: '20px', fontWeight: 800, fontSize: '0.8rem', backgroundColor: medal.bg, color: medal.fg }}>
+                          {medal.label} #{i + 1}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 700, paddingLeft: '6px' }}>#{i + 1}</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '1rem', fontWeight: 600 }}>{row.collector}</td>
+                    <td style={{ padding: '1rem' }}>{row.transaction_count} deposits</td>
+                    <td style={{ padding: '1rem', fontWeight: 700, color: 'var(--gurmad-green)' }}>{formatValue(row.total_collected)}</td>
+                    <td style={{ padding: '1rem', textAlign: 'right' }}>
+                      <button
+                        onClick={() => openDailyModal(row.collector)}
+                        style={{ padding: '0.4rem 0.9rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'white', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}
+                      >
+                        View List
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>

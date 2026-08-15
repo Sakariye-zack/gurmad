@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const speakeasy = require('speakeasy');
 const QRCode = require('qrcode');
 const messaging = require('./messaging');
+const cron = require('node-cron');
 
 // Formats a raw Somali phone number for WhatsApp/Twilio ("+252...").
 const formatSomaliPhone = (raw) => {
@@ -4686,6 +4687,79 @@ app.post('/api/payments/zaad', checkRole(['admin', 'cashier']), async (req, res)
 // --- Messaging Endpoints ---
 
 // --- Route Optimization Endpoint ---
+
+// Proactive daily digest — a single WhatsApp message to whichever number is set as
+// `alert_phone` in Settings, covering the things an admin would otherwise only notice by
+// opening the app: zones with zero collections today, low/out-of-stock inventory, debts that
+// have aged past 60 days, and unresolved complaints. Runs once a day (see cron.schedule below)
+// and is also reachable on demand via POST /api/admin/send-digest-now for testing.
+const buildAndSendDailyDigest = async () => {
+  const settingsRes = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'alert_phone'");
+  const alertPhone = settingsRes.rows[0]?.setting_value;
+  if (!alertPhone) return { sent: false, reason: 'No alert_phone configured in Settings' };
+
+  const zoneRes = await db.query(`
+    SELECT z.name,
+      COALESCE(cc.customer_count, 0)::int AS customer_count,
+      COALESCE(rt.revenue_today, 0)::numeric AS revenue_today
+    FROM zones z
+    LEFT JOIN (SELECT zone, COUNT(*) AS customer_count FROM customers GROUP BY zone) cc ON cc.zone = z.name
+    LEFT JOIN (
+      SELECT c.zone, SUM(i.amount) AS revenue_today FROM invoices i
+      JOIN customers c ON c.id = i.customer_id WHERE i.created_at::date = CURRENT_DATE GROUP BY c.zone
+    ) rt ON rt.zone = z.name
+  `);
+  const quietZones = zoneRes.rows.filter(z => z.customer_count > 0 && parseFloat(z.revenue_today) === 0);
+
+  const stockRes = await db.query("SELECT item_name, quantity, status FROM inventory WHERE status IN ('Low Stock', 'Out of Stock') ORDER BY quantity ASC");
+
+  const oldDebtsRes = await db.query(`
+    SELECT debtor_name, amount, currency FROM debts
+    WHERE status = 'Unpaid' AND created_at <= NOW() - INTERVAL '60 days'
+    ORDER BY created_at ASC
+  `);
+
+  const complaintsRes = await db.query("SELECT COUNT(*) FROM complaints WHERE status != 'Resolved'");
+  const pendingComplaints = parseInt(complaintsRes.rows[0]?.count || 0);
+
+  const lines = [`*Gurmad — Daily Digest* (${new Date().toLocaleDateString()})`, ''];
+
+  lines.push(quietZones.length > 0
+    ? `⚠️ *${quietZones.length} zone(s) with $0 collected today:* ${quietZones.map(z => z.name).join(', ')}`
+    : `✅ Every active zone has collected something today.`);
+
+  lines.push(stockRes.rows.length > 0
+    ? `📦 *${stockRes.rows.length} inventory item(s) low/out of stock:* ${stockRes.rows.map(s => `${s.item_name} (${s.quantity})`).join(', ')}`
+    : `📦 Inventory levels are healthy.`);
+
+  lines.push(oldDebtsRes.rows.length > 0
+    ? `💰 *${oldDebtsRes.rows.length} debt(s) unpaid for 60+ days*, totaling $${oldDebtsRes.rows.filter(d => d.currency === 'USD').reduce((s, d) => s + parseFloat(d.amount), 0).toFixed(2)}`
+    : `💰 No debts older than 60 days.`);
+
+  lines.push(pendingComplaints > 0
+    ? `📣 *${pendingComplaints} customer complaint(s)* still unresolved.`
+    : `📣 No pending complaints.`);
+
+  const message = lines.join('\n');
+  await sendWhatsAppSafe(alertPhone, message);
+  return { sent: true, message };
+};
+
+app.post('/api/admin/send-digest-now', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await buildAndSendDailyDigest();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fires once a day at 18:00 server time — end of a typical collection day, so the "$0 collected
+// today" check is meaningful rather than firing at 8am before anyone's been out yet.
+cron.schedule('0 18 * * *', () => {
+  buildAndSendDailyDigest().catch(err => console.error('[Daily Digest] Failed:', err.message));
+});
+
 server.listen(PORT, () => {
   console.log(`Gurmad Backend running on port ${PORT}`);
 });

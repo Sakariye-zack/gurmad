@@ -173,18 +173,50 @@ const DebtView = ({ searchQuery = '' }) => {
     }
   };
 
+  // Debt Aging — how many days an unpaid debt has been sitting, bucketed the standard
+  // receivables-aging way (0-30 / 31-60 / 61-90 / 90+). Paid debts have no age.
+  const daysOverdue = (debt) => Math.floor((Date.now() - new Date(debt.created_at).getTime()) / 86400000);
+  const agingBucket = (debt) => {
+    if (debt.status !== 'Unpaid') return null;
+    const d = daysOverdue(debt);
+    if (d <= 30) return '0-30';
+    if (d <= 60) return '31-60';
+    if (d <= 90) return '61-90';
+    return '90+';
+  };
+  const agingColor = (bucket) => ({
+    '0-30': { bg: '#f0fdf4', fg: '#15803d', border: '#bbf7d0' },
+    '31-60': { bg: '#fffbeb', fg: '#b45309', border: '#fde68a' },
+    '61-90': { bg: '#fff7ed', fg: '#c2410c', border: '#fed7aa' },
+    '90+': { bg: '#fef2f2', fg: '#b91c1c', border: '#fecaca' },
+  }[bucket] || { bg: '#f1f5f9', fg: '#64748b', border: '#e2e8f0' });
+
+  const [agingFilter, setAgingFilter] = useState(null);
+
   const filteredDebts = debts.filter(debt => {
     const search = searchQuery.toLowerCase();
-    return debt.debtor_name.toLowerCase().includes(search) ||
+    const matchesSearch = debt.debtor_name.toLowerCase().includes(search) ||
            (debt.phone && debt.phone.toLowerCase().includes(search)) ||
            debt.status.toLowerCase().includes(search);
+    if (!matchesSearch) return false;
+    if (agingFilter && agingBucket(debt) !== agingFilter) return false;
+    return true;
   });
 
   const totalOwedUSD = debts.filter(d => d.status === 'Unpaid' && d.currency === 'USD').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
   const totalOwedSLSH = debts.filter(d => d.status === 'Unpaid' && d.currency === 'SLSH').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
-  
+
   const totalPaidUSD = debts.filter(d => d.status === 'Paid' && d.currency === 'USD').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
   const totalPaidSLSH = debts.filter(d => d.status === 'Paid' && d.currency === 'SLSH').reduce((acc, curr) => acc + parseFloat(curr.amount), 0);
+
+  const agingBuckets = ['0-30', '31-60', '61-90', '90+'].map(bucket => {
+    const inBucket = debts.filter(d => agingBucket(d) === bucket);
+    return {
+      bucket,
+      count: inBucket.length,
+      totalUSD: inBucket.filter(d => d.currency === 'USD').reduce((acc, d) => acc + parseFloat(d.amount), 0),
+    };
+  });
 
   return (
     <div className="view-container slide-up">
@@ -221,9 +253,39 @@ const DebtView = ({ searchQuery = '' }) => {
         </div>
       </div>
 
+      {/* Debt Aging — standard 0-30/31-60/61-90/90+ receivables buckets. Click a bucket to
+          filter the table below to just that age range; click again to clear. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+        {agingBuckets.map(({ bucket, count, totalUSD }) => {
+          const c = agingColor(bucket);
+          const active = agingFilter === bucket;
+          return (
+            <button
+              key={bucket}
+              onClick={() => setAgingFilter(active ? null : bucket)}
+              style={{
+                textAlign: 'left', padding: '1.1rem', borderRadius: '14px', cursor: 'pointer',
+                backgroundColor: c.bg, border: `2px solid ${active ? c.fg : c.border}`,
+                boxShadow: active ? `0 0 0 3px ${c.bg}` : 'none'
+              }}
+            >
+              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: c.fg, textTransform: 'uppercase', letterSpacing: '0.4px' }}>{bucket} Days</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 900, color: c.fg, marginTop: '4px' }}>${totalUSD.toFixed(2)}</div>
+              <div style={{ fontSize: '0.78rem', color: c.fg, opacity: 0.85, marginTop: '2px' }}>{count} debt{count !== 1 ? 's' : ''}</div>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Main Content */}
       <div className="card glass-effect" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+          {agingFilter ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+              Filtered: <strong>{agingFilter} days overdue</strong>
+              <button onClick={() => setAgingFilter(null)} style={{ background: 'none', border: 'none', color: 'var(--gurmad-green)', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>Clear</button>
+            </div>
+          ) : <div />}
           <div style={{ display: 'flex', gap: '10px' }}>
             <button className="btn btn-primary" onClick={() => setIsAddModalOpen(true)}>
               <UserPlus size={18} />
@@ -245,20 +307,21 @@ const DebtView = ({ searchQuery = '' }) => {
                 <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>Collector</th>
                 <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>Reason/Desc</th>
                 <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>Status</th>
+                <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>Age</th>
                 <th style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan="8" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     <div className="spinner" style={{ margin: '0 auto 1rem auto' }}></div>
                     Loading debts...
                   </td>
                 </tr>
               ) : filteredDebts.length === 0 ? (
                 <tr>
-                  <td colSpan="8" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     No debts recorded yet.
                   </td>
                 </tr>
@@ -332,6 +395,17 @@ const DebtView = ({ searchQuery = '' }) => {
                         {debt.status === 'Paid' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
                         {debt.status.toUpperCase()}
                       </div>
+                    </td>
+                    <td style={{ padding: '1.25rem 1rem' }}>
+                      {debt.status === 'Unpaid' ? (() => {
+                        const bucket = agingBucket(debt);
+                        const c = agingColor(bucket);
+                        return (
+                          <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, backgroundColor: c.bg, color: c.fg, border: `1px solid ${c.border}` }}>
+                            {daysOverdue(debt)}d
+                          </span>
+                        );
+                      })() : <span style={{ color: '#cbd5e1' }}>—</span>}
                     </td>
                     <td style={{ padding: '1.25rem 1rem', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>

@@ -46,8 +46,10 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
     systemTitle: 'Gurmad Admin Portal',
     supportEmail: 'support@gurmad.so',
     contactPhone: '+252 63 4444444',
-    systemLogo: ''
+    systemLogo: '',
+    alertPhone: ''
   });
+  const [isSendingDigest, setIsSendingDigest] = useState(false);
   const [logoPreview, setLogoPreview] = useState(null);
   const [securitySettings, setSecuritySettings] = useState({
     passwordHistory: '3',
@@ -134,7 +136,8 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
             systemTitle: data.system_title || prev.systemTitle,
             supportEmail: data.support_email || prev.supportEmail,
             contactPhone: data.contact_phone || prev.contactPhone,
-            systemLogo: data.system_logo || ''
+            systemLogo: data.system_logo || '',
+            alertPhone: data.alert_phone || ''
           }));
           if (data.system_logo) {
             setLogoPreview(`/api/uploads/${data.system_logo}`);
@@ -167,7 +170,8 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
       system_logo: generalSettings.systemLogo,
       system_title: generalSettings.systemTitle,
       support_email: generalSettings.supportEmail,
-      contact_phone: generalSettings.contactPhone
+      contact_phone: generalSettings.contactPhone,
+      alert_phone: generalSettings.alertPhone
     };
     try {
       await fetch('/api/settings', {
@@ -514,19 +518,53 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>CONTACT PHONE</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={generalSettings.contactPhone}
                   onChange={e => setGeneralSettings({...generalSettings, contactPhone: e.target.value})}
                   className="card" style={{ width: '100%', padding: '0.85rem', border: '1px solid var(--border-color)' }}
                 />
               </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                  DAILY ALERT PHONE (WhatsApp)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 0634444444"
+                  value={generalSettings.alertPhone}
+                  onChange={e => setGeneralSettings({...generalSettings, alertPhone: e.target.value})}
+                  className="card" style={{ width: '100%', padding: '0.85rem', border: '1px solid var(--border-color)' }}
+                />
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                  Every day at 6 PM, this number gets one WhatsApp message covering zones with $0 collected today, low stock, debts unpaid 60+ days, and pending complaints — so you don't have to open the app to know something's wrong.
+                </p>
+              </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2rem' }}>
-              <button 
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <button
+                onClick={async () => {
+                  setIsSendingDigest(true);
+                  try {
+                    const result = await api.sendDigestNow();
+                    if (result.sent) toast.success('Digest sent to WhatsApp');
+                    else toast.error(result.reason || 'No alert phone configured — save it first');
+                  } catch (err) {
+                    toast.error(err.message || 'Failed to send digest');
+                  } finally {
+                    setIsSendingDigest(false);
+                  }
+                }}
+                disabled={isSendingDigest}
+                className="btn-secondary"
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: isSendingDigest ? 0.7 : 1 }}
+              >
+                {isSendingDigest ? 'Sending...' : 'Send Test Digest Now'}
+              </button>
+              <button
                 onClick={handleSave}
                 disabled={isUpdating}
-                className="btn-primary" 
+                className="btn-primary"
                 style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: isUpdating ? 0.7 : 1 }}
               >
                 {isUpdating ? <RefreshCcw size={18} className="spin" /> : <Save size={18} />}
