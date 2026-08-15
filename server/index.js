@@ -4693,9 +4693,15 @@ app.post('/api/payments/zaad', checkRole(['admin', 'cashier']), async (req, res)
 // opening the app: zones with zero collections today, low/out-of-stock inventory, debts that
 // have aged past 60 days, and unresolved complaints. Runs once a day (see cron.schedule below)
 // and is also reachable on demand via POST /api/admin/send-digest-now for testing.
-const buildAndSendDailyDigest = async () => {
-  const settingsRes = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'alert_phone'");
-  const alertPhone = settingsRes.rows[0]?.setting_value;
+// `overridePhone` lets the "Send Test Digest Now" button use whatever number is currently
+// typed into the Settings field, even if the admin hasn't hit Save yet — otherwise the test
+// button would confusingly fail with "No alert_phone configured" right after typing one in.
+const buildAndSendDailyDigest = async (overridePhone) => {
+  let alertPhone = overridePhone;
+  if (!alertPhone) {
+    const settingsRes = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'alert_phone'");
+    alertPhone = settingsRes.rows[0]?.setting_value;
+  }
   if (!alertPhone) return { sent: false, reason: 'No alert_phone configured in Settings' };
 
   const zoneRes = await db.query(`
@@ -4747,7 +4753,7 @@ const buildAndSendDailyDigest = async () => {
 
 app.post('/api/admin/send-digest-now', checkRole(['admin']), async (req, res) => {
   try {
-    const result = await buildAndSendDailyDigest();
+    const result = await buildAndSendDailyDigest(req.body?.phone);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

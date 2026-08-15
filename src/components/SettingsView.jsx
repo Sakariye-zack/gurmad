@@ -546,7 +546,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                 onClick={async () => {
                   setIsSendingDigest(true);
                   try {
-                    const result = await api.sendDigestNow();
+                    const result = await api.sendDigestNow(generalSettings.alertPhone);
                     if (result.sent) toast.success('Digest sent to WhatsApp');
                     else toast.error(result.reason || 'No alert phone configured — save it first');
                   } catch (err) {
