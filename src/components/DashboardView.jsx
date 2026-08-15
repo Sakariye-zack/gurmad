@@ -18,7 +18,12 @@ import {
   CreditCard,
   PlusCircle,
   FilePlus,
-  Briefcase
+  Briefcase,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+  Phone,
+  Home
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
@@ -60,6 +65,10 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState([]);
   const [selectedGroup, setSelectedGroup] = useState('');
+  const [zonePerformance, setZonePerformance] = useState([]);
+  const [expandedZone, setExpandedZone] = useState(null);
+
+  const canSeeZones = currentUser?.role === 'admin' || currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant';
 
   useEffect(() => {
     const needsInvoices = currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant';
@@ -68,14 +77,16 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
       api.getStatsHistory(),
       api.getSettings(),
       api.getExtendedDashboardStats(),
-      needsInvoices ? api.getInvoices() : Promise.resolve([])
+      needsInvoices ? api.getInvoices() : Promise.resolve([]),
+      canSeeZones ? api.getZonePerformance().catch(() => []) : Promise.resolve([])
     ])
-      .then(([stats, history, sData, extended, invs]) => {
+      .then(([stats, history, sData, extended, invs, zonePerf]) => {
         setDbStats(stats);
         setChartData(history);
         setSettings(sData);
         setExtendedStats(extended);
         setInvoices(invs || []);
+        setZonePerformance(zonePerf || []);
       })
       .catch(err => {
         console.error("Error fetching stats:", err);
@@ -310,6 +321,99 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Zone Performance — per-zone customers, who's been served today, and today's revenue,
+          with a click-to-expand drill-down into each zone's individual customers. */}
+      {canSeeZones && zonePerformance.length > 0 && (
+        <div className="card" style={{ padding: '1.5rem' }}>
+          <h3 style={{ margin: '0 0 1.25rem', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800 }}>
+            <MapPin size={18} color="var(--gurmad-green)" /> Zone Performance
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+            {zonePerformance.map(z => {
+              const isOpen = expandedZone === z.id;
+              const pct = z.customer_count > 0 ? Math.round((z.served_today / z.customer_count) * 100) : 0;
+              return (
+                <div key={z.id} style={{ border: '1px solid #f1f5f9', borderRadius: '16px', overflow: 'hidden' }}>
+                  <button
+                    onClick={() => setExpandedZone(isOpen ? null : z.id)}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
+                      padding: '1rem 1.25rem', background: isOpen ? '#f8fafc' : 'white', border: 'none', cursor: 'pointer', textAlign: 'left'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: '160px' }}>
+                      <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <MapPin size={18} color="var(--gurmad-green)" />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 800, color: '#0f172a' }}>{z.name}</div>
+                        <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{z.customer_count} customers</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem', flexWrap: 'wrap' }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Served Today</div>
+                        <div style={{ fontWeight: 800, color: '#0f172a' }}>{z.served_today} / {z.customer_count} <span style={{ fontSize: '0.78rem', fontWeight: 700, color: pct >= 50 ? '#15803d' : '#b45309' }}>({pct}%)</span></div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>Revenue Today</div>
+                        <div style={{ fontWeight: 800, color: 'var(--gurmad-green)' }}>{formatValue(z.revenue_today)}</div>
+                      </div>
+                      {isOpen ? <ChevronUp size={18} color="#94a3b8" /> : <ChevronDown size={18} color="#94a3b8" />}
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div style={{ borderTop: '1px solid #f1f5f9', overflowX: 'auto' }}>
+                      {z.customers.length === 0 ? (
+                        <div style={{ padding: '1.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>No customers in this zone yet.</div>
+                      ) : (
+                        <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ backgroundColor: '#f8fafc' }}>
+                              <th style={{ textAlign: 'left', padding: '10px 1.25rem', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>CUSTOMER</th>
+                              <th style={{ textAlign: 'left', padding: '10px', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>PHONE</th>
+                              <th style={{ textAlign: 'left', padding: '10px', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>COLLECTOR</th>
+                              <th style={{ textAlign: 'left', padding: '10px', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>PAYMENT</th>
+                              <th style={{ textAlign: 'left', padding: '10px 1.25rem', fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>SERVED TODAY</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {z.customers.map(c => (
+                              <tr key={c.id} style={{ borderTop: '1px solid #f8fafc' }}>
+                                <td style={{ padding: '10px 1.25rem', fontWeight: 700 }}>
+                                  {c.name}
+                                  {c.house_no && <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>House {c.house_no}</div>}
+                                </td>
+                                <td style={{ padding: '10px', color: '#64748b' }}>{c.phone || '—'}</td>
+                                <td style={{ padding: '10px', color: '#0ea5e9', fontWeight: 600 }}>{c.collector_name || 'Unassigned'}</td>
+                                <td style={{ padding: '10px' }}>
+                                  <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '0.72rem', fontWeight: 800, backgroundColor: c.status === 'Paid' ? '#dcfce7' : '#fef2f2', color: c.status === 'Paid' ? '#15803d' : '#b91c1c' }}>
+                                    {c.status || 'Unpaid'}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px 1.25rem' }}>
+                                  {c.collected_today ? (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 700, fontSize: '0.8rem' }}><CheckCircle2 size={13} /> Yes</span>
+                                  ) : (
+                                    <span style={{ color: '#cbd5e1', fontWeight: 600, fontSize: '0.8rem' }}>—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

@@ -104,6 +104,7 @@ export const api = {
   getStats: () => fetch(`${API_BASE_URL}/stats`, { headers: getAuthHeaders() }).then(handleResponse),
   getStatsHistory: () => fetch(`${API_BASE_URL}/stats/history`, { headers: getAuthHeaders() }).then(handleResponse),
   getExtendedDashboardStats: () => fetch(`${API_BASE_URL}/dashboard/extended`, { headers: getAuthHeaders() }).then(handleResponse),
+  getZonePerformance: () => fetch(`${API_BASE_URL}/dashboard/zone-performance`, { headers: getAuthHeaders() }).then(handleResponse),
   getCollectorReports: () => fetch(`${API_BASE_URL}/reports/collectors`, { headers: getAuthHeaders() }).then(handleResponse),
 
   // Trucks & Zones

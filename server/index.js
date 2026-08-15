@@ -2946,6 +2946,70 @@ app.get('/api/dashboard/extended', checkRole(['admin', 'cashier', 'collector', '
   }
 });
 
+// Dashboard "Zone Performance": per-zone customer count, how many were served (collected) today,
+// and how much revenue that zone brought in today — plus the full per-customer breakdown so the
+// dashboard can drill into a zone without a second round-trip. Gudoomiye/Zone Accountant only
+// ever see their own zone (same restriction pattern as getZoneScope everywhere else).
+app.get('/api/dashboard/zone-performance', checkRole(['admin', 'gudoomiye', 'zone_accountant']), async (req, res) => {
+  try {
+    const { restricted, zone: scopedZone } = getZoneScope(req);
+
+    const aggRes = await db.query(`
+      SELECT
+        z.id, z.name,
+        COALESCE(cc.customer_count, 0)::int AS customer_count,
+        COALESCE(st.served_today, 0)::int AS served_today,
+        COALESCE(rt.revenue_today, 0)::numeric AS revenue_today
+      FROM zones z
+      LEFT JOIN (
+        SELECT zone, COUNT(*) AS customer_count FROM customers GROUP BY zone
+      ) cc ON cc.zone = z.name
+      LEFT JOIN (
+        SELECT c.zone, COUNT(DISTINCT tc.customer_id) AS served_today
+        FROM task_customers tc
+        JOIN customers c ON c.id = tc.customer_id
+        WHERE tc.collected = true AND tc.collected_at::date = CURRENT_DATE
+        GROUP BY c.zone
+      ) st ON st.zone = z.name
+      LEFT JOIN (
+        SELECT c.zone, SUM(i.amount) AS revenue_today
+        FROM invoices i
+        JOIN customers c ON c.id = i.customer_id
+        WHERE i.created_at::date = CURRENT_DATE
+        GROUP BY c.zone
+      ) rt ON rt.zone = z.name
+      ${restricted ? 'WHERE z.name = $1' : ''}
+      ORDER BY z.name
+    `, restricted ? [scopedZone] : []);
+
+    const custRes = await db.query(`
+      SELECT c.id, c.name, c.phone, c.house_no, c.zone, c.status, e.name AS collector_name,
+        EXISTS (
+          SELECT 1 FROM task_customers tc
+          WHERE tc.customer_id = c.id AND tc.collected = true AND tc.collected_at::date = CURRENT_DATE
+        ) AS collected_today
+      FROM customers c
+      LEFT JOIN employees e ON c.collector_id = e.id
+      ${restricted ? 'WHERE c.zone = $1' : ''}
+      ORDER BY c.name
+    `, restricted ? [scopedZone] : []);
+
+    const customersByZone = {};
+    for (const c of custRes.rows) {
+      (customersByZone[c.zone] = customersByZone[c.zone] || []).push(c);
+    }
+
+    const zones = aggRes.rows.map(z => ({
+      ...z,
+      customers: customersByZone[z.name] || []
+    }));
+
+    res.json(zones);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/reports/collectors', checkRole(['admin']), async (req, res) => {
   try {
     const result = await db.query(`
