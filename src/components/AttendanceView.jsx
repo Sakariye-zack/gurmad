@@ -3,7 +3,7 @@ import { api } from '../api';
 import { Camera, Clock, LogIn, LogOut, User, Calendar, CheckCircle, XCircle, Video } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
-const AttendanceView = () => {
+const AttendanceView = ({ currentUser }) => {
   const [employees, setEmployees] = useState([]);
   const [todayLogs, setTodayLogs] = useState([]);
   const [allLogs, setAllLogs] = useState([]);
@@ -18,6 +18,46 @@ const AttendanceView = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+
+  // Admin correction — a collector who forgot to clock in/out (or a wrong punch) otherwise has
+  // no fix; this lets an admin set/adjust the timestamps directly on the record.
+  const [correctingLog, setCorrectingLog] = useState(null);
+  const [correctionForm, setCorrectionForm] = useState({ clock_in: '', clock_out: '' });
+  const toLocalInput = (ts) => ts ? new Date(new Date(ts).getTime() - new Date(ts).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+  const openCorrection = (log) => {
+    setCorrectingLog(log);
+    setCorrectionForm({ clock_in: toLocalInput(log.clock_in), clock_out: toLocalInput(log.clock_out) });
+  };
+  const handleSaveCorrection = async (e) => {
+    e.preventDefault();
+    try {
+      await api.correctAttendance(correctingLog.id, {
+        clock_in: correctionForm.clock_in ? new Date(correctionForm.clock_in).toISOString() : null,
+        clock_out: correctionForm.clock_out ? new Date(correctionForm.clock_out).toISOString() : null
+      });
+      toast.success('Attendance record updated');
+      setCorrectingLog(null);
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update record');
+    }
+  };
+
+  const handleExportAttendanceCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Employee,Date,Clock In,Clock Out,Hours\n";
+    allLogs.forEach(log => {
+      const hours = log.clock_in && log.clock_out ? ((new Date(log.clock_out) - new Date(log.clock_in)) / 3600000).toFixed(1) : '';
+      csvContent += `${log.employee_name},${new Date(log.date).toLocaleDateString()},${log.clock_in ? new Date(log.clock_in).toLocaleTimeString() : ''},${log.clock_out ? new Date(log.clock_out).toLocaleTimeString() : ''},${hours}\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `gurmad_attendance_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   useEffect(() => {
     loadData();
@@ -334,8 +374,11 @@ const AttendanceView = () => {
       {/* ====== Attendance Log View ====== */}
       {activeView === 'log' && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)' }}>
+          <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ fontWeight: 700, margin: 0 }}>Full Attendance History</h3>
+            <button onClick={handleExportAttendanceCSV} className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Export CSV
+            </button>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
@@ -346,12 +389,13 @@ const AttendanceView = () => {
                 <th style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>CLOCK OUT</th>
                 <th style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>HOURS</th>
                 <th style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem' }}>VERIFICATION</th>
+                {currentUser?.role === 'admin' && <th style={{ padding: '0.85rem 1rem', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.85rem', textAlign: 'right' }}>ACTIONS</th>}
               </tr>
             </thead>
             <tbody>
               {allLogs.length === 0 ? (
                 <tr>
-                  <td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No attendance records yet.
                   </td>
                 </tr>
@@ -404,11 +448,42 @@ const AttendanceView = () => {
                         )}
                       </div>
                     </td>
+                    {currentUser?.role === 'admin' && (
+                      <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
+                        <button onClick={() => openCorrection(log)} style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'white', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>
+                          Correct
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Admin attendance correction modal */}
+      {correctingLog && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '380px', borderTop: '4px solid var(--gurmad-green)' }}>
+            <h3 style={{ marginBottom: '0.3rem', fontWeight: 800 }}>Correct Attendance</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.3rem' }}>{correctingLog.employee_name} — {new Date(correctingLog.date).toLocaleDateString()}</p>
+            <form onSubmit={handleSaveCorrection} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Clock In</label>
+                <input type="datetime-local" value={correctionForm.clock_in} onChange={e => setCorrectionForm({...correctionForm, clock_in: e.target.value})} style={{ width: '100%', padding: '0.7rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Clock Out</label>
+                <input type="datetime-local" value={correctionForm.clock_out} onChange={e => setCorrectionForm({...correctionForm, clock_out: e.target.value})} style={{ width: '100%', padding: '0.7rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setCorrectingLog(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" className="btn-primary">Save</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

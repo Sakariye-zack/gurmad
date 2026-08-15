@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Wallet, Search, CheckCircle2, AlertCircle, History, Calculator } from 'lucide-react';
+import { Wallet, Search, CheckCircle2, AlertCircle, History, Calculator, Download, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../api';
 
@@ -24,6 +24,7 @@ const CashoutView = ({ currentUser }) => {
   
   // Settings for currency format
   const [settings, setSettings] = useState({});
+  const [historySearch, setHistorySearch] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -200,6 +201,37 @@ const CashoutView = ({ currentUser }) => {
       console.error(err);
       toast.error('Failed to process cashout');
     }
+  };
+
+  const handleDeleteCashout = async (id) => {
+    if (!window.confirm('Delete this cashout record? This cannot be undone.')) return;
+    try {
+      await api.deleteCashout(id);
+      setCashouts(cashouts.filter(c => c.id !== id));
+      toast.success('Cashout record deleted');
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete cashout');
+    }
+  };
+
+  const filteredCashouts = cashouts.filter(co => {
+    const q = historySearch.toLowerCase();
+    return !q || (co.cashier_name || '').toLowerCase().includes(q) || (co.collector_name || '').toLowerCase().includes(q);
+  });
+
+  const handleExportCashoutsCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Date,Cashier,Expected,Actual,Shortage,Cash,ZAAD,eDahab,SLSH,Processed By\n";
+    filteredCashouts.forEach(co => {
+      csvContent += `${new Date(co.created_at).toLocaleDateString()},${co.cashier_name || co.collector_name || ''},${co.expected_amount},${co.actual_amount},${co.shortage},${co.cash_amount},${co.zaad_amount},${co.edahab_amount},${co.slsh_amount},${co.processed_by || ''}\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `gurmad_cashouts_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const thStyle = {
@@ -450,6 +482,16 @@ const CashoutView = ({ currentUser }) => {
 
           </div>
         ) : (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '1rem' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '200px', maxWidth: '320px' }}>
+                <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input value={historySearch} onChange={e => setHistorySearch(e.target.value)} placeholder="Search cashier..." style={{ width: '100%', padding: '0.55rem 0.8rem 0.55rem 2rem', borderRadius: '8px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }} />
+              </div>
+              <button onClick={handleExportCashoutsCSV} className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0.55rem 1rem' }}>
+                <Download size={16} /> Export CSV
+              </button>
+            </div>
           <div style={{ overflowX: 'auto' }}>
             <table className="table" style={{ width: '100%', textAlign: 'left', borderCollapse: 'collapse' }}>
               <thead>
@@ -461,17 +503,18 @@ const CashoutView = ({ currentUser }) => {
                   <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Shortage / Overage</th>
                   <th style={thStyle}>Processed By</th>
+                  {currentUser?.role === 'admin' && <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
-                {cashouts.length === 0 ? (
+                {filteredCashouts.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                       No cashout history found.
                     </td>
                   </tr>
                 ) : (
-                  cashouts.map(co => (
+                  filteredCashouts.map(co => (
                     <tr key={co.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         <div style={{ fontWeight: 600 }}>{new Date(co.created_at).toLocaleDateString()}</div>
@@ -506,11 +549,19 @@ const CashoutView = ({ currentUser }) => {
                         )}
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{co.processed_by}</td>
+                      {currentUser?.role === 'admin' && (
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                          <button onClick={() => handleDeleteCashout(co.id)} title="Delete" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#dc2626', display: 'inline-flex' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
+          </div>
           </div>
         )}
       </div>

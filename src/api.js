@@ -178,15 +178,25 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
   }).then(handleResponse),
-  
-  // Expenses
-  getExpenses: () => fetch(`${API_BASE_URL}/expenses`, { headers: getAuthHeaders() }).then(handleResponse),
-  addExpense: (data) => fetch(`${API_BASE_URL}/expenses`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(data)
+  voidInvoice: (id) => fetch(`${API_BASE_URL}/invoices/${id}/void`, {
+    method: 'PUT', headers: getAuthHeaders()
   }).then(handleResponse),
-  
+
+  // Expenses — POST/PUT take FormData (server multer-parses invoice_image), not JSON.
+  getExpenses: () => fetch(`${API_BASE_URL}/expenses`, { headers: getAuthHeaders() }).then(handleResponse),
+  addExpense: (formData) => fetch(`${API_BASE_URL}/expenses`, {
+    method: 'POST', headers: getAuthHeaders(), body: formData
+  }).then(handleResponse),
+  updateExpense: (id, formData) => fetch(`${API_BASE_URL}/expenses/${id}`, {
+    method: 'PUT', headers: getAuthHeaders(), body: formData
+  }).then(handleResponse),
+  updateExpenseStatus: (id, status) => fetch(`${API_BASE_URL}/expenses/${id}/status`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ status })
+  }).then(handleResponse),
+  deleteExpense: (id) => fetch(`${API_BASE_URL}/expenses/${id}`, {
+    method: 'DELETE', headers: getAuthHeaders()
+  }).then(handleResponse),
+
   // HRM / Employees
   getEmployees: () => fetch(`${API_BASE_URL}/employees`, { headers: getAuthHeaders() }).then(handleResponse),
   addEmployee: (formData) => fetch(`${API_BASE_URL}/employees`, {
@@ -256,6 +266,11 @@ export const api = {
     method: 'POST',
     headers: getAuthHeaders(),
     body: formData
+  }).then(handleResponse),
+  correctAttendance: (id, data) => fetch(`${API_BASE_URL}/attendance/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
   }).then(handleResponse),
 
   // Payroll
@@ -492,6 +507,14 @@ export const api = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(data)
+  }).then(handleResponse),
+  updateCashout: (id, data) => fetch(`${API_BASE_URL}/cashouts/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
+  deleteCashout: (id) => fetch(`${API_BASE_URL}/cashouts/${id}`, {
+    method: 'DELETE', headers: getAuthHeaders()
   }).then(handleResponse),
 
   // User Management

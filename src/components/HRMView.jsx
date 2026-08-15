@@ -598,11 +598,13 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                         </span>
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
-                        {lr.status === 'Pending' && (
+                        {lr.status === 'Pending' ? (
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             <button onClick={() => handleUpdateLeaveStatus(lr.id, 'Approved')} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Approve</button>
                             <button onClick={() => handleUpdateLeaveStatus(lr.id, 'Rejected')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Reject</button>
                           </div>
+                        ) : (
+                          <button onClick={() => handleUpdateLeaveStatus(lr.id, 'Pending')} title="Undo — revert to Pending" style={{ backgroundColor: 'white', color: '#64748b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Revert</button>
                         )}
                       </td>
                     </tr>
@@ -707,11 +709,13 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                         </span>
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
-                        {a.status === 'Pending' && (
+                        {a.status === 'Pending' ? (
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             <button onClick={() => handleUpdateAdvanceStatus(a.id, 'Approved')} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Approve</button>
                             <button onClick={() => handleUpdateAdvanceStatus(a.id, 'Rejected')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Reject</button>
                           </div>
+                        ) : (
+                          <button onClick={() => handleUpdateAdvanceStatus(a.id, 'Pending')} title="Undo — revert to Pending" style={{ backgroundColor: 'white', color: '#64748b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Revert</button>
                         )}
                       </td>
                     </tr>
@@ -806,11 +810,13 @@ const HRMView = ({ searchQuery = '', initialTab = 'All' }) => {
                         </span>
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
-                        {c.status === 'Pending' && (
+                        {c.status === 'Pending' ? (
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             <button onClick={() => handleUpdateClaimStatus(c.id, 'Approved')} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Approve</button>
                             <button onClick={() => handleUpdateClaimStatus(c.id, 'Rejected')} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Reject</button>
                           </div>
+                        ) : (
+                          <button onClick={() => handleUpdateClaimStatus(c.id, 'Pending')} title="Undo — revert to Pending" style={{ backgroundColor: 'white', color: '#64748b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}>Revert</button>
                         )}
                       </td>
                     </tr>

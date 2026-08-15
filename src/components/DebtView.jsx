@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Filter, AlertCircle, CheckCircle2, Copy, Trash2, MessageSquare, Send } from 'lucide-react';
+import { UserPlus, Search, Filter, AlertCircle, CheckCircle2, Copy, Trash2, MessageSquare, Send, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../api';
 
@@ -287,6 +287,22 @@ const DebtView = ({ searchQuery = '' }) => {
             </div>
           ) : <div />}
           <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="btn btn-secondary" onClick={() => {
+              let csvContent = "data:text/csv;charset=utf-8,";
+              csvContent += "Date,Debtor,Phone,Zone,Amount,Currency,Status,Age (days)\n";
+              filteredDebts.forEach(d => {
+                csvContent += `${new Date(d.created_at).toLocaleDateString()},"${d.debtor_name}",${d.phone || ''},${d.zone || ''},${d.amount},${d.currency},${d.status},${d.status === 'Unpaid' ? daysOverdue(d) : ''}\n`;
+              });
+              const link = document.createElement("a");
+              link.setAttribute("href", encodeURI(csvContent));
+              link.setAttribute("download", `gurmad_debts_${new Date().toISOString().slice(0, 10)}.csv`);
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}>
+              <Download size={18} />
+              <span>Export CSV</span>
+            </button>
             <button className="btn btn-primary" onClick={() => setIsAddModalOpen(true)}>
               <UserPlus size={18} />
               <span>Record Debt</span>

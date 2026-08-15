@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { Wallet, Fuel, Users, Wrench, Plus, ArrowDown, ArrowUp, XCircle, Save, FileText } from 'lucide-react';
+import { Wallet, Fuel, Users, Wrench, Plus, ArrowDown, ArrowUp, XCircle, Save, FileText, Edit3, Trash2, CheckCircle2, Clock, Download } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const categoryMap = {
@@ -18,7 +18,9 @@ const ExpenseView = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
-  
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+
   // Form state
   const [newExpense, setNewExpense] = useState({
     category: 'Fuel',
@@ -64,22 +66,77 @@ const ExpenseView = () => {
         formData.append('invoice_image', newExpense.imageFile);
       }
 
-      const resp = await fetch('/api/expenses', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!resp.ok) throw new Error('Failed to add expense');
-      
-      toast.success('Expense recorded successfully!');
+      if (isEditMode && editingId) {
+        await api.updateExpense(editingId, formData);
+        toast.success('Expense updated successfully!');
+      } else {
+        await api.addExpense(formData);
+        toast.success('Expense recorded successfully!');
+      }
       setShowAddModal(false);
+      setIsEditMode(false);
+      setEditingId(null);
       setNewExpense({ category: 'Fuel', description: '', amount: '', reference_no: '', imageFile: null, imagePreview: null });
       fetchExpenses();
     } catch (err) {
-      toast.error('Error saving expense');
+      toast.error(err.message || 'Error saving expense');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const openEditModal = (exp) => {
+    setIsEditMode(true);
+    setEditingId(exp.id);
+    setNewExpense({
+      category: exp.category, description: exp.description, amount: exp.amount,
+      reference_no: exp.reference_no || '', imageFile: null, imagePreview: null
+    });
+    setShowAddModal(true);
+  };
+
+  const openAddModal = () => {
+    setIsEditMode(false);
+    setEditingId(null);
+    setNewExpense({ category: 'Fuel', description: '', amount: '', reference_no: '', imageFile: null, imagePreview: null });
+    setShowAddModal(true);
+  };
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Delete this expense record? This cannot be undone.')) return;
+    try {
+      await api.deleteExpense(id);
+      toast.success('Expense deleted');
+      setSelectedExpense(null);
+      fetchExpenses();
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete expense');
+    }
+  };
+
+  const handleStatusUpdate = async (id, status) => {
+    try {
+      await api.updateExpenseStatus(id, status);
+      toast.success(`Marked as ${status}`);
+      fetchExpenses();
+    } catch (err) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const handleExportCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Date,Category,Description,Reference,Amount,Status\n";
+    expenses.forEach(exp => {
+      csvContent += `${exp.date},${exp.category},"${(exp.description || '').replace(/"/g, '""')}",${exp.reference_no || ''},${exp.amount},${exp.status || 'Approved'}\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `gurmad_expenses_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleImageChange = (e) => {
@@ -142,11 +199,16 @@ const ExpenseView = () => {
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
         {/* List */}
         <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             <h3 style={{ fontWeight: 700 }}>Expense History</h3>
-            <button onClick={() => setShowAddModal(true)} className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Plus size={16} /> Add Expense
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={handleExportCSV} className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Download size={16} /> Export CSV
+              </button>
+              <button onClick={openAddModal} className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Plus size={16} /> Add Expense
+              </button>
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {expenses.length === 0 ? (
@@ -181,11 +243,33 @@ const ExpenseView = () => {
                     <exp.icon size={20} />
                   </div>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{exp.description}</div>
+                    <div style={{ fontWeight: 600, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {exp.description}
+                      {exp.status === 'Pending' && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: 800, backgroundColor: '#fffbeb', color: '#b45309' }}>
+                          <Clock size={10} /> PENDING
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{exp.category} • {exp.date}</div>
                   </div>
                 </div>
-                <div style={{ fontWeight: 700, color: '#ef4444' }}>-${parseFloat(exp.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ fontWeight: 700, color: '#ef4444' }}>-${parseFloat(exp.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                  <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+                    {exp.status === 'Pending' && (
+                      <button onClick={() => handleStatusUpdate(exp.id, 'Approved')} title="Approve" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#15803d', display: 'flex' }}>
+                        <CheckCircle2 size={14} />
+                      </button>
+                    )}
+                    <button onClick={() => openEditModal(exp)} title="Edit" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#1d4ed8', display: 'flex' }}>
+                      <Edit3 size={14} />
+                    </button>
+                    <button onClick={() => handleDeleteExpense(exp.id)} title="Delete" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#dc2626', display: 'flex' }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -282,16 +366,16 @@ const ExpenseView = () => {
             display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)'
           }}>
             <div className="card glass" style={{ width: '400px', padding: '2rem', position: 'relative', borderTop: '4px solid var(--gurmad-orange)' }}>
-              <button 
-                onClick={() => setShowAddModal(false)}
+              <button
+                onClick={() => { setShowAddModal(false); setIsEditMode(false); setEditingId(null); }}
                 style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
               >
                 <XCircle size={24} />
               </button>
-              
+
               <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Wallet color="var(--gurmad-orange)" />
-                Record New Expense
+                {isEditMode ? 'Edit Expense' : 'Record New Expense'}
               </h3>
   
               <form onSubmit={handleAddExpense} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -362,7 +446,7 @@ const ExpenseView = () => {
   
                 <button type="submit" disabled={isSubmitting} className="btn-primary" style={{ marginTop: '10px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
                   <Save size={18} />
-                  {isSubmitting ? 'Saving...' : 'Save Expense'}
+                  {isSubmitting ? 'Saving...' : (isEditMode ? 'Update Expense' : 'Save Expense')}
                 </button>
               </form>
             </div>

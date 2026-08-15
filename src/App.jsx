@@ -429,7 +429,7 @@ const App = () => {
       case 'hrm': return <HRMView searchQuery={globalSearch} />;
       case 'collectors': return <HRMView searchQuery={globalSearch} initialTab="Collectors" />;
       case 'onboard_staff': return <OnboardEmployeeView />;
-      case 'attendance': return <AttendanceView searchQuery={globalSearch} />;
+      case 'attendance': return <AttendanceView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'settings': return <SettingsView
          searchQuery={globalSearch}
          currentUser={currentUser} 

@@ -218,6 +218,16 @@ const runMigrations = async () => {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS replied_at TIMESTAMP;
     `);
 
+    // Expenses: an approval workflow (a cashier's logged expense starts Pending until an admin
+    // approves it, an admin's own entry is auto-approved) plus who logged it, so a wrong entry
+    // can be corrected/removed instead of being a permanent, unreviewed line in the ledger.
+    await db.query(`
+      ALTER TABLE expenses ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Approved';
+      ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id);
+      ALTER TABLE expenses ADD COLUMN IF NOT EXISTS reference_no VARCHAR(100);
+      ALTER TABLE expenses ADD COLUMN IF NOT EXISTS invoice_image VARCHAR(255);
+    `);
+
     // Document & Financial Documents module: consolidates the proposal's ~20 page-types
     // (Invoices, Receipts, Contracts, Licenses, etc.) into one generic, categorized document
     // record — category is the fixed high-level bucket (Customer/Employee/Supplier/Fleet/
@@ -1709,6 +1719,33 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
   }
 });
 
+// Void a mis-recorded invoice — admin only, and deliberately not a DELETE: the row (and its
+// audit trail) stays, just flipped to a status revenue reports already exclude (they filter
+// status = 'Paid'), so a voided invoice quietly stops counting without erasing the record of
+// what happened. Also reverts the customer's payment_status/status back to Unpaid so billing
+// doesn't show them as paid for money that was voided.
+app.put('/api/invoices/:id/void', checkRole(['admin']), async (req, res) => {
+  try {
+    const existing = await db.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+    const inv = existing.rows[0];
+    if (inv.status === 'Voided') return res.status(400).json({ error: 'Already voided' });
+
+    const result = await db.query(
+      "UPDATE invoices SET status = 'Voided' WHERE id = $1 RETURNING *",
+      [req.params.id]
+    );
+    if (inv.customer_id) {
+      await db.query("UPDATE customers SET payment_status = 'Unpaid', status = 'Unpaid' WHERE id = $1", [inv.customer_id]);
+    }
+    await logAudit(req, 'VOID', 'invoices', inv.id, inv, result.rows[0]);
+    io.emit('invoice_voided', result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Collector Assignments ---
 app.get('/api/collector-assignments', checkRole(['admin', 'gudoomiye']), async (req, res) => {
   try {
@@ -1947,13 +1984,59 @@ app.get('/api/expenses', checkRole(['admin', 'cashier']), async (req, res) => {
 app.post('/api/expenses', checkRole(['admin', 'cashier']), upload.single('invoice_image'), async (req, res) => {
   const { category, description, amount, reference_no } = req.body;
   const invoice_image = req.file ? req.file.filename : null;
+  // Admin entries are auto-approved (they're the approver); a cashier's entry starts Pending
+  // until an admin reviews it — closes the "anyone can log an unreviewed expense" gap.
+  const status = req.user.role.toLowerCase() === 'admin' ? 'Approved' : 'Pending';
 
   try {
     const result = await db.query(
-      'INSERT INTO expenses (category, description, amount, reference_no, invoice_image) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [category, description, amount || 0, reference_no || null, invoice_image]
+      'INSERT INTO expenses (category, description, amount, reference_no, invoice_image, status, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+      [category, description, amount || 0, reference_no || null, invoice_image, status, req.user.id]
     );
+    await logAudit(req, 'CREATE', 'expenses', result.rows[0].id, null, result.rows[0]);
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/expenses/:id', checkRole(['admin']), upload.single('invoice_image'), async (req, res) => {
+  const { category, description, amount, reference_no } = req.body;
+  try {
+    const existing = await db.query('SELECT * FROM expenses WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Expense not found' });
+    const invoice_image = req.file ? req.file.filename : existing.rows[0].invoice_image;
+    const result = await db.query(
+      'UPDATE expenses SET category = $1, description = $2, amount = $3, reference_no = $4, invoice_image = $5 WHERE id = $6 RETURNING *',
+      [category, description, amount || 0, reference_no || null, invoice_image, req.params.id]
+    );
+    await logAudit(req, 'UPDATE', 'expenses', result.rows[0].id, existing.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/expenses/:id/status', checkRole(['admin']), async (req, res) => {
+  const { status } = req.body;
+  try {
+    const existing = await db.query('SELECT * FROM expenses WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Expense not found' });
+    const result = await db.query('UPDATE expenses SET status = $1 WHERE id = $2 RETURNING *', [status, req.params.id]);
+    await logAudit(req, 'STATUS_CHANGE', 'expenses', result.rows[0].id, existing.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/expenses/:id', checkRole(['admin']), async (req, res) => {
+  try {
+    const existing = await db.query('SELECT * FROM expenses WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Expense not found' });
+    await db.query('DELETE FROM expenses WHERE id = $1', [req.params.id]);
+    await logAudit(req, 'DELETE', 'expenses', req.params.id, existing.rows[0], null);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2686,6 +2769,25 @@ app.post('/api/attendance/clock-out', checkRole(['admin', 'collector']), upload.
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'No active clock-in found for today' });
     }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin manual correction — a collector who forgot to clock in/out, or a wrong photo/time,
+// otherwise has no fix short of editing the database directly. Either field is optional so a
+// partial correction (e.g. only clock_out was missed) doesn't require re-sending both.
+app.put('/api/attendance/:id', checkRole(['admin']), async (req, res) => {
+  const { clock_in, clock_out } = req.body;
+  try {
+    const existing = await db.query('SELECT * FROM attendance WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Attendance record not found' });
+    const result = await db.query(
+      'UPDATE attendance SET clock_in = COALESCE($1, clock_in), clock_out = COALESCE($2, clock_out) WHERE id = $3 RETURNING *',
+      [clock_in || null, clock_out || null, req.params.id]
+    );
+    await logAudit(req, 'UPDATE', 'attendance', result.rows[0].id, existing.rows[0], result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3823,6 +3925,38 @@ app.post('/api/cashouts', requirePermission('cashout', 'create'), async (req, re
       ]
     );
     res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// A cashout is a money-reconciliation record — mis-entered numbers need a correction path, not
+// just a permanent mistake. Edit and void (hard-delete here, since a cashout has no downstream
+// "Paid" status like invoices to quietly flip) are admin-only regardless of who created it.
+app.put('/api/cashouts/:id', checkRole(['admin']), async (req, res) => {
+  const { expected_amount, actual_amount, zaad_amount, edahab_amount, cash_amount, slsh_amount, shortage, reason } = req.body;
+  try {
+    const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
+    const result = await db.query(
+      `UPDATE cashouts SET expected_amount = $1, actual_amount = $2, zaad_amount = $3, edahab_amount = $4,
+        cash_amount = $5, slsh_amount = $6, shortage = $7, reason = $8 WHERE id = $9 RETURNING *`,
+      [expected_amount, actual_amount, zaad_amount || 0, edahab_amount || 0, cash_amount || 0, slsh_amount || 0, shortage || 0, reason || null, req.params.id]
+    );
+    await logAudit(req, 'UPDATE', 'cashouts', result.rows[0].id, existing.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/cashouts/:id', checkRole(['admin']), async (req, res) => {
+  try {
+    const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
+    await db.query('DELETE FROM cashouts WHERE id = $1', [req.params.id]);
+    await logAudit(req, 'DELETE', 'cashouts', req.params.id, existing.rows[0], null);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

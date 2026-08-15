@@ -126,6 +126,20 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
     }
   };
 
+  // Voiding (not deleting) a mis-recorded invoice keeps the row + audit trail but excludes it
+  // from revenue — admin-only correction path for a cashier's mis-click.
+  const handleVoidInvoice = async (invoiceId) => {
+    if (!window.confirm('Void this invoice? It will stop counting toward revenue but stay on record.')) return;
+    try {
+      const voided = await api.voidInvoice(invoiceId);
+      setInvoices(prev => prev.map(inv => inv.id === voided.id ? voided : inv));
+      setSelectedInvoice(voided);
+      toast.success('Invoice voided');
+    } catch (err) {
+      toast.error(err.message || 'Failed to void invoice');
+    }
+  };
+
   const calculateRawTotal = () => {
     if (paymentMethod === 'Split') {
       return (parseFloat(splitPayments.cash) || 0) + 
@@ -881,6 +895,11 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
                  <button onClick={() => window.print()} style={{ flex: 1, padding: '1rem', borderRadius: '14px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#475569', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}>
                     <Printer size={18} /> Print Receipt
                  </button>
+                 {currentUser?.role === 'admin' && selectedInvoice.status !== 'Voided' && (
+                   <button onClick={() => handleVoidInvoice(selectedInvoice.id)} style={{ flex: 1, padding: '1rem', borderRadius: '14px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', color: '#dc2626', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', transition: '0.2s' }}>
+                      <XCircle size={18} /> Void
+                   </button>
+                 )}
                  <button onClick={() => setSelectedInvoice(null)} style={{ flex: 1, padding: '1rem', borderRadius: '14px', border: 'none', backgroundColor: 'var(--gurmad-green)', color: 'white', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
                     Done
                  </button>
