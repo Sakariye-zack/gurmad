@@ -516,6 +516,15 @@ export const api = {
   deleteCashout: (id) => fetch(`${API_BASE_URL}/cashouts/${id}`, {
     method: 'DELETE', headers: getAuthHeaders()
   }).then(handleResponse),
+  uploadSignedCashout: (id, formData) => fetch(`${API_BASE_URL}/cashouts/${id}/upload-signed`, {
+    method: 'PUT', headers: getAuthHeaders(), body: formData
+  }).then(handleResponse),
+  approveCashout: (id) => fetch(`${API_BASE_URL}/cashouts/${id}/approve`, {
+    method: 'PUT', headers: getAuthHeaders()
+  }).then(handleResponse),
+  rejectCashout: (id, reason) => fetch(`${API_BASE_URL}/cashouts/${id}/reject`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ reason })
+  }).then(handleResponse),
 
   // User Management
   getUsers: () => fetch(`${API_BASE_URL}/users`, { headers: getAuthHeaders() }).then(handleResponse),

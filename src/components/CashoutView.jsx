@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Wallet, Search, CheckCircle2, AlertCircle, History, Calculator, Download, Trash2 } from 'lucide-react';
+import { Wallet, Search, CheckCircle2, AlertCircle, History, Calculator, Download, Trash2, Printer, Upload, XCircle, FileCheck2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../api';
 
@@ -25,6 +25,98 @@ const CashoutView = ({ currentUser }) => {
   // Settings for currency format
   const [settings, setSettings] = useState({});
   const [historySearch, setHistorySearch] = useState('');
+
+  // Signature workflow: print slip -> physical signatures (cashier + Gudoomiye) -> scan/upload ->
+  // Gudoomiye approves. uploadTargetId tracks which cashout the hidden file input is for.
+  const [uploadTargetId, setUploadTargetId] = useState(null);
+  const [isUploadingSigned, setIsUploadingSigned] = useState(false);
+  const [rejectModal, setRejectModal] = useState(null); // cashout being rejected
+  const [rejectReason, setRejectReason] = useState('');
+  const canApprove = currentUser?.role === 'admin' || currentUser?.role === 'gudoomiye';
+
+  const printCashoutSlip = (co) => {
+    const win = window.open('', '_blank', 'width=480,height=700');
+    if (!win) { toast.error('Please allow pop-ups to print the slip'); return; }
+    win.document.write(`
+      <html><head><title>Cashout Slip #${co.id}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 2rem; color: #0f172a; }
+        h1 { font-size: 1.2rem; margin: 0 0 4px; }
+        .sub { color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        td { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+        td:first-child { color: #64748b; } td:last-child { text-align: right; font-weight: 700; }
+        .sig { margin-top: 3.5rem; display: flex; justify-content: space-between; }
+        .sig div { width: 45%; text-align: center; }
+        .line { border-top: 1px solid #0f172a; margin-top: 3rem; padding-top: 6px; font-size: 0.85rem; }
+      </style></head>
+      <body>
+        <h1>GURMAD Waste Management — Cashout Slip</h1>
+        <div class="sub">Cashout #${co.id} — ${new Date(co.created_at).toLocaleString()}</div>
+        <table>
+          <tr><td>Cashier</td><td>${co.cashier_name || co.collector_name || '-'}</td></tr>
+          <tr><td>Zone</td><td>${co.zone || '-'}</td></tr>
+          <tr><td>Expected</td><td>$${parseFloat(co.expected_amount).toFixed(2)}</td></tr>
+          <tr><td>Actual</td><td>$${parseFloat(co.actual_amount).toFixed(2)}</td></tr>
+          <tr><td>Shortage / Overage</td><td>$${parseFloat(co.shortage || 0).toFixed(2)}</td></tr>
+          <tr><td>Cash</td><td>$${parseFloat(co.cash_amount).toFixed(2)}</td></tr>
+          <tr><td>ZAAD</td><td>$${parseFloat(co.zaad_amount).toFixed(2)}</td></tr>
+          <tr><td>eDahab</td><td>$${parseFloat(co.edahab_amount).toFixed(2)}</td></tr>
+          <tr><td>SLSH</td><td>${parseFloat(co.slsh_amount).toLocaleString()}</td></tr>
+          ${co.reason ? `<tr><td>Reason</td><td>${co.reason}</td></tr>` : ''}
+        </table>
+        <div class="sig">
+          <div class="line">Cashier Signature</div>
+          <div class="line">Gudoomiye Signature</div>
+        </div>
+      </body></html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  };
+
+  const handleUploadSignedFile = async (e, cashoutId) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingSigned(true);
+    try {
+      const formData = new FormData();
+      formData.append('signed_document', file);
+      const updated = await api.uploadSignedCashout(cashoutId, formData);
+      setCashouts(prev => prev.map(c => c.id === updated.id ? updated : c));
+      toast.success('Signed slip uploaded');
+    } catch (err) {
+      toast.error(err.message || 'Failed to upload signed slip');
+    } finally {
+      setIsUploadingSigned(false);
+      setUploadTargetId(null);
+    }
+  };
+
+  const handleApproveCashout = async (id) => {
+    try {
+      const updated = await api.approveCashout(id);
+      setCashouts(prev => prev.map(c => c.id === updated.id ? updated : c));
+      toast.success('Cashout approved');
+    } catch (err) {
+      toast.error(err.message || 'Failed to approve cashout');
+    }
+  };
+
+  const handleRejectCashout = async (e) => {
+    e.preventDefault();
+    if (!rejectReason.trim()) return toast.error('A reason is required');
+    try {
+      const updated = await api.rejectCashout(rejectModal.id, rejectReason);
+      setCashouts(prev => prev.map(c => c.id === updated.id ? updated : c));
+      toast.success('Cashout rejected');
+      setRejectModal(null);
+      setRejectReason('');
+    } catch (err) {
+      toast.error(err.message || 'Failed to reject cashout');
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -503,13 +595,14 @@ const CashoutView = ({ currentUser }) => {
                   <th style={{ ...thStyle, textAlign: 'right' }}>Actual</th>
                   <th style={{ ...thStyle, textAlign: 'right' }}>Shortage / Overage</th>
                   <th style={thStyle}>Processed By</th>
-                  {currentUser?.role === 'admin' && <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>}
+                  <th style={thStyle}>Status</th>
+                  <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCashouts.length === 0 ? (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
+                    <td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                       No cashout history found.
                     </td>
                   </tr>
@@ -549,13 +642,63 @@ const CashoutView = ({ currentUser }) => {
                         )}
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{co.processed_by}</td>
-                      {currentUser?.role === 'admin' && (
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>
-                          <button onClick={() => handleDeleteCashout(co.id)} title="Delete" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#dc2626', display: 'inline-flex' }}>
-                            <Trash2 size={14} />
+                      <td style={tdStyle}>
+                        {(() => {
+                          const sc = { 'Pending Approval': { bg: '#fffbeb', fg: '#b45309' }, 'Approved': { bg: '#f0fdf4', fg: '#15803d' }, 'Rejected': { bg: '#fef2f2', fg: '#dc2626' } }[co.status] || { bg: '#f1f5f9', fg: '#64748b' };
+                          return (
+                            <div>
+                              <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '0.72rem', fontWeight: 800, backgroundColor: sc.bg, color: sc.fg, whiteSpace: 'nowrap' }}>
+                                {(co.status || 'Pending Approval').toUpperCase()}
+                              </span>
+                              {co.signed_document && (
+                                <div style={{ marginTop: '4px' }}>
+                                  <a href={`/api/uploads/${co.signed_document}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.72rem', color: '#0ea5e9', display: 'inline-flex', alignItems: 'center', gap: '3px', textDecoration: 'none' }}>
+                                    <FileCheck2 size={11} /> Signed slip
+                                  </a>
+                                </div>
+                              )}
+                              {co.status === 'Rejected' && co.rejection_reason && (
+                                <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '3px', maxWidth: '160px' }}>{co.rejection_reason}</div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <button onClick={() => printCashoutSlip(co)} title="Print Slip" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#475569', display: 'inline-flex' }}>
+                            <Printer size={14} />
                           </button>
-                        </td>
-                      )}
+                          {(co.status === 'Pending Approval' || !co.status) && !co.signed_document && (
+                            <>
+                              <input type="file" accept="image/*,.pdf" id={`sig-upload-${co.id}`} style={{ display: 'none' }} onChange={(e) => handleUploadSignedFile(e, co.id)} disabled={isUploadingSigned} />
+                              <label htmlFor={`sig-upload-${co.id}`} title="Upload Signed Slip" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#1d4ed8', display: 'inline-flex' }}>
+                                <Upload size={14} />
+                              </label>
+                            </>
+                          )}
+                          {canApprove && (co.status === 'Pending Approval' || !co.status) && (
+                            <>
+                              <button
+                                onClick={() => handleApproveCashout(co.id)}
+                                disabled={!co.signed_document}
+                                title={co.signed_document ? 'Approve' : 'Upload the signed slip first'}
+                                style={{ background: co.signed_document ? '#f0fdf4' : '#f8fafc', border: `1px solid ${co.signed_document ? '#bbf7d0' : '#e2e8f0'}`, borderRadius: '6px', padding: '5px', cursor: co.signed_document ? 'pointer' : 'not-allowed', color: co.signed_document ? '#15803d' : '#cbd5e1', display: 'inline-flex' }}
+                              >
+                                <CheckCircle2 size={14} />
+                              </button>
+                              <button onClick={() => setRejectModal(co)} title="Reject" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#dc2626', display: 'inline-flex' }}>
+                                <XCircle size={14} />
+                              </button>
+                            </>
+                          )}
+                          {currentUser?.role === 'admin' && co.status !== 'Approved' && (
+                            <button onClick={() => handleDeleteCashout(co.id)} title="Delete" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', padding: '5px', cursor: 'pointer', color: '#dc2626', display: 'inline-flex' }}>
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -565,6 +708,27 @@ const CashoutView = ({ currentUser }) => {
           </div>
         )}
       </div>
+
+      {rejectModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '400px', borderTop: '4px solid #ef4444' }}>
+            <h3 style={{ marginBottom: '0.3rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <XCircle size={20} color="#ef4444" /> Reject Cashout
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.3rem' }}>#{rejectModal.id} — {rejectModal.cashier_name || rejectModal.collector_name}</p>
+            <form onSubmit={handleRejectCashout} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Reason for rejection</label>
+                <textarea required value={rejectReason} onChange={e => setRejectReason(e.target.value)} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #e2e8f0', minHeight: '80px', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => { setRejectModal(null); setRejectReason(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" style={{ padding: '0.65rem 1.3rem', borderRadius: '8px', border: 'none', background: '#ef4444', color: 'white', fontWeight: 700, cursor: 'pointer' }}>Reject</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

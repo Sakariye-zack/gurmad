@@ -218,6 +218,22 @@ const runMigrations = async () => {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS replied_at TIMESTAMP;
     `);
 
+    // Cashout signature workflow: the proposal docs specify Cashier -> submit cashout ->
+    // Chairman/Gudoomiye reviews reconciliation -> approve/reject -> closed. Gurmad's own
+    // process adds a physical step in between: the cashout slip is printed, signed on paper by
+    // both the cashier and the Gudoomiye, then the signed paper is scanned/photographed and
+    // re-uploaded as proof before the Gudoomiye can approve it in the system.
+    await db.query(`
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Pending Approval';
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS signed_document VARCHAR(255);
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id);
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP;
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+    `);
+    // Existing cashouts predate the workflow — treat them as already-settled history rather than
+    // suddenly blocking on a signed document they were never asked for.
+    await db.query(`UPDATE cashouts SET status = 'Approved' WHERE status = 'Pending Approval' AND created_at < NOW() - INTERVAL '1 minute'`);
+
     // Expenses: an approval workflow (a cashier's logged expense starts Pending until an admin
     // approves it, an admin's own entry is auto-approved) plus who logged it, so a wrong entry
     // can be corrected/removed instead of being a permanent, unreviewed line in the ledger.
@@ -3938,6 +3954,9 @@ app.put('/api/cashouts/:id', checkRole(['admin']), async (req, res) => {
   try {
     const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
+    if (existing.rows[0].status === 'Approved') {
+      return res.status(400).json({ error: 'Cannot edit an approved cashout — it is a finalized financial record' });
+    }
     const result = await db.query(
       `UPDATE cashouts SET expected_amount = $1, actual_amount = $2, zaad_amount = $3, edahab_amount = $4,
         cash_amount = $5, slsh_amount = $6, shortage = $7, reason = $8 WHERE id = $9 RETURNING *`,
@@ -3954,9 +3973,79 @@ app.delete('/api/cashouts/:id', checkRole(['admin']), async (req, res) => {
   try {
     const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
+    // A Gudoomiye-approved cashout is a finalized financial record — deletable while still
+    // Pending/Rejected (correcting a mistake before it's closed), but not once approved.
+    if (existing.rows[0].status === 'Approved') {
+      return res.status(400).json({ error: 'Cannot delete an approved cashout — it is a finalized financial record' });
+    }
     await db.query('DELETE FROM cashouts WHERE id = $1', [req.params.id]);
     await logAudit(req, 'DELETE', 'cashouts', req.params.id, existing.rows[0], null);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Physical signature step: after the cashout slip is printed and signed on paper by both the
+// cashier and the Gudoomiye, the scanned/photographed copy is uploaded here as proof — required
+// before the Gudoomiye can approve the cashout (see the check in the approve route below).
+app.put('/api/cashouts/:id/upload-signed', requirePermission('cashout', 'create'), uploadDocument.single('signed_document'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  try {
+    const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
+    const result = await db.query(
+      'UPDATE cashouts SET signed_document = $1 WHERE id = $2 RETURNING *',
+      [req.file.filename, req.params.id]
+    );
+    await logAudit(req, 'UPLOAD_SIGNED', 'cashouts', result.rows[0].id, existing.rows[0], result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Gudoomiye (or admin) approval — the actual "Chairman Cashout Approval" step from the proposal.
+// Blocked until the signed paper has been uploaded, so the digital approval always has a
+// physical signature behind it, not just a database click.
+app.put('/api/cashouts/:id/approve', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  try {
+    const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
+    const cashout = existing.rows[0];
+    if (req.user.role.toLowerCase() === 'gudoomiye' && cashout.zone !== req.user.zone) {
+      return res.status(403).json({ error: 'This cashout is outside your zone' });
+    }
+    if (!cashout.signed_document) {
+      return res.status(400).json({ error: 'Upload the signed cashout slip before approving' });
+    }
+    const result = await db.query(
+      "UPDATE cashouts SET status = 'Approved', approved_by = $1, approved_at = NOW(), rejection_reason = NULL WHERE id = $2 RETURNING *",
+      [req.user.id, req.params.id]
+    );
+    await logAudit(req, 'APPROVE', 'cashouts', result.rows[0].id, cashout, result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/cashouts/:id/reject', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  const { reason } = req.body;
+  if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required to reject a cashout' });
+  try {
+    const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
+    const cashout = existing.rows[0];
+    if (req.user.role.toLowerCase() === 'gudoomiye' && cashout.zone !== req.user.zone) {
+      return res.status(403).json({ error: 'This cashout is outside your zone' });
+    }
+    const result = await db.query(
+      "UPDATE cashouts SET status = 'Rejected', approved_by = $1, approved_at = NOW(), rejection_reason = $2 WHERE id = $3 RETURNING *",
+      [req.user.id, reason.trim(), req.params.id]
+    );
+    await logAudit(req, 'REJECT', 'cashouts', result.rows[0].id, cashout, result.rows[0]);
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
