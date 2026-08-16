@@ -107,6 +107,32 @@ const STRINGS = {
   my_collector: { so: 'Qaadahayga', en: 'My Collector' },
   call_collector: { so: 'Wac Qaadaha', en: 'Call Collector' },
   no_phone_on_file: { so: 'Lambarka taleefanka lama diiwaan gelin', en: 'No phone number on file' },
+  account: { so: 'Akoonka', en: 'Account' },
+  account_info: { so: 'Xogta Akoonka', en: 'Account Info' },
+  change_password: { so: 'Beddel Password', en: 'Change Password' },
+  request_change: { so: 'Codso Isbeddel Xog', en: 'Request Profile Change' },
+  help_faq: { so: 'Caawimo / Su’aalo Badanaa La Weydiiyo', en: 'Help / FAQ' },
+  filter_all: { so: 'Dhammaan', en: 'All' },
+  filter_paid: { so: 'La Bixiyay', en: 'Paid' },
+  filter_unpaid: { so: 'Aan La Bixin', en: 'Unpaid' },
+  download_statement: { so: 'Soo Deji Xisaabta (CSV)', en: 'Download Statement (CSV)' },
+  no_records_filter: { so: 'Wax diiwaan ah lagama helin.', en: 'No records match this filter.' },
+  edit_request_desc: { so: 'Haddii cinwaankaaga ama lambarka telefoonkaaga uu beddelmay, halkan ka codso — shirkaddu way eegi doontaa waana ay hubin doontaa ka hor inta aysan wax beddelin.', en: "If your address or phone number has changed, request it here — we'll review and confirm before updating anything." },
+  new_phone: { so: 'Lambarka Telefoonka Cusub', en: 'New Phone Number' },
+  new_area: { so: 'Aagga Cusub', en: 'New Area' },
+  new_house: { so: 'Guriga Cusub (Lambarka)', en: 'New House Number' },
+  note_optional: { so: 'Faahfaahin Dheeraad ah (Ikhtiyaari)', en: 'Additional Notes (Optional)' },
+  submit_request: { so: 'Dir Codsiga', en: 'Submit Request' },
+  edit_request_sent: { so: 'Codsigaaga waa la diray. Shirkaddu way la soo xiriiri doontaa.', en: "Your request has been sent. We'll follow up with you." },
+  edit_request_failed: { so: 'Codsiga lama diri karin', en: 'Failed to submit request' },
+  faq_q1: { so: 'Sideen u bixiyaa lacagta?', en: 'How do I pay my bill?' },
+  faq_a1: { so: 'Waxaad ku bixin kartaa qaadaha marka uu yimaado (Cash), ama nala soo wac si aad u hesho lambarrada ZAAD/eDahab.', en: "Pay your collector in cash when they arrive, or call us for ZAAD/eDahab payment numbers." },
+  faq_q2: { so: 'Goorma ayaa qashinkayga la qaadi doonaa?', en: 'When will my trash be collected?' },
+  faq_a2: { so: 'Booqashada xigta waxaad ka arki kartaa bogga hore ee “Guriga”, ee ku salaysan jadwalka aagga (route) aad ku nooshahay.', en: "Check the 'Home' tab for your Next Pickup — it's based on your zone's route schedule." },
+  faq_q3: { so: 'Sideen u soo wariyaa dhibaato?', en: 'How do I report a problem?' },
+  faq_a3: { so: 'Aad u tab-ka “Taageero” oo riix “Cusub” si aad u soo dirto cabasho, sawir haddii loo baahdo.', en: "Go to the 'Support' tab and tap 'New' to submit a complaint, with a photo if needed." },
+  faq_q4: { so: 'Sideen u beddelaa cinwaankayga ama lambarkayga?', en: 'How do I update my address or phone number?' },
+  faq_a4: { so: 'Ka riix Akoonka (magacaaga kore) kadibna “Codso Isbeddel Xog”.', en: "Tap Account (your name up top) then 'Request Profile Change'." },
 };
 // t(key, lang) looks up STRINGS[key][lang]; falls back to the key itself if missing so a typo
 // shows up as visible mismatched text instead of silently rendering blank.
@@ -168,6 +194,13 @@ const CustomerPortalApp = () => {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [isChangingPw, setIsChangingPw] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const [showEditRequest, setShowEditRequest] = useState(false);
+  const [editRequestForm, setEditRequestForm] = useState({ phone: '', area: '', house_no: '', note: '' });
+  const [isSubmittingEditRequest, setIsSubmittingEditRequest] = useState(false);
+  const [showFAQ, setShowFAQ] = useState(false);
+  const [openFAQIndex, setOpenFAQIndex] = useState(null);
+  const [paymentsFilter, setPaymentsFilter] = useState('all');
   const [companyLogo, setCompanyLogo] = useState('');
   const [logoError, setLogoError] = useState(false);
   const [company, setCompany] = useState({ name: 'Gurmad Waste Management', phone: '', email: '' });
@@ -456,6 +489,55 @@ const CustomerPortalApp = () => {
     }
   };
 
+  // Profile-change requests deliberately don't write straight to the customer record — updating
+  // address/phone is exactly the kind of change that should go through staff review first (same
+  // segregation-of-duties idea used elsewhere in this app). Routed through the existing
+  // complaints inbox rather than a new table/route, so it lands wherever staff already handle
+  // customer-submitted items, tagged clearly so it doesn't get mistaken for a service complaint.
+  const handleEditRequestSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmittingEditRequest(true);
+    try {
+      const parts = [];
+      if (editRequestForm.phone) parts.push(`New phone: ${editRequestForm.phone}`);
+      if (editRequestForm.area) parts.push(`New area: ${editRequestForm.area}`);
+      if (editRequestForm.house_no) parts.push(`New house #: ${editRequestForm.house_no}`);
+      if (editRequestForm.note) parts.push(`Note: ${editRequestForm.note}`);
+      const formData = new FormData();
+      formData.append('title', 'Profile Change Request');
+      formData.append('description', `Customer requests the following update(s):\n${parts.join('\n')}`);
+      await api.customerPortal.addComplaint(formData);
+      toast.success(t('edit_request_sent'));
+      setShowEditRequest(false);
+      setEditRequestForm({ phone: '', area: '', house_no: '', note: '' });
+    } catch (err) {
+      toast.error(t('edit_request_failed'));
+    } finally {
+      setIsSubmittingEditRequest(false);
+    }
+  };
+
+  const paymentsFiltered = payments.filter(p => paymentsFilter === 'all' ? true : paymentsFilter === 'paid' ? p.status === 'Paid' : p.status !== 'Paid');
+
+  // Client-side CSV export of the full billing history (all invoices, paid and unpaid) — a real
+  // downloadable file via a Blob + object URL, not a fake button.
+  const downloadStatementCSV = () => {
+    const header = ['Date', 'Amount', 'Method', 'Status'];
+    const rows = payments.map(p => [new Date(p.created_at).toLocaleDateString(), parseFloat(p.amount).toFixed(2), p.payment_method || '', p.status]);
+    const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Statement-${customer.name || 'customer'}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const FAQ_ITEMS = ['faq_q1', 'faq_q2', 'faq_q3', 'faq_q4'];
+
   const outstandingBalance = payments.filter(p => p.status === 'Unpaid').reduce((sum, p) => sum + (parseFloat(p.debt_amount) || parseFloat(p.amount) || 0), 0);
   const lastCollection = collections.find(c => c.collected && c.collected_at);
   const isPaid = customer?.status === 'Paid';
@@ -653,7 +735,7 @@ const CustomerPortalApp = () => {
               </button>
               <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
             </div>
-            <button onClick={() => setShowChangePassword(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+            <button onClick={() => setShowAccount(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>{t('welcome_back')}</div>
               <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a' }}>{customer.name}</div>
             </button>
@@ -822,12 +904,35 @@ const CustomerPortalApp = () => {
             </div>
           ) : tab === 'payments' ? (
             <div>
-              <h3 style={{ fontWeight: 900, marginBottom: '1rem', color: '#0f172a', fontSize: '1.15rem' }}>{t('payment_history')}</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.9rem' }}>
+                <h3 style={{ fontWeight: 900, margin: 0, color: '#0f172a', fontSize: '1.15rem' }}>{t('payment_history')}</h3>
+                {payments.length > 0 && (
+                  <button className="gp-btn" onClick={downloadStatementCSV} title={t('download_statement')} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '0.45rem 0.7rem', borderRadius: '10px', border: '1px solid #f1f5f9', background: 'white', color: '#475569', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer' }}>
+                    <Download size={12} /> CSV
+                  </button>
+                )}
+              </div>
+              {payments.length > 0 && (
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '1rem' }}>
+                  {['all', 'paid', 'unpaid'].map(f => (
+                    <button key={f} onClick={() => setPaymentsFilter(f)} style={{
+                      padding: '0.45rem 0.9rem', borderRadius: '100px', fontSize: '0.76rem', fontWeight: 800, cursor: 'pointer',
+                      border: paymentsFilter === f ? `1px solid ${GREEN}` : '1px solid #e2e8f0',
+                      background: paymentsFilter === f ? GREEN : 'white',
+                      color: paymentsFilter === f ? 'white' : '#64748b'
+                    }}>
+                      {f === 'all' ? t('filter_all') : f === 'paid' ? t('filter_paid') : t('filter_unpaid')}
+                    </button>
+                  ))}
+                </div>
+              )}
               {payments.length === 0 ? (
                 <Card><EmptyState icon={Inbox} text={t('no_payment_history')} /></Card>
+              ) : paymentsFiltered.length === 0 ? (
+                <Card><EmptyState icon={Inbox} text={t('no_records_filter')} /></Card>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
-                  {payments.map(p => (
+                  {paymentsFiltered.map(p => (
                     <Card key={p.id} style={{ padding: '1rem 1.1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
                         <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: p.status === 'Paid' ? '#f0fdf4' : '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1017,6 +1122,110 @@ const CustomerPortalApp = () => {
                   {isChangingPw ? t('changing') : t('change_password_title')}
                 </button>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Account panel — hub for everything account-related (previously tapping the customer's
+            name went straight to Change Password with no other account actions available). */}
+        {showAccount && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 20, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setShowAccount(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
+              <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <User size={18} color={GREEN} /> {t('account')}
+                </div>
+                <button onClick={() => setShowAccount(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}><X size={15} /></button>
+              </div>
+              <div style={{ padding: '1.3rem', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                <Card style={{ padding: '1rem 1.1rem' }}>
+                  <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.95rem' }}>{customer.name}</div>
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '3px' }}>{customer.phone}</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>{t('house')} {customer.house_no || '—'}, {customer.area || '—'}</div>
+                </Card>
+                {[
+                  { icon: KeyRound, label: t('change_password'), action: () => { setShowAccount(false); setShowChangePassword(true); } },
+                  { icon: Tag, label: t('request_change'), action: () => { setShowAccount(false); setShowEditRequest(true); } },
+                  { icon: HelpCircle, label: t('help_faq'), action: () => { setShowAccount(false); setShowFAQ(true); } },
+                ].map((item, i) => (
+                  <button key={i} className="gp-btn" onClick={item.action} style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '1rem 1.1rem', borderRadius: '16px', border: '1px solid #f1f5f9', background: 'white', cursor: 'pointer', textAlign: 'left' }}>
+                    <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <item.icon size={15} color={GREEN} />
+                    </div>
+                    <span style={{ fontWeight: 700, color: '#334155', fontSize: '0.88rem', flex: 1 }}>{item.label}</span>
+                    <ChevronRight size={16} color="#cbd5e1" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Profile-change request panel */}
+        {showEditRequest && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 20, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setShowEditRequest(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '26px 26px 0 0', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
+              <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Tag size={18} color={GREEN} /> {t('request_change')}
+                </div>
+                <button onClick={() => setShowEditRequest(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}><X size={15} /></button>
+              </div>
+              <form onSubmit={handleEditRequestSubmit} style={{ padding: '1.3rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: 1.5 }}>{t('edit_request_desc')}</div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('new_phone')}</label>
+                  <input value={editRequestForm.phone} onChange={e => setEditRequestForm({...editRequestForm, phone: e.target.value})} placeholder={customer.phone} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('new_area')}</label>
+                    <input value={editRequestForm.area} onChange={e => setEditRequestForm({...editRequestForm, area: e.target.value})} placeholder={customer.area} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('new_house')}</label>
+                    <input value={editRequestForm.house_no} onChange={e => setEditRequestForm({...editRequestForm, house_no: e.target.value})} placeholder={customer.house_no} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('note_optional')}</label>
+                  <textarea value={editRequestForm.note} onChange={e => setEditRequestForm({...editRequestForm, note: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', minHeight: '70px', resize: 'vertical', boxSizing: 'border-box', fontSize: '0.9rem', fontFamily: 'inherit', background: '#f8fafc' }} />
+                </div>
+                <button type="submit" disabled={isSubmittingEditRequest} style={{ padding: '0.9rem', borderRadius: '16px', border: 'none', background: isSubmittingEditRequest ? '#86c976' : GREEN, color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: isSubmittingEditRequest ? 'default' : 'pointer', marginTop: '0.3rem' }}>
+                  {isSubmittingEditRequest ? t('changing') : t('submit_request')}
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* FAQ / Help panel */}
+        {showFAQ && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 20, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setShowFAQ(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', maxHeight: '82%', display: 'flex', flexDirection: 'column', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
+              <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <HelpCircle size={18} color={GREEN} /> {t('help_faq')}
+                </div>
+                <button onClick={() => setShowFAQ(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}><X size={15} /></button>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '0.8rem 1.3rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {FAQ_ITEMS.map((qKey, i) => {
+                  const aKey = qKey.replace('_q', '_a');
+                  const isOpen = openFAQIndex === i;
+                  return (
+                    <Card key={qKey} style={{ padding: '0' }}>
+                      <button onClick={() => setOpenFAQIndex(isOpen ? null : i)} style={{ width: '100%', padding: '0.95rem 1.1rem', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', textAlign: 'left' }}>
+                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.88rem' }}>{t(qKey)}</span>
+                        <ChevronRight size={16} color="#94a3b8" style={{ transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+                      </button>
+                      {isOpen && (
+                        <div style={{ padding: '0 1.1rem 1rem', fontSize: '0.83rem', color: '#64748b', lineHeight: 1.55 }}>{t(aKey)}</div>
+                      )}
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
