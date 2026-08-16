@@ -462,6 +462,18 @@ const CustomerPortalApp = () => {
 
   const inputStyle = { width: '100%', padding: '0.9rem 0.9rem 0.9rem 2.7rem', borderRadius: '16px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '1rem', outline: 'none', transition: 'border-color 0.15s', background: '#f8fafc' };
 
+  // Zones set their visiting time via a 24h <input type="time"> (e.g. "08:00") in the Route
+  // Calendar; older zones may still have a free-text value like "8:00 AM". Format the former
+  // nicely for display and pass the latter through unchanged.
+  const formatPickupTime = (value) => {
+    const match = /^(\d{1,2}):(\d{2})$/.exec((value || '').trim());
+    if (!match) return value;
+    let [, h, m] = match.map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+  };
+
   // ============ LOGIN SCREEN ============
   if (!customer) {
     return (
@@ -748,7 +760,7 @@ const CustomerPortalApp = () => {
                     <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>{t('next_pickup')}</div>
                     <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
                       {customer.next_pickup.isToday ? t('today') : new Date(customer.next_pickup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-                      {customer.next_pickup.time && <span style={{ color: '#94a3b8', fontWeight: 600 }}> · {customer.next_pickup.time}</span>}
+                      {customer.next_pickup.time && <span style={{ color: '#94a3b8', fontWeight: 600 }}> · {formatPickupTime(customer.next_pickup.time)}</span>}
                     </div>
                   </div>
                 </Card>

@@ -37,6 +37,24 @@ L.Icon.Default.mergeOptions({
 });
 
 
+// Zones created before the Route Calendar's native <input type="time"> existed may have
+// collection_time stored as free text like "8:00 AM" — that format doesn't populate a time
+// input (browsers just show it blank), so convert to 24h "HH:MM" when opening the edit form.
+// Already-24h values ("08:00") and empty/unparseable values pass through unchanged.
+const to24hTime = (value) => {
+  if (!value) return '';
+  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(value.trim());
+  if (!match) return value;
+  let [, h, m, ampm] = match;
+  h = parseInt(h, 10);
+  if (ampm) {
+    ampm = ampm.toUpperCase();
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+  }
+  return `${String(h).padStart(2, '0')}:${m}`;
+};
+
 const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [trucks, setTrucks] = useState([]);
@@ -200,7 +218,7 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                     <span style={{ backgroundColor: '#eff6ff', color: '#3b82f6', padding: '4px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700 }}>{z.truck_plate || z.assigned_truck || 'None'}</span>
                   </td>
                   <td style={{ padding: '1.2rem 1.5rem', textAlign: 'right' }}>
-                    <button onClick={() => { setEditingZone(z); setNewZone(z); setIsModalOpen(true); }} style={{ color: '#64748b', background: '#f1f5f9', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer' }}><Edit3 size={16} /></button>
+                    <button onClick={() => { setEditingZone(z); setNewZone({ ...z, collection_time: to24hTime(z.collection_time) }); setIsModalOpen(true); }} style={{ color: '#64748b', background: '#f1f5f9', border: 'none', padding: '6px', borderRadius: '6px', cursor: 'pointer' }}><Edit3 size={16} /></button>
                   </td>
                 </tr>
               ))}
@@ -492,9 +510,15 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                   {trucks.map(t => <option key={t.id} value={t.id}>{t.plate_number}</option>)}
                 </select>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', fontWeight: 700, color: '#64748b' }}>Collection Days</label>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {/* Route Calendar — pick which days of the week the truck visits this zone and
+                    at what time, so the schedule feeds both the collector's task generation and
+                    the "Next Pickup" shown to customers in the portal. One time applies to every
+                    selected day (the route runs on a fixed daily time, not per-day times). */}
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '1rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '10px', fontSize: '0.85rem', fontWeight: 800, color: '#334155' }}>
+                    📅 Route Calendar — Collection Days
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
                     {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => {
                       const selectedDays = (newZone.collection_days || '').split(',').map(d => d.trim()).filter(Boolean);
                       const isSelected = selectedDays.includes(day);
@@ -507,19 +531,36 @@ const FleetView = ({ searchQuery = '', initialTab = 'zones' }) => {
                             setNewZone({ ...newZone, collection_days: next.join(',') });
                           }}
                           style={{
-                            padding: '0.5rem 0.8rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
+                            padding: '0.6rem 0.2rem', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
                             border: isSelected ? '1px solid var(--gurmad-green)' : '1px solid #e2e8f0',
                             backgroundColor: isSelected ? 'var(--gurmad-green)' : 'white',
-                            color: isSelected ? 'white' : '#475569'
+                            color: isSelected ? 'white' : '#94a3b8',
+                            boxShadow: isSelected ? '0 4px 10px rgba(63,174,42,0.25)' : 'none',
+                            transition: 'all 0.12s ease'
                           }}
                         >
+                          {isSelected && <span style={{ fontSize: '0.6rem' }}>✓</span>}
                           {day}
                         </button>
                       );
                     })}
                   </div>
+
+                  <label style={{ display: 'block', margin: '14px 0 6px', fontSize: '0.85rem', fontWeight: 800, color: '#334155' }}>Visiting Time</label>
+                  <input
+                    type="time"
+                    value={newZone.collection_time || ''}
+                    onChange={e => setNewZone({ ...newZone, collection_time: e.target.value })}
+                    style={{ width: '100%', padding: '0.7rem', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.9rem', background: 'white' }}
+                  />
+
+                  {(newZone.collection_days || newZone.collection_time) && (
+                    <div style={{ marginTop: '10px', fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>
+                      Route runs{newZone.collection_days ? ` on ${newZone.collection_days}` : ''}{newZone.collection_time ? ` at ${newZone.collection_time}` : ''}
+                    </div>
+                  )}
                 </div>
-                <input placeholder="Collection Time (e.g. 8:00 AM)" value={newZone.collection_time || ''} onChange={e => setNewZone({...newZone, collection_time: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
 
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                   <button type="button" onClick={() => setIsModalOpen(false)} style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: 'none', background: '#f1f5f9' }}>Cancel</button>
