@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { LogOut, Truck, Wallet, Users, Receipt, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
+import { api } from '../api';
+import DashboardView from './DashboardView';
 import MyRouteTodayView from './MyRouteTodayView';
 import TodaysCollectionsView from './TodaysCollectionsView';
 import BillingView from './BillingView';
@@ -20,6 +22,7 @@ const GREEN_DARK = '#2d8c1e';
 const PHONE_WIDTH = '480px';
 
 const TAB_META = {
+  home: { label: 'Home', icon: LayoutDashboard, title: 'Overview', subtitle: 'Your performance and stats at a glance.' },
   route: { label: 'My Route', icon: Truck, title: "Today's Route", subtitle: 'Every stop on your route today, in order.' },
   collections: { label: 'Collections', icon: Users, title: "Today's Collections", subtitle: "Customers your paired collector is working on today." },
   billing: { label: 'Collect Payment', icon: Receipt, title: 'Collect Payment', subtitle: 'Record cash, ZAAD, eDahab or split payments.' },
@@ -28,9 +31,12 @@ const TAB_META = {
 
 const StaffPortalApp = ({ currentUser, onLogout }) => {
   const isCollector = currentUser?.role === 'collector';
+  // 'home' surfaces the same stats/overview DashboardView used to show these roles on the
+  // desktop app's default screen ('My Performance' for collector, 'Financial Overview' for
+  // cashier) — nothing from before is lost just because the sidebar is gone.
   const tabs = isCollector
-    ? ['route']
-    : ['collections', 'billing', 'cashout'];
+    ? ['home', 'route']
+    : ['home', 'collections', 'billing', 'cashout'];
   const [tab, setTab] = useState(tabs[0]);
   const [billingPrefillPhone, setBillingPrefillPhone] = useState(null);
   const [isMobileViewport] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 480);
@@ -38,7 +44,27 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
   const name = currentUser?.full_name || currentUser?.username || '';
   const initial = name[0]?.toUpperCase() || (isCollector ? 'C' : '$');
 
+  // Only DashboardView's collector branch needs this (its 'My Performance' stats are computed
+  // from myTodayRoute) — same data MyRouteTodayView fetches for itself, kept as a separate poll
+  // here just like the desktop App.jsx used to do for the same reason (DashboardView doesn't fetch
+  // it internally, it's always been passed in as a prop).
+  const [myTodayRoute, setMyTodayRoute] = useState([]);
+  useEffect(() => {
+    if (!isCollector) return;
+    const fetchRoute = () => api.getMyTodayRoute().then(data => setMyTodayRoute(data.customers || [])).catch(() => {});
+    fetchRoute();
+    const interval = setInterval(fetchRoute, 60000);
+    return () => clearInterval(interval);
+  }, [isCollector]);
+
   const renderContent = () => {
+    if (tab === 'home') {
+      return (
+        <div style={{ overflowX: 'auto' }}>
+          <DashboardView currentUser={currentUser} myTodayRoute={myTodayRoute} />
+        </div>
+      );
+    }
     if (isCollector) return <MyRouteTodayView />;
     if (tab === 'collections') {
       return (

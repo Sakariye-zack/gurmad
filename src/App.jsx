@@ -59,6 +59,7 @@ import MyRouteTodayView from './components/MyRouteTodayView';
 import CashoutView from './components/CashoutView';
 import CustomerPortalApp from './components/CustomerPortalApp';
 import StaffPortalApp from './components/StaffPortalApp';
+import StaffPortalGate from './components/StaffPortalGate';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 
@@ -69,6 +70,15 @@ const App = () => {
   // from the staff SPA below rather than threading customer state through it.
   if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) {
     return <CustomerPortalApp />;
+  }
+
+  // Staff Portal gets its own dedicated URL too, mirroring /portal — Collector and Cashier
+  // accounts sign in through a phone-friendly login screen here instead of the desktop
+  // "Admin Portal" card, then land straight on their job dashboard (StaffPortalGate handles the
+  // login/logged-in split and the same 'gurmadUser' localStorage key the main app uses, so a
+  // session started at either URL is recognized at the other).
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/staff')) {
+    return <StaffPortalGate />;
   }
 
   const { t, setLanguage, currentLanguage } = useLanguage();

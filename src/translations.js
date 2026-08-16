@@ -33,6 +33,7 @@ export const translations = {
     no_notifications: "You're all caught up!",
 
     // Dashboard
+    welcome_back: "Welcome back",
     system_overview: "System Overview",
     total_revenue: "Total Revenue",
     daily_collections: "Today's Collections",
@@ -125,6 +126,7 @@ export const translations = {
     no_notifications: "Ma jiraan ogeysiisyada cusub!",
 
     // Dashboard
+    welcome_back: "Ku soo dhawoow",
     system_overview: "Guud ahaan System-ka",
     total_revenue: "Wadarta Dakhliga",
     daily_collections: "Maanta La Qabtay",
