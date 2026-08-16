@@ -423,7 +423,13 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
         </div>
       )}
 
-      {/* Quick Actions Bar — zone_accountant is view-only, no create/log actions */}
+      {/* Quick Actions Bar — zone_accountant is view-only, no create/log actions. "Assign Task"
+          is admin/gudoomiye-only (task creation) — a cashier's role_permissions only grant them
+          tasks.view, so showing it here was offering an action they don't actually have the
+          right to do. Each button dispatches a 'switchTab' event — the desktop App.jsx listens
+          for it directly; the Staff Portal (cashier/collector's mobile app) listens for the same
+          event and maps it onto its own tab state, so these work in both places now instead of
+          silently doing nothing in the portal. */}
       {currentUser?.role !== 'collector' && currentUser?.role !== 'zone_accountant' && (
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
            <button onClick={() => window.dispatchEvent(new CustomEvent('switchTab', { detail: 'customers' }))} style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
@@ -432,9 +438,11 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
            <button onClick={() => window.dispatchEvent(new CustomEvent('switchTab', { detail: 'billing' }))} style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
              <FilePlus size={18} color="#3b82f6" /> Create Invoice
            </button>
-           <button onClick={() => window.dispatchEvent(new CustomEvent('switchTab', { detail: 'tasks' }))} style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-             <Briefcase size={18} color="#f97316" /> Assign Task
-           </button>
+           {currentUser?.role !== 'cashier' && (
+             <button onClick={() => window.dispatchEvent(new CustomEvent('switchTab', { detail: 'tasks' }))} style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+               <Briefcase size={18} color="#f97316" /> Assign Task
+             </button>
+           )}
            <button onClick={() => window.dispatchEvent(new CustomEvent('switchTab', { detail: 'expenses' }))} style={{ padding: '0.75rem 1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', backgroundColor: 'white', color: '#0f172a', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
              <Wallet size={18} color="#ef4444" /> Log Expense
            </button>

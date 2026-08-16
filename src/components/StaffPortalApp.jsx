@@ -83,6 +83,21 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
 
   const goTab = (id) => { setTab(id); setMoreView(null); };
 
+  // DashboardView's Quick Actions buttons (Add Customer / Create Invoice / Log Expense) dispatch
+  // a 'switchTab' window event — the desktop App.jsx listens for it directly, but nothing did in
+  // this portal, so those buttons were silently dead here. Maps the same event onto this portal's
+  // own tab/more-view state: destinations on the primary bar navigate directly, destinations
+  // tucked under "More" (cashier only) open there instead.
+  useEffect(() => {
+    const handler = (e) => {
+      const id = e.detail;
+      if (primaryTabs.includes(id)) { goTab(id); return; }
+      if (!isCollector && CASHIER_MORE.includes(id)) { setTab('more'); setMoreView(id); }
+    };
+    window.addEventListener('switchTab', handler);
+    return () => window.removeEventListener('switchTab', handler);
+  }, [isCollector]);
+
   // Desktop-oriented views (tables, multi-column forms, charts) are reused as-is inside a
   // horizontally-scrollable container rather than redesigned, so nothing overflows the phone
   // screen while every existing validation/audit-log path stays exactly as tested — money-
