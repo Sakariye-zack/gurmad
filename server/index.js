@@ -3097,18 +3097,31 @@ app.put('/api/payroll/:id', checkRole(['admin', 'cashier']), async (req, res) =>
 app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
     const isGudoomiye = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase());
+    const isCashier = req.user.role.toLowerCase() === 'cashier';
     const zone = req.user.zone;
+
+    // A cashier only has the right to see the financial picture of their own assigned zone(s)/
+    // paired collector(s) (Cashier Assignments) — not the whole company's revenue, same scoping
+    // getCashierScope already applies to their customers/invoices lists elsewhere.
+    let cashierZones = [], cashierCollectorIds = [];
+    if (isCashier) {
+      ({ zoneGroups: cashierZones, collectorIds: cashierCollectorIds } = await getCashierScope(req.user.id));
+    }
 
     const revenueRes = isGudoomiye
       ? await db.query("SELECT SUM(i.amount) FROM invoices i JOIN customers c ON i.customer_id = c.id WHERE i.status = 'Paid' AND c.zone = $1", [zone])
-      : await db.query("SELECT SUM(amount) FROM invoices WHERE status = 'Paid'");
+      : isCashier
+        ? await db.query("SELECT SUM(i.amount) FROM invoices i JOIN customers c ON i.customer_id = c.id WHERE i.status = 'Paid' AND (c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[]))", [cashierZones, cashierCollectorIds])
+        : await db.query("SELECT SUM(amount) FROM invoices WHERE status = 'Paid'");
     const customersRes = isGudoomiye
       ? await db.query("SELECT COUNT(*) FROM customers WHERE zone = $1", [zone])
-      : await db.query("SELECT COUNT(*) FROM customers");
-    // A collector's "Tasks Completed" must mean their own completed tasks, and a gudoomiye's
-    // must mean their own zone's — not the whole system's, otherwise every dashboard shows the
-    // same misleading company-wide number. tasks.route_name carries the zone group label
-    // (e.g. "Group1"), the same value stored on req.user.zone.
+      : isCashier
+        ? await db.query("SELECT COUNT(*) FROM customers WHERE zone = ANY($1::text[]) OR collector_id = ANY($2::int[])", [cashierZones, cashierCollectorIds])
+        : await db.query("SELECT COUNT(*) FROM customers");
+    // A collector's "Tasks Completed" must mean their own completed tasks, and a gudoomiye's/
+    // cashier's must mean their own zone's — not the whole system's, otherwise every dashboard
+    // shows the same misleading company-wide number. tasks.route_name carries the zone group
+    // label (e.g. "Group1"), the same value stored on req.user.zone / cashier_assignments.zone_group.
     const isCollector = req.user.role.toLowerCase() === 'collector';
     let tasksRes;
     if (isCollector) {
@@ -3123,19 +3136,30 @@ app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', '
         "SELECT COUNT(*) FROM tasks WHERE status = 'Completed' AND route_name = $1",
         [zone]
       );
+    } else if (isCashier) {
+      tasksRes = await db.query(
+        "SELECT COUNT(*) FROM tasks WHERE status = 'Completed' AND route_name = ANY($1::text[])",
+        [cashierZones]
+      );
     } else {
       tasksRes = await db.query("SELECT COUNT(*) FROM tasks WHERE status = 'Completed'");
     }
 
     // Expenses (fuel, salaries, etc.) have no per-zone attribution in the schema — showing the
-    // whole company's expense total on a zone manager's dashboard would be misleading, so a
-    // gudoomiye instead gets a stat that actually reflects their own zone: unpaid customers.
+    // whole company's expense total on a zone-scoped dashboard would be misleading, so a
+    // gudoomiye/cashier instead gets a stat that actually reflects their own zone: unpaid customers.
     let totalExpenses = 0;
     let zonePendingCustomers = 0;
     if (isGudoomiye) {
       const pendingRes = await db.query(
         "SELECT COUNT(*) FROM customers WHERE zone = $1 AND payment_status = 'Unpaid'",
         [zone]
+      );
+      zonePendingCustomers = parseInt(pendingRes.rows[0].count || 0);
+    } else if (isCashier) {
+      const pendingRes = await db.query(
+        "SELECT COUNT(*) FROM customers WHERE (zone = ANY($1::text[]) OR collector_id = ANY($2::int[])) AND payment_status = 'Unpaid'",
+        [cashierZones, cashierCollectorIds]
       );
       zonePendingCustomers = parseInt(pendingRes.rows[0].count || 0);
     } else {

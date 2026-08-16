@@ -140,10 +140,15 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
         { label: t('total_expenses'), value: formatValue(dbStats.totalExpenses), sub: t('optimal'), icon: Clock, color: '#f97316', bg: '#ffedd5' },
       ];
     } else if (currentUser?.role === 'cashier') {
+      // Zone-scoped: the backend now restricts a cashier's /api/stats to whichever zone(s)/
+      // collector(s) they're assigned (Cashier Assignments) — same scoping already applied to
+      // their customers/invoices lists — so this is their own zone's picture, not the whole
+      // company's. "Total Expenses" is swapped for "Pending Customers" (zonePendingCustomers)
+      // since expenses have no per-zone attribution in the schema and would always read $0 here.
       return [
-        { label: t('total_revenue'), value: formatValue(dbStats.revenue), sub: '+12.5%', icon: DollarSign, color: 'var(--gurmad-green)', bg: '#dcfce7' },
+        { label: 'Zone Revenue', value: formatValue(dbStats.revenue), sub: 'Your zone', icon: DollarSign, color: 'var(--gurmad-green)', bg: '#dcfce7' },
         { label: t('daily_collections'), value: formatValue(todaysCollectedTotal), sub: 'Today', icon: Activity, color: '#3b82f6', bg: '#dbeafe' },
-        { label: t('total_expenses'), value: formatValue(dbStats.totalExpenses), sub: t('optimal'), icon: Wallet, color: '#ef4444', bg: '#fee2e2' },
+        { label: 'Pending Customers', value: (dbStats.zonePendingCustomers || 0).toString(), sub: 'Unpaid in your zone', icon: Wallet, color: '#ef4444', bg: '#fee2e2' },
         { label: 'Pending Invoices', value: pendingInvoicesCount.toString(), sub: pendingInvoicesCount > 0 ? 'Action required' : 'All clear', icon: Clock, color: '#f97316', bg: '#ffedd5' },
       ];
     } else if (currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant') {
@@ -436,8 +441,10 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
         </div>
       )}
 
-      {/* Extended Stats Row */}
-      {currentUser?.role !== 'collector' && extendedStats && (
+      {/* Extended Stats Row — company-wide (today's revenue/expenses, outstanding debts, staff
+          present) with no per-zone attribution possible in the schema, so a cashier — scoped to
+          only their own zone everywhere else on this page — doesn't get it either. */}
+      {currentUser?.role !== 'collector' && currentUser?.role !== 'cashier' && extendedStats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
            <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '8px', borderLeft: '4px solid var(--gurmad-green)' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>TODAY'S REVENUE</span>
@@ -458,12 +465,15 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
         </div>
       )}
 
-      {/* Charts Section - Role Based */}
-      {currentUser?.role !== 'collector' ? (
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: window.innerWidth <= 1024 ? '1fr' : '2fr 1fr', 
-          gap: '1.5rem' 
+      {/* Charts Section - Role Based. Revenue/expense history has no per-zone attribution in the
+          schema (same reason the Extended Stats Row is hidden above), so it's company-wide —
+          skipped for cashier for the same reason; their zone-scoped picture is the stat cards
+          above and the Today's Cashier Transactions table below, both already correctly scoped. */}
+      {currentUser?.role === 'cashier' ? null : currentUser?.role !== 'collector' ? (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: window.innerWidth <= 1024 ? '1fr' : '2fr 1fr',
+          gap: '1.5rem'
         }}>
           <div className="card" style={{ padding: '1.5rem 1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 1rem', marginBottom: '1.5rem' }}>
@@ -580,8 +590,10 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
         </div>
       )}
 
-      {/* New Extended Dashboard Widgets for Admins */}
-      {currentUser?.role !== 'collector' && extendedStats && (
+      {/* Extended Dashboard Widgets — company-wide (recent activities across every zone, top
+          debtors company-wide, total pending complaints company-wide), so kept out of the
+          cashier's zone-scoped view for the same reason as the Extended Stats Row above. */}
+      {currentUser?.role !== 'collector' && currentUser?.role !== 'cashier' && extendedStats && (
         <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth <= 1024 ? '1fr' : '1fr 1fr 1fr', gap: '1.5rem', marginTop: '1rem' }}>
            
            {/* Recent Activities Panel */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard } from 'lucide-react';
+import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard, Map as MapIcon, MessageSquare, ClipboardList, Fingerprint, Grid3x3, ArrowLeft, ChevronRight } from 'lucide-react';
 import { Toaster } from 'react-hot-toast';
 import { api } from '../api';
 import DashboardView from './DashboardView';
@@ -7,16 +7,27 @@ import MyRouteTodayView from './MyRouteTodayView';
 import TodaysCollectionsView from './TodaysCollectionsView';
 import BillingView from './BillingView';
 import CashoutView from './CashoutView';
+import MapView from './MapView';
+import CustomerView from './CustomerView';
+import ComplaintsView from './ComplaintsView';
+import DebtView from './DebtView';
+import ExpenseView from './ExpenseView';
+import AttendanceView from './AttendanceView';
 
 // Staff Portal — a lightweight, mobile-first landing spot for Collector and Cashier accounts,
 // separate from the full desktop admin SPA (which is now reserved for admin/gudoomiye/
 // zone_accountant). Rather than rebuilding collection/payment logic from scratch, this wraps the
-// same battle-tested views the desktop app already used for these roles (MyRouteTodayView,
-// TodaysCollectionsView, BillingView, CashoutView) in a phone-width shell that mirrors the
-// Customer Portal's look — gradient hero, white overlapping sheet, bottom tabs, generous touch
-// targets — since these staff are using it out in the field on their own phones, not at a desk.
-// The reused views themselves are left untouched (they're shared with admin's own use of them
-// elsewhere in the desktop app) — all the polish here lives in the shell around them.
+// same battle-tested views the desktop app already used for these roles in a phone-width shell
+// that mirrors the Customer Portal's look — gradient hero, white overlapping sheet, bottom tabs,
+// generous touch targets — since these staff are using it out in the field on their own phones,
+// not at a desk. The reused views themselves are left untouched (they're shared with admin's own
+// use of them elsewhere in the desktop app) — all the polish here lives in the shell around them.
+//
+// Every destination here mirrors a menu item the desktop sidebar already granted this role
+// (see App.jsx's menuGroups roles arrays) — nothing new is exposed. One deliberate exception:
+// Payroll (also granted to 'cashier' in the desktop menu) is left out of this mobile portal —
+// salary data/payroll processing is sensitive enough that it stays behind the full Admin Portal
+// rather than a field-facing phone screen, even though the role technically has the permission.
 const GREEN = '#3FAE2A';
 const GREEN_DARK = '#2d8c1e';
 const PHONE_WIDTH = '480px';
@@ -27,20 +38,32 @@ const TAB_META = {
   collections: { label: 'Collections', icon: Users, title: "Today's Collections", subtitle: "Customers your paired collector is working on today." },
   billing: { label: 'Collect Payment', icon: Receipt, title: 'Collect Payment', subtitle: 'Record cash, ZAAD, eDahab or split payments.' },
   cashout: { label: 'Cashout', icon: Wallet, title: 'Cashout', subtitle: 'Reconcile the day’s collections.' },
+  map: { label: 'Map', icon: MapIcon, title: 'Operations Map', subtitle: 'Trucks, zones and customers on the map.' },
+  customers: { label: 'Customers', icon: Users, title: 'Customers', subtitle: 'Everyone in your zone.' },
+  attendance: { label: 'Attendance', icon: Fingerprint, title: 'Attendance', subtitle: 'Clock in and out for today.' },
+  complaints: { label: 'Complaints', icon: MessageSquare, title: 'Customer Complaints', subtitle: 'Issues reported in your zone.' },
+  debts: { label: 'Debts', icon: ClipboardList, title: 'Debts', subtitle: 'Outstanding balances in your zone.' },
+  expenses: { label: 'Expenses', icon: Wallet, title: 'Expense Tracker', subtitle: 'Log and review expenses.' },
+  more: { label: 'More', icon: Grid3x3, title: 'More', subtitle: 'Everything else you have access to.' },
 };
+
+// A cashier's day is dominated by Collections/Payment/Cashout, so those stay on the bottom bar;
+// the rest of what they're permitted to see (same roles as the desktop sidebar granted) lives one
+// tap away behind "More" rather than crowding a 9-icon bottom bar. A collector only has a handful
+// of destinations total, so theirs go straight on the bar.
+const CASHIER_MORE = ['customers', 'complaints', 'debts', 'expenses', 'map'];
 
 const StaffPortalApp = ({ currentUser, onLogout }) => {
   const isCollector = currentUser?.role === 'collector';
-  // 'home' surfaces the same stats/overview DashboardView used to show these roles on the
-  // desktop app's default screen ('My Performance' for collector, 'Financial Overview' for
-  // cashier) — nothing from before is lost just because the sidebar is gone.
-  const tabs = isCollector
-    ? ['home', 'route']
-    : ['home', 'collections', 'billing', 'cashout'];
-  const [tab, setTab] = useState(tabs[0]);
+  const primaryTabs = isCollector
+    ? ['home', 'route', 'customers', 'attendance', 'map']
+    : ['home', 'collections', 'billing', 'cashout', 'more'];
+  const [tab, setTab] = useState(primaryTabs[0]);
+  const [moreView, setMoreView] = useState(null);
   const [billingPrefillPhone, setBillingPrefillPhone] = useState(null);
   const [isMobileViewport] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 480);
-  const meta = TAB_META[tab];
+  const activeId = tab === 'more' && moreView ? moreView : tab;
+  const meta = TAB_META[activeId];
   const name = currentUser?.full_name || currentUser?.username || '';
   const initial = name[0]?.toUpperCase() || (isCollector ? 'C' : '$');
 
@@ -57,42 +80,53 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
     return () => clearInterval(interval);
   }, [isCollector]);
 
+  const goTab = (id) => { setTab(id); setMoreView(null); };
+
+  // Desktop-oriented views (tables, multi-column forms, charts) are reused as-is inside a
+  // horizontally-scrollable container rather than redesigned, so nothing overflows the phone
+  // screen while every existing validation/audit-log path stays exactly as tested — money-
+  // handling and permission-scoped data are exactly the kind of logic that shouldn't be
+  // reimplemented casually.
+  const scrolled = (node) => <div style={{ overflowX: 'auto' }}>{node}</div>;
+
+  const renderView = (id) => {
+    switch (id) {
+      case 'home': return scrolled(<DashboardView currentUser={currentUser} myTodayRoute={myTodayRoute} />);
+      case 'route': return <MyRouteTodayView />;
+      case 'collections': return <TodaysCollectionsView currentUser={currentUser} onCollectPayment={(phone) => { setBillingPrefillPhone(phone); goTab('billing'); }} />;
+      case 'billing': return scrolled(<BillingView currentUser={currentUser} prefillCustomerPhone={billingPrefillPhone} onPrefillHandled={() => setBillingPrefillPhone(null)} />);
+      case 'cashout': return scrolled(<CashoutView currentUser={currentUser} />);
+      case 'map': return scrolled(<MapView currentUser={currentUser} />);
+      case 'customers': return scrolled(<CustomerView currentUser={currentUser} />);
+      case 'attendance': return scrolled(<AttendanceView currentUser={currentUser} />);
+      case 'complaints': return scrolled(<ComplaintsView />);
+      case 'debts': return scrolled(<DebtView />);
+      case 'expenses': return scrolled(<ExpenseView currentUser={currentUser} />);
+      default: return null;
+    }
+  };
+
   const renderContent = () => {
-    if (tab === 'home') {
+    if (tab === 'more') {
+      if (moreView) return renderView(moreView);
       return (
-        <div style={{ overflowX: 'auto' }}>
-          <DashboardView currentUser={currentUser} myTodayRoute={myTodayRoute} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+          {CASHIER_MORE.map(id => {
+            const m = TAB_META[id];
+            return (
+              <button key={id} className="sp-btn" onClick={() => setMoreView(id)} style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '1rem 1.1rem', borderRadius: '16px', border: '1px solid #f1f5f9', background: 'white', cursor: 'pointer', textAlign: 'left', boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <m.icon size={17} color={GREEN} />
+                </div>
+                <span style={{ fontWeight: 700, color: '#334155', fontSize: '0.9rem', flex: 1 }}>{m.label}</span>
+                <ChevronRight size={16} color="#cbd5e1" />
+              </button>
+            );
+          })}
         </div>
       );
     }
-    if (isCollector) return <MyRouteTodayView />;
-    if (tab === 'collections') {
-      return (
-        <TodaysCollectionsView
-          currentUser={currentUser}
-          onCollectPayment={(phone) => { setBillingPrefillPhone(phone); setTab('billing'); }}
-        />
-      );
-    }
-    // BillingView and CashoutView are desktop-oriented (tables, multi-column forms) — rather than
-    // rebuild payment/cashout logic (real money handling, too risky to reimplement here), they're
-    // reused as-is inside a horizontally-scrollable container so nothing overflows the phone
-    // screen, while every existing validation/audit-log path stays exactly as tested.
-    if (tab === 'billing') {
-      return (
-        <div style={{ overflowX: 'auto' }}>
-          <BillingView currentUser={currentUser} prefillCustomerPhone={billingPrefillPhone} onPrefillHandled={() => setBillingPrefillPhone(null)} />
-        </div>
-      );
-    }
-    if (tab === 'cashout') {
-      return (
-        <div style={{ overflowX: 'auto' }}>
-          <CashoutView currentUser={currentUser} />
-        </div>
-      );
-    }
-    return null;
+    return renderView(tab);
   };
 
   return (
@@ -137,23 +171,30 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
 
         {/* White sheet overlapping the hero, rounded top corners — mirrors Customer Portal */}
         <div style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', marginTop: '-18px', position: 'relative', zIndex: 1, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '1.4rem 1.4rem 0.2rem', flexShrink: 0 }}>
-            <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>{meta.title}</h2>
-            <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>{meta.subtitle}</p>
+          <div style={{ padding: '1.4rem 1.4rem 0.2rem', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {tab === 'more' && moreView && (
+              <button className="sp-btn" onClick={() => setMoreView(null)} style={{ width: '34px', height: '34px', borderRadius: '10px', border: '1px solid #f1f5f9', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                <ArrowLeft size={15} color="#475569" />
+              </button>
+            )}
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>{meta.title}</h2>
+              <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>{meta.subtitle}</p>
+            </div>
           </div>
 
-          <div key={tab} className="sp-content" style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.4rem 1.4rem' }}>
+          <div key={activeId} className="sp-content" style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.4rem 1.4rem' }}>
             {renderContent()}
           </div>
 
-          {/* Bottom tab bar — only shown when there's more than one destination (cashier) */}
-          {tabs.length > 1 && (
+          {/* Bottom tab bar */}
+          {primaryTabs.length > 1 && (
             <div style={{ display: 'flex', background: 'white', borderTop: '1px solid #f1f5f9', padding: '0.6rem 0.5rem calc(0.6rem + env(safe-area-inset-bottom, 0px))', boxShadow: '0 -4px 16px rgba(15,23,42,0.04)', flexShrink: 0 }}>
-              {tabs.map(id => {
+              {primaryTabs.map(id => {
                 const t = TAB_META[id];
                 const active = tab === id;
                 return (
-                  <button key={id} className="sp-btn" onClick={() => setTab(id)} style={{
+                  <button key={id} className="sp-btn" onClick={() => goTab(id)} style={{
                     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
                     background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem 0.2rem', borderRadius: '14px'
                   }}>
