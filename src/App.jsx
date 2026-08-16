@@ -58,6 +58,7 @@ import TodaysCollectionsView from './components/TodaysCollectionsView';
 import MyRouteTodayView from './components/MyRouteTodayView';
 import CashoutView from './components/CashoutView';
 import CustomerPortalApp from './components/CustomerPortalApp';
+import StaffPortalApp from './components/StaffPortalApp';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 
@@ -460,6 +461,19 @@ const App = () => {
       );
     }
     return <LandingView onLoginClick={() => setShowLogin(true)} />;
+  }
+
+  // Collector and Cashier accounts no longer land in the full desktop admin SPA — they get their
+  // own lightweight mobile portal built around the exact same job they had a sidebar item for
+  // (My Route Today / Today's Collections + Collect Payment + Cashout). The full app (sidebar,
+  // every module) is now reserved for admin, gudoomiye (chairman), and zone_accountant.
+  if (currentUser.role === 'collector' || currentUser.role === 'cashier') {
+    return (
+      <StaffPortalApp
+        currentUser={currentUser}
+        onLogout={() => { setCurrentUser(null); localStorage.removeItem('gurmadUser'); }}
+      />
+    );
   }
 
   return (
