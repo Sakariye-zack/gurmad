@@ -489,6 +489,7 @@ export const api = {
     uploadPhoto: (formData) => fetch(`${API_BASE_URL}/customer-portal/photo`, {
       method: 'POST', headers: getCustomerAuthHeaders(), body: formData
     }).then(handleResponse),
+    getTruckLocation: () => fetch(`${API_BASE_URL}/customer-portal/truck-location`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
   },
 
   // Debts

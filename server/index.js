@@ -1104,6 +1104,32 @@ app.put('/api/customer-portal/notifications/:id/read', authenticateCustomer, asy
   }
 });
 
+// Live truck location for the customer's own zone — only returns a position when there's an
+// actual 'In Progress' route dispatched today for that zone with at least one GPS ping, so the
+// portal never shows a fake/stale "truck is here" when nothing is really out.
+app.get('/api/customer-portal/truck-location', authenticateCustomer, async (req, res) => {
+  try {
+    const custRes = await db.query('SELECT zone FROM customers WHERE id = $1', [req.customerId]);
+    const zone = custRes.rows[0]?.zone;
+    if (!zone) return res.json(null);
+
+    const result = await db.query(`
+      SELECT t.id, t.status, t.vehicle_plate, lh.lat, lh.lng, lh.created_at
+      FROM tasks t
+      JOIN LATERAL (
+        SELECT lat, lng, created_at FROM truck_location_history
+        WHERE task_id = t.id ORDER BY created_at DESC LIMIT 1
+      ) lh ON true
+      WHERE t.route_name = $1 AND t.status = 'In Progress' AND t.scheduled_at::date = CURRENT_DATE
+      ORDER BY t.scheduled_at DESC LIMIT 1
+    `, [zone]);
+
+    res.json(result.rows[0] || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/customer-portal/notifications/read-all', authenticateCustomer, async (req, res) => {
   try {
     await db.query('UPDATE customer_notifications SET is_read = TRUE WHERE customer_id = $1', [req.customerId]);
@@ -5141,6 +5167,62 @@ cron.schedule('0 18 * * *', () => {
 // Weekly automated backup — Sunday 02:00 server time (quiet hours), keeps the last 8 on disk.
 cron.schedule('0 2 * * 0', () => {
   runScheduledBackup().catch(err => console.error('[Backup] Scheduled backup failed:', err.message));
+});
+
+// Proactive pickup-day reminder — every zone whose collection_days includes today gets a single
+// WhatsApp sent each morning to every customer in that zone with a phone on file, so customers
+// know to put their bins out without having to check the portal. Gated by the same 'whatsappNotify'
+// setting used for the invoice-created notification, and skipped entirely (not sent as blank/failed)
+// when that toggle is off — this augments the portal's own "Next Pickup" card, it doesn't replace it.
+const sendPickupReminders = async () => {
+  const notifySetting = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'whatsappNotify'");
+  if (notifySetting.rows[0]?.setting_value !== 'true') return { sent: 0, reason: 'whatsappNotify is off' };
+
+  const todayCode = DAY_CODES[new Date().getDay()];
+  const zonesRes = await db.query('SELECT name, collection_time, collection_days FROM zones WHERE collection_days IS NOT NULL');
+  const todaysZones = zonesRes.rows.filter(z => (z.collection_days || '').split(',').map(d => d.trim().toLowerCase()).includes(todayCode.toLowerCase()));
+  if (todaysZones.length === 0) return { sent: 0, reason: 'No zones scheduled today' };
+
+  let sent = 0;
+  for (const zone of todaysZones) {
+    const custRes = await db.query(
+      "SELECT name, phone, whatsapp FROM customers WHERE zone = $1 AND (phone IS NOT NULL OR whatsapp IS NOT NULL)",
+      [zone.name]
+    );
+    for (const cust of custRes.rows) {
+      const timeStr = formatPickupTimeForMessage(zone.collection_time);
+      const body = `👋 Hi ${cust.name}, this is a reminder from Gurmad Waste Management — your collection is scheduled *today*${timeStr ? ` around ${timeStr}` : ''}. Please have your bin ready. 🗑️`;
+      await sendWhatsAppSafe(cust.whatsapp || cust.phone, body);
+      sent++;
+    }
+  }
+  return { sent };
+};
+
+// Zones store collection_time either as free text ("8:00 AM") or, since the Route Calendar's
+// native time input, 24h "HH:MM" — format the latter nicely for the WhatsApp message text.
+function formatPickupTimeForMessage(value) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec((value || '').trim());
+  if (!match) return value || '';
+  let [, h, m] = match.map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+app.post('/api/admin/send-pickup-reminders-now', checkRole(['admin']), async (req, res) => {
+  try {
+    const result = await sendPickupReminders();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fires at 07:00 server time — early enough that customers can put their bins out before the
+// truck typically arrives.
+cron.schedule('0 7 * * *', () => {
+  sendPickupReminders().catch(err => console.error('[Pickup Reminders] Failed:', err.message));
 });
 
 app.get('/api/admin/backups', checkRole(['admin']), (req, res) => {

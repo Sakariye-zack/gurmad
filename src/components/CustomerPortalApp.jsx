@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X, Camera, Eye, EyeOff, Globe, HelpCircle, Leaf, ArrowRight, Phone as PhoneIcon, MessageCircle, Wallet, Star } from 'lucide-react';
+import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X, Camera, Eye, EyeOff, Globe, HelpCircle, Leaf, ArrowRight, Phone as PhoneIcon, MessageCircle, Wallet, Star, AlertTriangle } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import { api } from '../api';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+});
 
 // Phase 8: Customer Portal — a completely separate, lightweight app served at /portal, with its
 // own login (customer phone + password, granted by an admin via "Enable Portal Access" in
@@ -133,6 +143,14 @@ const STRINGS = {
   faq_a3: { so: 'Aad u tab-ka “Taageero” oo riix “Cusub” si aad u soo dirto cabasho, sawir haddii loo baahdo.', en: "Go to the 'Support' tab and tap 'New' to submit a complaint, with a photo if needed." },
   faq_q4: { so: 'Sideen u beddelaa cinwaankayga ama lambarkayga?', en: 'How do I update my address or phone number?' },
   faq_a4: { so: 'Ka riix Akoonka (magacaaga kore) kadibna “Codso Isbeddel Xog”.', en: "Tap Account (your name up top) then 'Request Profile Change'." },
+  report_missed: { so: 'Lama Qaadin — Sheeg', en: 'Report Missed Pickup' },
+  missed_confirm_title: { so: 'Ma xaqiijineysaa?', en: 'Confirm report' },
+  missed_confirm_desc: { so: 'Waxaad sheegeysaa in qashinkaaga aan la qaadin maanta, in kasta oo la filayay. Shirkadda ayaa la soo xiriiri doonta.', en: "You're reporting that your trash wasn't collected today, even though it was scheduled. Staff will follow up." },
+  confirm: { so: 'Xaqiiji', en: 'Confirm' },
+  missed_reported: { so: 'Waa la soo sheegay in aan la qaadin — waan la soo xiriiri doonaa.', en: "Reported — we'll follow up with you." },
+  missed_report_failed: { so: 'Lama soo sheegi karin', en: 'Failed to submit report' },
+  truck_tracking: { so: 'Halka Uu Joogo Gaadhiga', en: 'Truck Location' },
+  truck_en_route: { so: 'Wuu socdaa xaggaaga', en: 'On its way to your area' },
 };
 // t(key, lang) looks up STRINGS[key][lang]; falls back to the key itself if missing so a typo
 // shows up as visible mismatched text instead of silently rendering blank.
@@ -201,6 +219,9 @@ const CustomerPortalApp = () => {
   const [showFAQ, setShowFAQ] = useState(false);
   const [openFAQIndex, setOpenFAQIndex] = useState(null);
   const [paymentsFilter, setPaymentsFilter] = useState('all');
+  const [truckLocation, setTruckLocation] = useState(null);
+  const [isSubmittingMissed, setIsSubmittingMissed] = useState(false);
+  const [showMissedConfirm, setShowMissedConfirm] = useState(false);
   const [companyLogo, setCompanyLogo] = useState('');
   const [logoError, setLogoError] = useState(false);
   const [company, setCompany] = useState({ name: 'Gurmad Waste Management', phone: '', email: '' });
@@ -229,6 +250,18 @@ const CustomerPortalApp = () => {
   useEffect(() => {
     if (customer) fetchAll();
   }, [customer?.id]);
+
+  // Live truck tracking — only worth polling on the customer's own pickup day, so this stays
+  // idle (no location card, no wasted requests) every other day. Polls rather than a socket
+  // connection since the portal is a separate lightweight app from the staff SPA that owns the
+  // socket.io client.
+  useEffect(() => {
+    if (!customer || !customer.next_pickup?.isToday) { setTruckLocation(null); return; }
+    const poll = () => api.customerPortal.getTruckLocation().then(setTruckLocation).catch(() => {});
+    poll();
+    const interval = setInterval(poll, 20000);
+    return () => clearInterval(interval);
+  }, [customer?.id, customer?.next_pickup?.isToday]);
 
   // Company logo/name/contact — same /api/settings + /api/uploads pattern the staff sidebar
   // uses (App.jsx), fetched without auth (public route) for both the login screen and the
@@ -517,6 +550,28 @@ const CustomerPortalApp = () => {
     }
   };
 
+  // Routed through the same complaints inbox as everything else customer-submitted, tagged
+  // distinctly ('Missed Pickup') so staff can tell it apart from a general complaint at a glance
+  // — deliberately not the same table as the staff-side "mark missed" (task_customers.missed),
+  // since this is the customer's own report, not a confirmed collector observation.
+  const handleReportMissed = async () => {
+    setIsSubmittingMissed(true);
+    try {
+      const formData = new FormData();
+      formData.append('title', 'Missed Pickup');
+      formData.append('description', `Customer reports their trash was not collected today (${new Date().toLocaleDateString()}), despite being scheduled.`);
+      await api.customerPortal.addComplaint(formData);
+      toast.success(t('missed_reported'));
+      setShowMissedConfirm(false);
+      const comp = await api.customerPortal.getComplaints();
+      setComplaints(comp);
+    } catch (err) {
+      toast.error(t('missed_report_failed'));
+    } finally {
+      setIsSubmittingMissed(false);
+    }
+  };
+
   const paymentsFiltered = payments.filter(p => paymentsFilter === 'all' ? true : paymentsFilter === 'paid' ? p.status === 'Paid' : p.status !== 'Paid');
 
   // Client-side CSV export of the full billing history (all invoices, paid and unpaid) — a real
@@ -708,6 +763,7 @@ const CustomerPortalApp = () => {
       <Toaster />
       <style>{`
         @keyframes gp-spin { to { transform: rotate(360deg); } }
+        @keyframes gp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .gp-btn { transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease; }
         .gp-btn:hover { transform: translateY(-1px); }
         .gp-btn:active { transform: translateY(0); }
@@ -834,17 +890,44 @@ const CustomerPortalApp = () => {
               )}
 
               {customer.next_pickup && (
-                <Card style={{ padding: '1.2rem 1.3rem', display: 'flex', alignItems: 'center', gap: '13px', background: customer.next_pickup.isToday ? '#f0fdf4' : 'white', border: customer.next_pickup.isToday ? '1px solid #bbf7d0' : '1px solid #f1f5f9' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '14px', background: customer.next_pickup.isToday ? GREEN : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Truck size={19} color={customer.next_pickup.isToday ? 'white' : GREEN} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>{t('next_pickup')}</div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
-                      {customer.next_pickup.isToday ? t('today') : new Date(customer.next_pickup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
-                      {customer.next_pickup.time && <span style={{ color: '#94a3b8', fontWeight: 600 }}> · {formatPickupTime(customer.next_pickup.time)}</span>}
+                <Card style={{ padding: '1.2rem 1.3rem', background: customer.next_pickup.isToday ? '#f0fdf4' : 'white', border: customer.next_pickup.isToday ? '1px solid #bbf7d0' : '1px solid #f1f5f9' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '13px' }}>
+                    <div style={{ width: '44px', height: '44px', borderRadius: '14px', background: customer.next_pickup.isToday ? GREEN : '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Truck size={19} color={customer.next_pickup.isToday ? 'white' : GREEN} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>{t('next_pickup')}</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
+                        {customer.next_pickup.isToday ? t('today') : new Date(customer.next_pickup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+                        {customer.next_pickup.time && <span style={{ color: '#94a3b8', fontWeight: 600 }}> · {formatPickupTime(customer.next_pickup.time)}</span>}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Live truck tracking — only rendered when a route is actually 'In Progress'
+                      today for this customer's zone and has sent at least one GPS ping. */}
+                  {customer.next_pickup.isToday && truckLocation?.lat && truckLocation?.lng && (
+                    <div style={{ marginTop: '12px' }}>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 800, color: GREEN_DARK, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: GREEN, display: 'inline-block', animation: 'gp-pulse 1.4s ease-in-out infinite' }} />
+                        {t('truck_en_route')}
+                      </div>
+                      <div style={{ borderRadius: '14px', overflow: 'hidden', border: '1px solid #bbf7d0', height: '160px' }}>
+                        <MapContainer center={[truckLocation.lat, truckLocation.lng]} zoom={14} style={{ height: '100%', width: '100%' }} zoomControl={false} dragging={true} scrollWheelZoom={false}>
+                          <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                          <Marker position={[truckLocation.lat, truckLocation.lng]}>
+                            <Popup>{truckLocation.vehicle_plate || t('truck_tracking')}</Popup>
+                          </Marker>
+                        </MapContainer>
+                      </div>
+                    </div>
+                  )}
+
+                  {customer.next_pickup.isToday && (
+                    <button className="gp-btn" onClick={() => setShowMissedConfirm(true)} style={{ marginTop: '12px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px', padding: '0.7rem', borderRadius: '13px', border: '1px solid #fecaca', background: 'white', color: '#dc2626', fontWeight: 800, fontSize: '0.8rem', cursor: 'pointer' }}>
+                      <AlertTriangle size={14} /> {t('report_missed')}
+                    </button>
+                  )}
                 </Card>
               )}
 
@@ -1122,6 +1205,25 @@ const CustomerPortalApp = () => {
                   {isChangingPw ? t('changing') : t('change_password_title')}
                 </button>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Missed Pickup confirm dialog */}
+        {showMissedConfirm && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 25, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1.5rem' }} onClick={() => setShowMissedConfirm(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '22px', padding: '1.5rem', boxShadow: '0 20px 50px rgba(15,23,42,0.25)', maxWidth: '340px' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '14px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px' }}>
+                <AlertTriangle size={20} color="#dc2626" />
+              </div>
+              <div style={{ fontWeight: 800, fontSize: '1.02rem', color: '#0f172a', marginBottom: '6px' }}>{t('missed_confirm_title')}</div>
+              <div style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: 1.5, marginBottom: '18px' }}>{t('missed_confirm_desc')}</div>
+              <div style={{ display: 'flex', gap: '0.8rem' }}>
+                <button onClick={() => setShowMissedConfirm(false)} style={{ flex: 1, padding: '0.75rem', borderRadius: '13px', border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>{t('cancel')}</button>
+                <button onClick={handleReportMissed} disabled={isSubmittingMissed} style={{ flex: 1, padding: '0.75rem', borderRadius: '13px', border: 'none', background: isSubmittingMissed ? '#fca5a5' : '#dc2626', color: 'white', fontWeight: 800, cursor: isSubmittingMissed ? 'default' : 'pointer', fontSize: '0.85rem' }}>
+                  {isSubmittingMissed ? t('changing') : t('confirm')}
+                </button>
+              </div>
             </div>
           </div>
         )}
