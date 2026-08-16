@@ -64,6 +64,7 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
   const [isMobileViewport] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 480);
   const activeId = tab === 'more' && moreView ? moreView : tab;
   const meta = TAB_META[activeId];
+  const isMapView = activeId === 'map';
   const name = currentUser?.full_name || currentUser?.username || '';
   const initial = name[0]?.toUpperCase() || (isCollector ? 'C' : '$');
 
@@ -96,7 +97,12 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
       case 'collections': return <TodaysCollectionsView currentUser={currentUser} onCollectPayment={(phone) => { setBillingPrefillPhone(phone); goTab('billing'); }} />;
       case 'billing': return scrolled(<BillingView currentUser={currentUser} prefillCustomerPhone={billingPrefillPhone} onPrefillHandled={() => setBillingPrefillPhone(null)} />);
       case 'cashout': return scrolled(<CashoutView currentUser={currentUser} />);
-      case 'map': return scrolled(<MapView currentUser={currentUser} />);
+      // MapView sizes itself to `calc(100vh - 120px)` internally (built for the desktop app's
+      // fixed top bar) — inside this phone shell that fought the header/tab-bar chrome around it
+      // for space. Forced to a predictable 75% of viewport height instead via sp-map-wrap's CSS
+      // override below, with the page title floated on top of the map (not pushing it down) so
+      // the map itself gets as much room as possible, same as the desktop Operations Map.
+      case 'map': return <div className="sp-map-wrap"><MapView currentUser={currentUser} /></div>;
       case 'customers': return scrolled(<CustomerView currentUser={currentUser} />);
       case 'attendance': return scrolled(<AttendanceView currentUser={currentUser} />);
       case 'complaints': return scrolled(<ComplaintsView />);
@@ -138,6 +144,8 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
         .sp-btn:hover { transform: translateY(-1px); }
         .sp-btn:active { transform: translateY(0) scale(0.98); }
         .sp-content { animation: sp-fade 0.2s ease; }
+        .sp-map-wrap { height: 75vh; border-radius: 22px; overflow: hidden; }
+        .sp-map-wrap > div { height: 100% !important; border-radius: 22px; }
       `}</style>
       <div style={{
         width: '100%', maxWidth: isMobileViewport ? '100%' : PHONE_WIDTH,
@@ -169,21 +177,28 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
           </div>
         </div>
 
-        {/* White sheet overlapping the hero, rounded top corners — mirrors Customer Portal */}
+        {/* White sheet overlapping the hero, rounded top corners — mirrors Customer Portal.
+            The map tab skips the block header below — instead a small pill floats directly on
+            top of the map (see the sp-content block) so the map claims that vertical space instead. */}
         <div style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', marginTop: '-18px', position: 'relative', zIndex: 1, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '1.4rem 1.4rem 0.2rem', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {tab === 'more' && moreView && (
-              <button className="sp-btn" onClick={() => setMoreView(null)} style={{ width: '34px', height: '34px', borderRadius: '10px', border: '1px solid #f1f5f9', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                <ArrowLeft size={15} color="#475569" />
-              </button>
-            )}
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>{meta.title}</h2>
-              <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>{meta.subtitle}</p>
+          {!isMapView && (
+            <div style={{ padding: '1.4rem 1.4rem 0.2rem', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {tab === 'more' && moreView && (
+                <button className="sp-btn" onClick={() => setMoreView(null)} style={{ width: '34px', height: '34px', borderRadius: '10px', border: '1px solid #f1f5f9', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                  <ArrowLeft size={15} color="#475569" />
+                </button>
+              )}
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 900, color: '#0f172a' }}>{meta.title}</h2>
+                <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>{meta.subtitle}</p>
+              </div>
             </div>
-          </div>
+          )}
 
-          <div key={activeId} className="sp-content" style={{ flex: 1, overflowY: 'auto', padding: '1rem 1.4rem 1.4rem' }}>
+          {/* Map skips the floating title pill too — MapView already renders its own labeled
+              filter/search controls at the same top-left corner, so a second title there just
+              overlapped them instead of adding anything useful. */}
+          <div key={activeId} className="sp-content" style={{ flex: 1, overflowY: 'auto', padding: isMapView ? '0.8rem' : '1rem 1.4rem 1.4rem', position: 'relative' }}>
             {renderContent()}
           </div>
 
