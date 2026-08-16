@@ -14,6 +14,97 @@ const GREEN = '#3FAE2A';
 const GREEN_DARK = '#2d8c1e';
 const PHONE_WIDTH = '430px';
 
+// Full bilingual dictionary for the portal — 'so' (default, since most customers are Somali
+// speakers) and 'en'. The SO/EN pill on the login screen was purely decorative before; it now
+// actually drives every string below via the t() helper.
+const STRINGS = {
+  help: { so: 'Caawin', en: 'Help' },
+  help_toast_contact: { so: 'Caawimo', en: 'Help' },
+  help_toast_default: { so: "La xiriir shirkadda Gurmad si aad u hesho caawimo.", en: 'Contact Gurmad for assistance.' },
+  welcome_tagline: { so: 'Ku soo dhaweow nidaamka casriga ah ee maamulka qashinka Gurmad', en: "Welcome to Gurmad's modern waste management system" },
+  customer_portal: { so: 'Customer Portal', en: 'Customer Portal' },
+  welcome_title: { so: 'Ku soo dhawoow!', en: 'Welcome!' },
+  welcome_subtitle: { so: 'Fadlan geli akoonkaaga si aad u adeegato portal-ka.', en: 'Please log in to access your account.' },
+  phone_label: { so: 'LAMBARKA TELEFOONKA', en: 'PHONE NUMBER' },
+  password_label: { so: 'PASSWORD-KA', en: 'PASSWORD' },
+  remember_me: { so: 'Xusuusnow akoonkayga', en: 'Remember me' },
+  forgot_password: { so: 'Ihlaaw Password-ka?', en: 'Forgot Password?' },
+  forgot_password_toast: { so: 'Fadlan la xiriir shirkadda Gurmad si loo dib-u-deeqo password-kaaga.', en: 'Please contact Gurmad to have your password reset.' },
+  login: { so: 'Gal', en: 'Login' },
+  logging_in: { so: 'Waa la gelayaa...', en: 'Logging in...' },
+  or: { so: 'AMA', en: 'OR' },
+  sms_login: { so: 'Ku gal Code SMS ah', en: 'Login with SMS Code' },
+  sms_not_implemented: { so: 'SMS Code login weli lama hirgeliyay — fadlan isticmaal password-kaaga.', en: "SMS Code login isn't available yet — please use your password." },
+  security_title: { so: 'Nidaam ammaan ah oo lagu kalsoon yahay', en: 'A secure system you can trust' },
+  security_subtitle: { so: 'Xogtaada waa mid ammaan ah oo qarsoon.', en: 'Your data is safe and private.' },
+  welcome_back: { so: 'Ku soo dhawoow', en: 'Welcome back' },
+  login_success: { so: 'Ku soo dhawoow', en: 'Welcome' },
+  change_photo: { so: 'Beddel sawirka', en: 'Change photo' },
+  photo_updated: { so: 'Sawirkaaga waa la beddelay', en: 'Your photo has been updated' },
+  outstanding_balance: { so: 'LACAGTA HARSAN', en: 'OUTSTANDING BALANCE' },
+  monthly_fee: { so: 'KHARASHKA BISHII', en: 'MONTHLY FEE' },
+  collector_label: { so: 'QAADAHA', en: 'COLLECTOR' },
+  unassigned: { so: 'Aan la qoondayn', en: 'Unassigned' },
+  tab_home: { so: 'Guriga', en: 'Home' },
+  tab_payments: { so: 'Lacagaha', en: 'Payments' },
+  tab_pickups: { so: 'Qaadista', en: 'Pickups' },
+  tab_support: { so: 'Taageero', en: 'Support' },
+  new_issue: { so: 'Dhibaato Cusub', en: 'New Issue' },
+  next_pickup: { so: 'BOOQASHADA XIGTA', en: 'NEXT PICKUP' },
+  today: { so: 'Maanta', en: 'Today' },
+  my_service: { so: 'Adeegayga', en: 'My Service' },
+  category: { so: 'Nooca', en: 'Category' },
+  frequency: { so: 'Inta jeer', en: 'Frequency' },
+  zone: { so: 'Aagga', en: 'Zone' },
+  address: { so: 'Cinwaanka', en: 'Address' },
+  house: { so: 'Guri', en: 'House' },
+  last_collection: { so: 'Qaadistii u Dambeysay', en: 'Last Collection' },
+  collected_by: { so: 'waxaa qaaday', en: 'collected by' },
+  na: { so: 'N/A', en: 'N/A' },
+  payment_history: { so: 'Taariikhda Lacagaha', en: 'Payment History' },
+  no_payment_history: { so: 'Weli lacag lama bixin.', en: 'No payment history yet.' },
+  collection_history: { so: 'Taariikhda Qaadista', en: 'Collection History' },
+  no_collection_history: { so: 'Weli qaadis ma jirto.', en: 'No collection history yet.' },
+  not_scheduled: { so: 'Weli lama qorsheynin', en: 'Not yet scheduled' },
+  collected: { so: 'La qaaday', en: 'Collected' },
+  pending: { so: 'Sugaya', en: 'Pending' },
+  unpaid: { so: 'Aan la bixin', en: 'Unpaid' },
+  download_receipt: { so: 'Soo Deji Rasiidka', en: 'Download Receipt' },
+  receipt_failed: { so: 'Rasiidka lama samayn karin', en: 'Failed to generate receipt' },
+  support: { so: 'Taageero', en: 'Support' },
+  new_button: { so: 'Cusub', en: 'New' },
+  complaint_title_label: { so: 'Cinwaanka', en: 'Title' },
+  complaint_description_label: { so: 'Sharraxaad', en: 'Description' },
+  complaint_photo_label: { so: 'Sawir (Ikhtiyaari)', en: 'Photo (Optional)' },
+  cancel: { so: 'Jooji', en: 'Cancel' },
+  submit: { so: 'Dir', en: 'Submit' },
+  no_complaints: { so: 'Weli cabasho ma dirin.', en: 'No complaints submitted yet.' },
+  view_photo: { so: '📷 Sawirka eeg', en: '📷 View Photo' },
+  gurmad_reply: { so: 'Jawaabta Gurmad', en: "Gurmad's Reply" },
+  complaint_submitted: { so: 'Waa la diray cabashadaada', en: 'Your complaint has been submitted' },
+  complaint_failed: { so: 'Cabashada lama dirin karin', en: 'Failed to submit complaint' },
+  notifications_title: { so: 'Ogeysiisyada', en: 'Notifications' },
+  no_notifications: { so: 'Ogeysiis kuma jiro weli', en: 'No notifications yet' },
+  change_password_title: { so: 'Beddel Password', en: 'Change Password' },
+  current_password: { so: 'Password-ka hadda', en: 'Current Password' },
+  new_password: { so: 'Password Cusub (ugu yaraan 6 xaraf)', en: 'New Password (min 6 characters)' },
+  confirm_password: { so: 'Ku celi Password-ka Cusub', en: 'Confirm New Password' },
+  changing: { so: 'Waa la beddelayaa...', en: 'Changing...' },
+  passwords_mismatch: { so: 'Password-yadu isku mid ma aha', en: 'Passwords do not match' },
+  password_changed: { so: 'Password-kaaga waa la beddelay', en: 'Your password has been changed' },
+  password_change_failed: { so: 'Password-ka lama beddeli karin', en: 'Failed to change password' },
+  photo_upload_failed: { so: 'Sawirka lama soo geli karin', en: 'Failed to upload photo' },
+  loading: { so: 'Waa soo shubmayaa...', en: 'Loading...' },
+  login_failed: { so: 'Gelitaanka wuu fashilmay', en: 'Login failed' },
+  time_now: { so: 'Hadda', en: 'Now' },
+  time_min_ago: { so: 'daq ka hor', en: 'm ago' },
+  time_hr_ago: { so: 'saac ka hor', en: 'h ago' },
+  time_day_ago: { so: 'maalin ka hor', en: 'd ago' },
+};
+// t(key, lang) looks up STRINGS[key][lang]; falls back to the key itself if missing so a typo
+// shows up as visible mismatched text instead of silently rendering blank.
+const translate = (key, lang) => STRINGS[key]?.[lang] || key;
+
 const statusPalette = (variant) => ({
   good: { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
   bad: { bg: '#fef2f2', fg: '#b91c1c', dot: '#ef4444' },
@@ -75,6 +166,13 @@ const CustomerPortalApp = () => {
   const [company, setCompany] = useState({ name: 'Gurmad Waste Management', phone: '', email: '' });
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const photoInputRef = React.useRef(null);
+  const [lang, setLang] = useState(() => localStorage.getItem('gurmadPortalLang') || 'so');
+  const t = (key) => translate(key, lang);
+  const toggleLang = () => {
+    const next = lang === 'so' ? 'en' : 'so';
+    setLang(next);
+    localStorage.setItem('gurmadPortalLang', next);
+  };
 
   // On an actual phone the "phone mockup floating on a gray backdrop" look (fixed max-width,
   // rounded corners, shadow, padding) just eats into an already-small screen — it only makes
@@ -254,7 +352,7 @@ const CustomerPortalApp = () => {
 
       doc.save(`Receipt-${p.id}.pdf`);
     } catch (err) {
-      toast.error('Failed to generate receipt');
+      toast.error(t('receipt_failed'));
     }
   };
 
@@ -271,9 +369,9 @@ const CustomerPortalApp = () => {
       const updated = { ...customer, photo: result.photo };
       setCustomer(updated);
       localStorage.setItem('gurmadCustomer', JSON.stringify(updated));
-      toast.success('Sawirkaaga waa la beddelay');
+      toast.success(t('photo_updated'));
     } catch (err) {
-      toast.error(err.message || 'Failed to upload photo');
+      toast.error(err.message || t('photo_upload_failed'));
     } finally {
       setIsUploadingPhoto(false);
       if (photoInputRef.current) photoInputRef.current.value = '';
@@ -283,11 +381,11 @@ const CustomerPortalApp = () => {
   const timeAgo = (dateStr) => {
     const diffMs = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return 'Hadda';
-    if (mins < 60) return `${mins}m ka hor`;
+    if (mins < 1) return t('time_now');
+    if (mins < 60) return `${mins}${t('time_min_ago')}`;
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ka hor`;
-    return `${Math.floor(hrs / 24)}d ka hor`;
+    if (hrs < 24) return `${hrs}${t('time_hr_ago')}`;
+    return `${Math.floor(hrs / 24)}${t('time_day_ago')}`;
   };
 
   const handleLogin = async (e) => {
@@ -299,9 +397,9 @@ const CustomerPortalApp = () => {
       if (rememberMe) localStorage.setItem('gurmadCustomerPhone', phone);
       else localStorage.removeItem('gurmadCustomerPhone');
       setCustomer(data);
-      toast.success(`Ku soo dhawoow, ${data.name}!`);
+      toast.success(`${t('login_success')}, ${data.name}!`);
     } catch (err) {
-      toast.error(err.message || 'Login failed');
+      toast.error(err.message || t('login_failed'));
     } finally {
       setIsLoggingIn(false);
     }
@@ -310,17 +408,17 @@ const CustomerPortalApp = () => {
   const handleChangePassword = async (e) => {
     e.preventDefault();
     if (pwForm.newPassword !== pwForm.confirmPassword) {
-      toast.error('Password-yadu isku mid ma aha');
+      toast.error(t('passwords_mismatch'));
       return;
     }
     setIsChangingPw(true);
     try {
       await api.customerPortal.changePassword(pwForm.currentPassword, pwForm.newPassword);
-      toast.success('Password-kaaga waa la beddelay');
+      toast.success(t('password_changed'));
       setShowChangePassword(false);
       setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {
-      toast.error(err.message || 'Failed to change password');
+      toast.error(err.message || t('password_change_failed'));
     } finally {
       setIsChangingPw(false);
     }
@@ -340,14 +438,14 @@ const CustomerPortalApp = () => {
       formData.append('description', newComplaint.description);
       if (newComplaintPhoto) formData.append('photo', newComplaintPhoto);
       await api.customerPortal.addComplaint(formData);
-      toast.success('Waa la diray cabashadaada / Complaint submitted');
+      toast.success(t('complaint_submitted'));
       setShowComplaintForm(false);
       setNewComplaint({ title: '', description: '' });
       setNewComplaintPhoto(null);
       const comp = await api.customerPortal.getComplaints();
       setComplaints(comp);
     } catch (err) {
-      toast.error('Failed to submit complaint');
+      toast.error(t('complaint_failed'));
     }
   };
 
@@ -378,14 +476,18 @@ const CustomerPortalApp = () => {
 
               {/* top bar: language + help */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1, marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '6px 12px', color: 'white', fontSize: '0.78rem', fontWeight: 800 }}>
-                  <Globe size={13} /> SO
-                </div>
                 <button
-                  onClick={() => toast(company.phone || company.email ? `Caawimo: ${[company.phone, company.email].filter(Boolean).join(' · ')}` : 'La xiriir shirkadda Gurmad si aad u hesho caawimo.', { icon: '💬' })}
+                  onClick={toggleLang}
+                  title={lang === 'so' ? 'Switch to English' : 'U beddel Soomaali'}
                   style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '6px 12px', color: 'white', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer' }}
                 >
-                  <HelpCircle size={13} /> Caawin
+                  <Globe size={13} /> {lang.toUpperCase()}
+                </button>
+                <button
+                  onClick={() => toast(company.phone || company.email ? `${t('help_toast_contact')}: ${[company.phone, company.email].filter(Boolean).join(' · ')}` : t('help_toast_default'), { icon: '💬' })}
+                  style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '6px 12px', color: 'white', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  <HelpCircle size={13} /> {t('help')}
                 </button>
               </div>
 
@@ -397,7 +499,7 @@ const CustomerPortalApp = () => {
                 )}
               </div>
               <h1 style={{ fontSize: '1.8rem', fontWeight: 900, margin: 0, color: 'white', letterSpacing: '-0.02em', position: 'relative', zIndex: 1 }}>GURMAD</h1>
-              <p style={{ color: '#d9f7cf', fontSize: '1.05rem', margin: '2px 0 0 0', fontWeight: 800, position: 'relative', zIndex: 1 }}>Customer Portal</p>
+              <p style={{ color: '#d9f7cf', fontSize: '1.05rem', margin: '2px 0 0 0', fontWeight: 800, position: 'relative', zIndex: 1 }}>{t('customer_portal')}</p>
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '14px 0', position: 'relative', zIndex: 1 }}>
                 <span style={{ width: '30px', height: '1px', background: 'rgba(255,255,255,0.4)' }} />
@@ -405,7 +507,7 @@ const CustomerPortalApp = () => {
                 <span style={{ width: '30px', height: '1px', background: 'rgba(255,255,255,0.4)' }} />
               </div>
               <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.88rem', margin: 0, lineHeight: 1.5, position: 'relative', zIndex: 1, maxWidth: '280px', marginLeft: 'auto', marginRight: 'auto' }}>
-                Ku soo dhaweow nidaamka casriga ah ee maamulka qashinka Gurmad
+                {t('welcome_tagline')}
               </p>
             </div>
 
@@ -414,12 +516,12 @@ const CustomerPortalApp = () => {
               <div style={{ width: '58px', height: '58px', borderRadius: '18px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
                 <ShieldCheck size={26} color={GREEN} />
               </div>
-              <h2 style={{ textAlign: 'center', fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', margin: '0 0 6px' }}>Ku soo dhawoow!</h2>
-              <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8', margin: '0 0 1.6rem', lineHeight: 1.5 }}>Fadlan geli akoonkaaga si aad u adeegato portal-ka.</p>
+              <h2 style={{ textAlign: 'center', fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', margin: '0 0 6px' }}>{t('welcome_title')}</h2>
+              <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8', margin: '0 0 1.6rem', lineHeight: 1.5 }}>{t('welcome_subtitle')}</p>
 
               <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: GREEN_DARK, marginBottom: '8px', letterSpacing: '0.3px' }}>LAMBARKA TELEFOONKA</label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: GREEN_DARK, marginBottom: '8px', letterSpacing: '0.3px' }}>{t('phone_label')}</label>
                   <div style={{ position: 'relative' }}>
                     <PhoneIcon size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: GREEN }} />
                     <input required value={phone} onChange={e => setPhone(e.target.value)} placeholder="0634xxxxxx"
@@ -429,7 +531,7 @@ const CustomerPortalApp = () => {
                   </div>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: GREEN_DARK, marginBottom: '8px', letterSpacing: '0.3px' }}>PASSWORD</label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: GREEN_DARK, marginBottom: '8px', letterSpacing: '0.3px' }}>{t('password_label')}</label>
                   <div style={{ position: 'relative' }}>
                     <Lock size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: GREEN }} />
                     <input required type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="********"
@@ -446,10 +548,10 @@ const CustomerPortalApp = () => {
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#64748b', fontWeight: 600, cursor: 'pointer' }}>
                     <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)}
                       style={{ width: '17px', height: '17px', accentColor: GREEN, cursor: 'pointer' }} />
-                    Xusuusnow akoonkayga
+                    {t('remember_me')}
                   </label>
-                  <button type="button" onClick={() => toast('Fadlan la xiriir shirkadda Gurmad si loo dib-u-deeqo password-kaaga.', { icon: '🔑' })} style={{ background: 'none', border: 'none', color: GREEN_DARK, fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
-                    Ihlaaw Password-ka?
+                  <button type="button" onClick={() => toast(t('forgot_password_toast'), { icon: '🔑' })} style={{ background: 'none', border: 'none', color: GREEN_DARK, fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer' }}>
+                    {t('forgot_password')}
                   </button>
                 </div>
 
@@ -460,29 +562,29 @@ const CustomerPortalApp = () => {
                   color: 'white', fontWeight: 800, fontSize: '1rem', cursor: isLoggingIn ? 'default' : 'pointer', marginTop: '0.3rem',
                   boxShadow: '0 10px 24px rgba(63,174,42,0.32)'
                 }}>
-                  {isLoggingIn ? 'Logging in...' : (<><Lock size={16} /> Login <ArrowRight size={16} /></>)}
+                  {isLoggingIn ? t('logging_in') : (<><Lock size={16} /> {t('login')} <ArrowRight size={16} /></>)}
                 </button>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '0.3rem 0' }}>
                   <span style={{ flex: 1, height: '1px', background: '#f1f5f9' }} />
-                  <span style={{ fontSize: '0.72rem', color: '#cbd5e1', fontWeight: 800 }}>AMA</span>
+                  <span style={{ fontSize: '0.72rem', color: '#cbd5e1', fontWeight: 800 }}>{t('or')}</span>
                   <span style={{ flex: 1, height: '1px', background: '#f1f5f9' }} />
                 </div>
 
-                <button type="button" onClick={() => toast('SMS Code login weli lama hirgeliyay — fadlan isticmaal password-kaaga.', { icon: 'ℹ️' })} style={{
+                <button type="button" onClick={() => toast(t('sms_not_implemented'), { icon: 'ℹ️' })} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px',
                   padding: '1rem', borderRadius: '18px', border: '1.5px solid #e2e8f0', background: 'white',
                   color: GREEN_DARK, fontWeight: 800, fontSize: '0.92rem', cursor: 'pointer'
                 }}>
-                  <MessageCircle size={17} /> Login with SMS Code
+                  <MessageCircle size={17} /> {t('sms_login')}
                 </button>
               </form>
 
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', background: '#f0fdf4', borderRadius: '16px', padding: '0.9rem 1rem', marginTop: '1.4rem' }}>
                 <ShieldCheck size={18} color={GREEN} style={{ flexShrink: 0, marginTop: '1px' }} />
                 <div>
-                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#15803d' }}>Nidaam ammaan ah oo lagu kalsoon yahay</div>
-                  <div style={{ fontSize: '0.76rem', color: '#4d7c0f', marginTop: '2px' }}>Data-gaaga waa mid ammaan ah oo qarsoon.</div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: '#15803d' }}>{t('security_title')}</div>
+                  <div style={{ fontSize: '0.76rem', color: '#4d7c0f', marginTop: '2px' }}>{t('security_subtitle')}</div>
                 </div>
               </div>
             </div>
@@ -494,10 +596,10 @@ const CustomerPortalApp = () => {
 
   // ============ APP SHELL ============
   const tabs = [
-    { id: 'dashboard', label: 'Home', icon: Home },
-    { id: 'payments', label: 'Payments', icon: DollarSign },
-    { id: 'collections', label: 'Pickups', icon: Truck },
-    { id: 'complaints', label: 'Support', icon: MessageSquare },
+    { id: 'dashboard', label: t('tab_home'), icon: Home },
+    { id: 'payments', label: t('tab_payments'), icon: DollarSign },
+    { id: 'collections', label: t('tab_pickups'), icon: Truck },
+    { id: 'complaints', label: t('tab_support'), icon: MessageSquare },
   ];
 
   return (
@@ -519,17 +621,20 @@ const CustomerPortalApp = () => {
                   <img src={`/api/uploads/${customer.photo}`} alt={customer.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (customer.name?.[0]?.toUpperCase() || 'G')}
               </div>
-              <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} title="Beddel sawirka" style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', border: '2px solid #f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
+              <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} title={t('change_photo')} style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', border: '2px solid #f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
                 <Camera size={9} color={GREEN} />
               </button>
               <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
             </div>
             <button onClick={() => setShowChangePassword(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
-              <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>Ku soo dhawoow</div>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>{t('welcome_back')}</div>
               <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a' }}>{customer.name}</div>
             </button>
           </div>
           <div style={{ display: 'flex', gap: '9px' }}>
+            <button onClick={toggleLang} title={lang === 'so' ? 'Switch to English' : 'U beddel Soomaali'} style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', fontSize: '0.68rem', fontWeight: 800, color: GREEN_DARK }}>
+              {lang.toUpperCase()}
+            </button>
             <button onClick={openNotifications} style={{ position: 'relative', width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}>
               <Bell size={16} color="#64748b" />
               {unreadCount > 0 && (
@@ -547,7 +652,7 @@ const CustomerPortalApp = () => {
         {/* Scrollable content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.3rem 1.3rem 1rem' }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '4rem', color: '#94a3b8', fontWeight: 600 }}>Loading...</div>
+            <div style={{ textAlign: 'center', padding: '4rem', color: '#94a3b8', fontWeight: 600 }}>{t('loading')}</div>
           ) : tab === 'dashboard' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
               {/* Hero balance card */}
@@ -555,22 +660,22 @@ const CustomerPortalApp = () => {
                 <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '160px', height: '160px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', zIndex: 1 }}>
                   <div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.85, fontWeight: 700, marginBottom: '6px' }}>OUTSTANDING BALANCE</div>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.85, fontWeight: 700, marginBottom: '6px' }}>{t('outstanding_balance')}</div>
                     <div style={{ fontSize: '2.1rem', fontWeight: 900, letterSpacing: '-0.02em' }}>${outstandingBalance.toFixed(2)}</div>
                   </div>
                   <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: '12px', padding: '6px 12px', fontSize: '0.72rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    {isPaid ? <CheckCircle2 size={13} /> : <Clock size={13} />} {customer.status || 'Unpaid'}
+                    {isPaid ? <CheckCircle2 size={13} /> : <Clock size={13} />} {customer.status === 'Paid' ? t('collected') : (customer.status || t('unpaid'))}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '1.5rem', marginTop: '1.3rem', position: 'relative', zIndex: 1 }}>
                   <div>
-                    <div style={{ fontSize: '0.68rem', opacity: 0.8, fontWeight: 700 }}>MONTHLY FEE</div>
+                    <div style={{ fontSize: '0.68rem', opacity: 0.8, fontWeight: 700 }}>{t('monthly_fee')}</div>
                     <div style={{ fontSize: '1rem', fontWeight: 800 }}>${parseFloat(customer.fee || 0).toFixed(2)}</div>
                   </div>
                   <div style={{ width: '1px', background: 'rgba(255,255,255,0.25)' }} />
                   <div>
-                    <div style={{ fontSize: '0.68rem', opacity: 0.8, fontWeight: 700 }}>COLLECTOR</div>
-                    <div style={{ fontSize: '1rem', fontWeight: 800 }}>{customer.collector_name || 'Unassigned'}</div>
+                    <div style={{ fontSize: '0.68rem', opacity: 0.8, fontWeight: 700 }}>{t('collector_label')}</div>
+                    <div style={{ fontSize: '1rem', fontWeight: 800 }}>{customer.collector_name || t('unassigned')}</div>
                   </div>
                 </div>
               </div>
@@ -578,10 +683,10 @@ const CustomerPortalApp = () => {
               {/* Quick actions */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.6rem' }}>
                 {[
-                  { label: 'Payments', icon: DollarSign, action: () => setTab('payments') },
-                  { label: 'Pickups', icon: Truck, action: () => setTab('collections') },
-                  { label: 'Support', icon: MessageSquare, action: () => setTab('complaints') },
-                  { label: 'New Issue', icon: Plus, action: () => { setTab('complaints'); setShowComplaintForm(true); } },
+                  { label: t('tab_payments'), icon: DollarSign, action: () => setTab('payments') },
+                  { label: t('tab_pickups'), icon: Truck, action: () => setTab('collections') },
+                  { label: t('tab_support'), icon: MessageSquare, action: () => setTab('complaints') },
+                  { label: t('new_issue'), icon: Plus, action: () => { setTab('complaints'); setShowComplaintForm(true); } },
                 ].map((qa, i) => (
                   <button key={i} onClick={qa.action} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', background: 'white', border: '1px solid #f1f5f9', borderRadius: '18px', padding: '0.9rem 0.4rem', cursor: 'pointer', boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
                     <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -598,9 +703,9 @@ const CustomerPortalApp = () => {
                     <Truck size={19} color={customer.next_pickup.isToday ? 'white' : GREEN} />
                   </div>
                   <div>
-                    <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>Booqashada Xigta</div>
+                    <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>{t('next_pickup')}</div>
                     <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>
-                      {customer.next_pickup.isToday ? 'Maanta' : new Date(customer.next_pickup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+                      {customer.next_pickup.isToday ? t('today') : new Date(customer.next_pickup.date).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
                       {customer.next_pickup.time && <span style={{ color: '#94a3b8', fontWeight: 600 }}> · {customer.next_pickup.time}</span>}
                     </div>
                   </div>
@@ -609,14 +714,14 @@ const CustomerPortalApp = () => {
 
               <Card style={{ padding: '1.3rem' }}>
                 <div style={{ fontWeight: 800, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a', fontSize: '0.95rem' }}>
-                  <Tag size={16} color={GREEN} /> My Service
+                  <Tag size={16} color={GREEN} /> {t('my_service')}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
                   {[
-                    { label: 'Category', value: customer.category, icon: Tag },
-                    { label: 'Frequency', value: customer.collection_frequency, icon: Repeat },
-                    { label: 'Zone', value: customer.zone, icon: MapPin },
-                    { label: 'Address', value: `House ${customer.house_no || '—'}, ${customer.area || '—'}`, icon: Home },
+                    { label: t('category'), value: customer.category, icon: Tag },
+                    { label: t('frequency'), value: customer.collection_frequency, icon: Repeat },
+                    { label: t('zone'), value: customer.zone, icon: MapPin },
+                    { label: t('address'), value: `${t('house')} ${customer.house_no || '—'}, ${customer.area || '—'}`, icon: Home },
                   ].map((f, i) => (
                     <div key={i} style={{ display: 'flex', gap: '11px', alignItems: 'center' }}>
                       <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -634,19 +739,19 @@ const CustomerPortalApp = () => {
               {lastCollection && (
                 <Card style={{ padding: '1.3rem' }}>
                   <div style={{ fontWeight: 800, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a', fontSize: '0.95rem' }}>
-                    <Truck size={16} color={GREEN} /> Last Collection
+                    <Truck size={16} color={GREEN} /> {t('last_collection')}
                   </div>
                   <div style={{ fontSize: '0.88rem', color: '#475569' }}>
-                    {new Date(lastCollection.collected_at).toLocaleDateString()} — collected by <strong>{lastCollection.collector_name || 'N/A'}</strong>
+                    {new Date(lastCollection.collected_at).toLocaleDateString()} — {t('collected_by')} <strong>{lastCollection.collector_name || t('na')}</strong>
                   </div>
                 </Card>
               )}
             </div>
           ) : tab === 'payments' ? (
             <div>
-              <h3 style={{ fontWeight: 900, marginBottom: '1rem', color: '#0f172a', fontSize: '1.15rem' }}>Payment History</h3>
+              <h3 style={{ fontWeight: 900, marginBottom: '1rem', color: '#0f172a', fontSize: '1.15rem' }}>{t('payment_history')}</h3>
               {payments.length === 0 ? (
-                <Card><EmptyState icon={Inbox} text="No payment history yet." /></Card>
+                <Card><EmptyState icon={Inbox} text={t('no_payment_history')} /></Card>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                   {payments.map(p => (
@@ -663,7 +768,7 @@ const CustomerPortalApp = () => {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Badge variant={p.status === 'Paid' ? 'good' : 'bad'}>{p.status}</Badge>
                         {p.status === 'Paid' && (
-                          <button onClick={() => downloadReceipt(p)} title="Download Receipt" style={{ width: '30px', height: '30px', borderRadius: '10px', border: '1px solid #f1f5f9', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <button onClick={() => downloadReceipt(p)} title={t('download_receipt')} style={{ width: '30px', height: '30px', borderRadius: '10px', border: '1px solid #f1f5f9', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             <Download size={13} color="#64748b" />
                           </button>
                         )}
@@ -675,9 +780,9 @@ const CustomerPortalApp = () => {
             </div>
           ) : tab === 'collections' ? (
             <div>
-              <h3 style={{ fontWeight: 900, marginBottom: '1rem', color: '#0f172a', fontSize: '1.15rem' }}>Collection History</h3>
+              <h3 style={{ fontWeight: 900, marginBottom: '1rem', color: '#0f172a', fontSize: '1.15rem' }}>{t('collection_history')}</h3>
               {collections.length === 0 ? (
-                <Card><EmptyState icon={Truck} text="No collection history yet." /></Card>
+                <Card><EmptyState icon={Truck} text={t('no_collection_history')} /></Card>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                   {collections.map((c, i) => (
@@ -687,11 +792,11 @@ const CustomerPortalApp = () => {
                           <Truck size={16} color={c.collected ? GREEN : '#f59e0b'} />
                         </div>
                         <div>
-                          <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.92rem' }}>{c.collector_name || c.driver_name || 'Unassigned'}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>{c.collected_at ? new Date(c.collected_at).toLocaleDateString() : 'Not yet scheduled'}</div>
+                          <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '0.92rem' }}>{c.collector_name || c.driver_name || t('unassigned')}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>{c.collected_at ? new Date(c.collected_at).toLocaleDateString() : t('not_scheduled')}</div>
                         </div>
                       </div>
-                      <Badge variant={c.collected ? 'good' : 'warn'}>{c.collected ? 'Collected' : 'Pending'}</Badge>
+                      <Badge variant={c.collected ? 'good' : 'warn'}>{c.collected ? t('collected') : t('pending')}</Badge>
                     </Card>
                   ))}
                 </div>
@@ -700,13 +805,13 @@ const CustomerPortalApp = () => {
           ) : (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.1rem' }}>
-                <h3 style={{ fontWeight: 900, margin: 0, color: '#0f172a', fontSize: '1.15rem' }}>Support</h3>
+                <h3 style={{ fontWeight: 900, margin: 0, color: '#0f172a', fontSize: '1.15rem' }}>{t('support')}</h3>
                 <button onClick={() => setShowComplaintForm(true)} style={{
                   display: 'flex', alignItems: 'center', gap: '6px', padding: '0.6rem 1rem', borderRadius: '14px', border: 'none',
                   background: GREEN, color: 'white', fontWeight: 800, fontSize: '0.8rem', cursor: 'pointer',
                   boxShadow: '0 6px 16px rgba(63,174,42,0.28)'
                 }}>
-                  <Plus size={15} /> New
+                  <Plus size={15} /> {t('new_button')}
                 </button>
               </div>
 
@@ -714,27 +819,27 @@ const CustomerPortalApp = () => {
                 <Card style={{ padding: '1.3rem', marginBottom: '1.1rem' }}>
                   <form onSubmit={handleComplaintSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Title</label>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('complaint_title_label')}</label>
                       <input required value={newComplaint.title} onChange={e => setNewComplaint({...newComplaint, title: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Description</label>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('complaint_description_label')}</label>
                       <textarea value={newComplaint.description} onChange={e => setNewComplaint({...newComplaint, description: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', minHeight: '85px', resize: 'vertical', boxSizing: 'border-box', fontSize: '0.9rem', fontFamily: 'inherit', background: '#f8fafc' }} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Sawir (Optional)</label>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('complaint_photo_label')}</label>
                       <input type="file" accept="image/*" onChange={e => setNewComplaintPhoto(e.target.files[0])} style={{ width: '100%', fontSize: '0.85rem' }} />
                     </div>
                     <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end' }}>
-                      <button type="button" onClick={() => setShowComplaintForm(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>Cancel</button>
-                      <button type="submit" style={{ padding: '0.7rem 1.4rem', borderRadius: '13px', border: 'none', background: GREEN, color: 'white', fontWeight: 800, cursor: 'pointer', fontSize: '0.85rem' }}>Submit</button>
+                      <button type="button" onClick={() => setShowComplaintForm(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>{t('cancel')}</button>
+                      <button type="submit" style={{ padding: '0.7rem 1.4rem', borderRadius: '13px', border: 'none', background: GREEN, color: 'white', fontWeight: 800, cursor: 'pointer', fontSize: '0.85rem' }}>{t('submit')}</button>
                     </div>
                   </form>
                 </Card>
               )}
 
               {complaints.length === 0 ? (
-                <Card><EmptyState icon={MessageSquare} text="No complaints submitted yet." /></Card>
+                <Card><EmptyState icon={MessageSquare} text={t('no_complaints')} /></Card>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                   {complaints.map(c => {
@@ -746,10 +851,10 @@ const CustomerPortalApp = () => {
                           <Badge variant={variant}>{c.status}</Badge>
                         </div>
                         {c.description && <div style={{ fontSize: '0.83rem', color: '#64748b', marginTop: '7px', lineHeight: 1.5 }}>{c.description}</div>}
-                        {c.photo && <a href={`/api/uploads/${c.photo}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.78rem', color: GREEN, marginTop: '6px', display: 'inline-block', fontWeight: 700 }}>📷 Sawirka eeg</a>}
+                        {c.photo && <a href={`/api/uploads/${c.photo}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.78rem', color: GREEN, marginTop: '6px', display: 'inline-block', fontWeight: 700 }}>{t('view_photo')}</a>}
                         {c.admin_reply && (
                           <div style={{ marginTop: '10px', padding: '0.8rem', borderRadius: '13px', background: '#eff6ff', border: '1px solid #dbeafe' }}>
-                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1d4ed8', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Jawaabta Gurmad</div>
+                            <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1d4ed8', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{t('gurmad_reply')}</div>
                             <div style={{ fontSize: '0.83rem', color: '#1e3a5f', lineHeight: 1.5 }}>{c.admin_reply}</div>
                           </div>
                         )}
@@ -787,13 +892,13 @@ const CustomerPortalApp = () => {
             <div onClick={e => e.stopPropagation()} style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', maxHeight: '78%', display: 'flex', flexDirection: 'column', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
               <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bell size={18} color={GREEN} /> Ogeysiisyada
+                  <Bell size={18} color={GREEN} /> {t('notifications_title')}
                 </div>
                 <button onClick={() => setShowNotifications(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b', fontWeight: 700 }}>✕</button>
               </div>
               <div style={{ overflowY: 'auto', padding: '0.8rem 1.3rem 1.6rem' }}>
                 {notifications.length === 0 ? (
-                  <EmptyState icon={Bell} text="Ogeysiis kuma jiro weli" />
+                  <EmptyState icon={Bell} text={t('no_notifications')} />
                 ) : notifications.map(n => (
                   <div key={n.id} style={{ display: 'flex', gap: '11px', padding: '0.9rem 0', borderBottom: '1px solid #f1f5f9' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '11px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -818,25 +923,25 @@ const CustomerPortalApp = () => {
             <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '26px 26px 0 0', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
               <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <KeyRound size={18} color={GREEN} /> Beddel Password
+                  <KeyRound size={18} color={GREEN} /> {t('change_password_title')}
                 </div>
                 <button onClick={() => setShowChangePassword(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}><X size={15} /></button>
               </div>
               <form onSubmit={handleChangePassword} style={{ padding: '1.3rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Password-ka hadda</label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('current_password')}</label>
                   <input required type="password" value={pwForm.currentPassword} onChange={e => setPwForm({...pwForm, currentPassword: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Password cusub (ugu yaraan 6 xaraf)</label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('new_password')}</label>
                   <input required minLength={6} type="password" value={pwForm.newPassword} onChange={e => setPwForm({...pwForm, newPassword: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Ku celi password-ka cusub</label>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('confirm_password')}</label>
                   <input required minLength={6} type="password" value={pwForm.confirmPassword} onChange={e => setPwForm({...pwForm, confirmPassword: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
                 </div>
                 <button type="submit" disabled={isChangingPw} style={{ padding: '0.9rem', borderRadius: '16px', border: 'none', background: isChangingPw ? '#86c976' : GREEN, color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: isChangingPw ? 'default' : 'pointer', marginTop: '0.3rem' }}>
-                  {isChangingPw ? 'Beddelaya...' : 'Beddel Password'}
+                  {isChangingPw ? t('changing') : t('change_password_title')}
                 </button>
               </form>
             </div>
