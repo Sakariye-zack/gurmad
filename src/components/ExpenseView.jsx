@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { Wallet, Fuel, Users, Wrench, Plus, ArrowDown, ArrowUp, XCircle, Save, FileText, Edit3, Trash2, CheckCircle2, Clock, Download } from 'lucide-react';
+import { Wallet, Fuel, Users, Wrench, Plus, ArrowDown, ArrowUp, XCircle, Save, FileText, Edit3, Trash2, CheckCircle2, Clock, Download, Settings, AlertTriangle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const categoryMap = {
@@ -10,9 +10,7 @@ const categoryMap = {
   'Other': { icon: Wallet, color: '#8b5cf6' },
 };
 
-const BUDGET_MONTHLY = 5000;
-
-const ExpenseView = () => {
+const ExpenseView = ({ currentUser }) => {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -20,6 +18,10 @@ const ExpenseView = () => {
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [budgets, setBudgets] = useState([]);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [budgetForm, setBudgetForm] = useState({});
+  const [isSavingBudgets, setIsSavingBudgets] = useState(false);
 
   // Form state
   const [newExpense, setNewExpense] = useState({
@@ -46,6 +48,37 @@ const ExpenseView = () => {
       setExpenses(mapped);
       setLoading(false);
     });
+  };
+
+  const fetchBudgets = () => {
+    api.getBudgetStatus().then(setBudgets).catch(() => {});
+  };
+
+  useEffect(() => { fetchBudgets(); }, []);
+
+  const openBudgetModal = () => {
+    const form = {};
+    Object.keys(categoryMap).forEach(cat => {
+      const existing = budgets.find(b => b.category === cat);
+      form[cat] = existing ? existing.monthly_limit : '';
+    });
+    setBudgetForm(form);
+    setShowBudgetModal(true);
+  };
+
+  const handleSaveBudgets = async (e) => {
+    e.preventDefault();
+    setIsSavingBudgets(true);
+    try {
+      await Promise.all(Object.entries(budgetForm).map(([category, limit]) => api.setBudget(category, parseFloat(limit) || 0)));
+      toast.success('Budgets updated');
+      setShowBudgetModal(false);
+      fetchBudgets();
+    } catch (err) {
+      toast.error('Failed to save budgets');
+    } finally {
+      setIsSavingBudgets(false);
+    }
   };
 
   const handleAddExpense = async (e) => {
@@ -152,8 +185,10 @@ const ExpenseView = () => {
 
   // Calculations
   const totalSpent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-  const budgetConsumed = Math.min((totalSpent / BUDGET_MONTHLY) * 100, 100).toFixed(1);
-  const remainingBudget = Math.max(BUDGET_MONTHLY - totalSpent, 0);
+  const totalBudgetLimit = budgets.reduce((sum, b) => sum + parseFloat(b.monthly_limit || 0), 0);
+  const totalBudgetUsed = budgets.reduce((sum, b) => sum + parseFloat(b.used || 0), 0);
+  const budgetConsumed = totalBudgetLimit > 0 ? Math.min((totalBudgetUsed / totalBudgetLimit) * 100, 100).toFixed(1) : 0;
+  const remainingBudget = Math.max(totalBudgetLimit - totalBudgetUsed, 0);
 
   // Group by Category
   const categoryTotals = expenses.reduce((acc, exp) => {
@@ -164,11 +199,16 @@ const ExpenseView = () => {
   const dynamicCategories = Object.keys(categoryMap).map(cat => {
     const amount = categoryTotals[cat] || 0;
     const percent = totalSpent > 0 ? ((amount / totalSpent) * 100).toFixed(1) : 0;
+    const budget = budgets.find(b => b.category === cat);
+    const limit = budget ? parseFloat(budget.monthly_limit) : 0;
+    const budgetPercent = limit > 0 ? Math.min((parseFloat(budget.used || 0) / limit) * 100, 100) : null;
     return {
       label: cat,
       amount: `$${amount.toLocaleString()}`,
       percent: percent,
-      color: categoryMap[cat].color
+      color: categoryMap[cat].color,
+      limit,
+      budgetPercent
     };
   }).sort((a, b) => parseFloat(b.percent) - parseFloat(a.percent));
 
@@ -178,15 +218,26 @@ const ExpenseView = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       {/* Expense Summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-        <div className="card" style={{ background: 'linear-gradient(135deg, var(--gurmad-green), var(--gurmad-green-dark))', color: 'white' }}>
+        <div className="card" style={{ background: 'linear-gradient(135deg, var(--gurmad-green), var(--gurmad-green-dark))', color: 'white', position: 'relative' }}>
+          {currentUser?.role === 'admin' && (
+            <button onClick={openBudgetModal} title="Manage Budgets" style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', padding: '6px', cursor: 'pointer', color: 'white', display: 'flex' }}>
+              <Settings size={16} />
+            </button>
+          )}
           <p style={{ opacity: 0.9, fontSize: '0.9rem', marginBottom: '4px' }}>Monthly Budget Remaining</p>
-          <h2 style={{ fontSize: '2rem', fontWeight: 700 }}>${remainingBudget.toLocaleString(undefined, {minimumFractionDigits: 2})}</h2>
-          <div style={{ marginTop: '1rem', height: '4px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '2px' }}>
-             <div style={{ width: `${budgetConsumed}%`, height: '100%', backgroundColor: 'white', borderRadius: '2px' }}></div>
-          </div>
-          <p style={{ fontSize: '0.8rem', marginTop: '8px', opacity: 0.8 }}>{budgetConsumed}% of $5,000 budget consumed</p>
+          {totalBudgetLimit > 0 ? (
+            <>
+              <h2 style={{ fontSize: '2rem', fontWeight: 700 }}>${remainingBudget.toLocaleString(undefined, {minimumFractionDigits: 2})}</h2>
+              <div style={{ marginTop: '1rem', height: '4px', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: '2px' }}>
+                 <div style={{ width: `${budgetConsumed}%`, height: '100%', backgroundColor: 'white', borderRadius: '2px' }}></div>
+              </div>
+              <p style={{ fontSize: '0.8rem', marginTop: '8px', opacity: 0.8 }}>{budgetConsumed}% of ${totalBudgetLimit.toLocaleString()} budget consumed</p>
+            </>
+          ) : (
+            <p style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '8px' }}>No budgets set yet. {currentUser?.role === 'admin' ? 'Click the gear icon to set one.' : 'Ask an admin to set one.'}</p>
+          )}
         </div>
-        
+
         <div className="card" style={{ borderLeft: '4px solid var(--gurmad-orange)' }}>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Total Spent (All Time)</p>
           <h2 style={{ fontSize: '2rem', fontWeight: 700, margin: '4px 0' }}>${totalSpent.toLocaleString(undefined, {minimumFractionDigits: 2})}</h2>
@@ -195,6 +246,15 @@ const ExpenseView = () => {
           </div>
         </div>
       </div>
+
+      {budgets.some(b => parseFloat(b.monthly_limit) > 0 && parseFloat(b.used || 0) / parseFloat(b.monthly_limit) >= 0.9) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '1rem', borderRadius: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca' }}>
+          <AlertTriangle size={18} color="#ef4444" style={{ flexShrink: 0 }} />
+          <div style={{ fontSize: '0.85rem', color: '#991b1b' }}>
+            <strong>Budget alert:</strong> {budgets.filter(b => parseFloat(b.monthly_limit) > 0 && parseFloat(b.used || 0) / parseFloat(b.monthly_limit) >= 0.9).map(b => b.category).join(', ')} {budgets.filter(b => parseFloat(b.monthly_limit) > 0 && parseFloat(b.used || 0) / parseFloat(b.monthly_limit) >= 0.9).length > 1 ? 'are' : 'is'} at 90%+ of this month's budget.
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
         {/* List */}
@@ -288,6 +348,14 @@ const ExpenseView = () => {
                 <div style={{ width: '100%', height: '6px', backgroundColor: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
                   <div style={{ width: `${cat.percent}%`, height: '100%', backgroundColor: cat.color, borderRadius: '3px', transition: 'width 1s ease' }}></div>
                 </div>
+                {cat.limit > 0 && (
+                  <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ flex: 1, height: '4px', backgroundColor: '#f1f5f9', borderRadius: '2px', overflow: 'hidden' }}>
+                      <div style={{ width: `${cat.budgetPercent}%`, height: '100%', backgroundColor: cat.budgetPercent >= 90 ? '#ef4444' : cat.budgetPercent >= 70 ? '#f59e0b' : '#10b981', borderRadius: '2px' }}></div>
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>${cat.limit.toLocaleString()} budget</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -450,6 +518,36 @@ const ExpenseView = () => {
                 </button>
               </form>
             </div>
+        </div>
+      )}
+
+      {showBudgetModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '380px', padding: '2rem', position: 'relative', borderTop: '4px solid var(--gurmad-green)' }}>
+            <button onClick={() => setShowBudgetModal(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+              <XCircle size={24} />
+            </button>
+            <h3 style={{ fontWeight: 700, marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Settings color="var(--gurmad-green)" size={20} /> Manage Budgets
+            </h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.3rem' }}>Set a monthly limit per category. Leave blank / $0 for no limit.</p>
+            <form onSubmit={handleSaveBudgets} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {Object.keys(categoryMap).map(cat => (
+                <div key={cat}>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>{cat}</label>
+                  <input
+                    type="number" min="0" step="0.01" placeholder="0.00"
+                    value={budgetForm[cat] ?? ''}
+                    onChange={e => setBudgetForm({ ...budgetForm, [cat]: e.target.value })}
+                    style={{ width: '100%', padding: '0.7rem', borderRadius: '8px', border: '1px solid var(--border-color)', boxSizing: 'border-box' }}
+                  />
+                </div>
+              ))}
+              <button type="submit" disabled={isSavingBudgets} className="btn-primary" style={{ marginTop: '10px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+                <Save size={18} /> {isSavingBudgets ? 'Saving...' : 'Save Budgets'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 

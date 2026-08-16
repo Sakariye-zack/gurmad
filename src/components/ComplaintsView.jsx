@@ -12,6 +12,7 @@ const ComplaintsView = ({ searchQuery = '' }) => {
   const [newComplaint, setNewComplaint] = useState({
     customer_id: '', title: '', description: '', priority: 'Medium', assigned_to: ''
   });
+  const [newComplaintPhoto, setNewComplaintPhoto] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
 
@@ -49,10 +50,14 @@ const ComplaintsView = ({ searchQuery = '' }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.addComplaint(newComplaint);
+      const formData = new FormData();
+      Object.entries(newComplaint).forEach(([k, v]) => formData.append(k, v));
+      if (newComplaintPhoto) formData.append('photo', newComplaintPhoto);
+      await api.addComplaint(formData);
       toast.success('Complaint registered successfully');
       setIsModalOpen(false);
       setNewComplaint({ customer_id: '', title: '', description: '', priority: 'Medium', assigned_to: '' });
+      setNewComplaintPhoto(null);
       loadData();
     } catch (err) {
       toast.error('Failed to register complaint');
@@ -164,6 +169,9 @@ const ComplaintsView = ({ searchQuery = '' }) => {
                   <td style={{ padding: '1rem' }}>
                     <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{c.title}</div>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: '250px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description}</div>
+                    {c.photo && (
+                      <a href={`/api/uploads/${c.photo}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.75rem', color: '#0ea5e9', display: 'inline-block', marginTop: '4px' }}>📷 View Photo</a>
+                    )}
                     {c.admin_reply && (
                       <div style={{ fontSize: '0.75rem', color: '#1d4ed8', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <Reply size={11} /> Replied
@@ -229,6 +237,10 @@ const ComplaintsView = ({ searchQuery = '' }) => {
               <div>
                 <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Description</label>
                 <textarea required placeholder="Detailed explanation of the issue..." value={newComplaint.description} onChange={e => setNewComplaint({...newComplaint, description: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '100px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Photo (Optional)</label>
+                <input type="file" accept="image/*" onChange={e => setNewComplaintPhoto(e.target.files[0])} style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>

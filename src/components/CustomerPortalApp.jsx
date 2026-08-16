@@ -64,6 +64,7 @@ const CustomerPortalApp = () => {
   const [loading, setLoading] = useState(false);
   const [showComplaintForm, setShowComplaintForm] = useState(false);
   const [newComplaint, setNewComplaint] = useState({ title: '', description: '' });
+  const [newComplaintPhoto, setNewComplaintPhoto] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -334,10 +335,15 @@ const CustomerPortalApp = () => {
   const handleComplaintSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.customerPortal.addComplaint(newComplaint);
+      const formData = new FormData();
+      formData.append('title', newComplaint.title);
+      formData.append('description', newComplaint.description);
+      if (newComplaintPhoto) formData.append('photo', newComplaintPhoto);
+      await api.customerPortal.addComplaint(formData);
       toast.success('Waa la diray cabashadaada / Complaint submitted');
       setShowComplaintForm(false);
       setNewComplaint({ title: '', description: '' });
+      setNewComplaintPhoto(null);
       const comp = await api.customerPortal.getComplaints();
       setComplaints(comp);
     } catch (err) {
@@ -715,6 +721,10 @@ const CustomerPortalApp = () => {
                       <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Description</label>
                       <textarea value={newComplaint.description} onChange={e => setNewComplaint({...newComplaint, description: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', minHeight: '85px', resize: 'vertical', boxSizing: 'border-box', fontSize: '0.9rem', fontFamily: 'inherit', background: '#f8fafc' }} />
                     </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>Sawir (Optional)</label>
+                      <input type="file" accept="image/*" onChange={e => setNewComplaintPhoto(e.target.files[0])} style={{ width: '100%', fontSize: '0.85rem' }} />
+                    </div>
                     <div style={{ display: 'flex', gap: '0.8rem', justifyContent: 'flex-end' }}>
                       <button type="button" onClick={() => setShowComplaintForm(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 700, cursor: 'pointer', fontSize: '0.85rem' }}>Cancel</button>
                       <button type="submit" style={{ padding: '0.7rem 1.4rem', borderRadius: '13px', border: 'none', background: GREEN, color: 'white', fontWeight: 800, cursor: 'pointer', fontSize: '0.85rem' }}>Submit</button>
@@ -736,6 +746,7 @@ const CustomerPortalApp = () => {
                           <Badge variant={variant}>{c.status}</Badge>
                         </div>
                         {c.description && <div style={{ fontSize: '0.83rem', color: '#64748b', marginTop: '7px', lineHeight: 1.5 }}>{c.description}</div>}
+                        {c.photo && <a href={`/api/uploads/${c.photo}`} target="_blank" rel="noreferrer" style={{ fontSize: '0.78rem', color: GREEN, marginTop: '6px', display: 'inline-block', fontWeight: 700 }}>📷 Sawirka eeg</a>}
                         {c.admin_reply && (
                           <div style={{ marginTop: '10px', padding: '0.8rem', borderRadius: '13px', background: '#eff6ff', border: '1px solid #dbeafe' }}>
                             <div style={{ fontSize: '0.7rem', fontWeight: 800, color: '#1d4ed8', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Jawaabta Gurmad</div>

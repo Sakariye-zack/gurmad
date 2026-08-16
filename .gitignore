@@ -13,6 +13,8 @@ dist
 dist-ssr
 server/uploads/*
 !server/uploads/.gitkeep
+server/backups/*
+!server/backups/.gitkeep
 *.local
 .env
 .env.*

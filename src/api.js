@@ -313,10 +313,24 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify(location)
   }).then(handleResponse),
+  markCustomerMissed: (taskId, customerId, formData) => fetch(`${API_BASE_URL}/tasks/${taskId}/customers/${customerId}/missed`, {
+    method: 'POST', headers: getAuthHeaders(), body: formData
+  }).then(handleResponse),
+  getMissedCollections: () => fetch(`${API_BASE_URL}/missed-collections`, { headers: getAuthHeaders() }).then(handleResponse),
   getServiceLog: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return fetch(`${API_BASE_URL}/reports/service-log${qs ? `?${qs}` : ''}`, { headers: getAuthHeaders() }).then(handleResponse);
   },
+
+  // Budgets
+  getBudgetStatus: () => fetch(`${API_BASE_URL}/budgets/status`, { headers: getAuthHeaders() }).then(handleResponse),
+  setBudget: (category, monthly_limit) => fetch(`${API_BASE_URL}/budgets`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ category, monthly_limit })
+  }).then(handleResponse),
+
+  // Automated backups
+  getBackupsList: () => fetch(`${API_BASE_URL}/admin/backups`, { headers: getAuthHeaders() }).then(handleResponse),
+  runBackupNow: () => fetch(`${API_BASE_URL}/admin/backups/run-now`, { method: 'POST', headers: getAuthHeaders() }).then(handleResponse),
 
   // Inventory
   getInventory: () => fetch(`${API_BASE_URL}/inventory`, { headers: getAuthHeaders() }).then(handleResponse),
@@ -457,10 +471,8 @@ export const api = {
     getPayments: () => fetch(`${API_BASE_URL}/customer-portal/payments`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
     getCollections: () => fetch(`${API_BASE_URL}/customer-portal/collections`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
     getComplaints: () => fetch(`${API_BASE_URL}/customer-portal/complaints`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
-    addComplaint: (data) => fetch(`${API_BASE_URL}/customer-portal/complaints`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders() },
-      body: JSON.stringify(data)
+    addComplaint: (formData) => fetch(`${API_BASE_URL}/customer-portal/complaints`, {
+      method: 'POST', headers: getCustomerAuthHeaders(), body: formData
     }).then(handleResponse),
     getNotifications: () => fetch(`${API_BASE_URL}/customer-portal/notifications`, { headers: getCustomerAuthHeaders() }).then(handleResponse),
     markNotificationRead: (id) => fetch(`${API_BASE_URL}/customer-portal/notifications/${id}/read`, {
@@ -667,10 +679,8 @@ export const api = {
 
   // Complaints
   getComplaints: () => fetch(`${API_BASE_URL}/complaints`, { headers: getAuthHeaders() }).then(handleResponse),
-  addComplaint: (data) => fetch(`${API_BASE_URL}/complaints`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-    body: JSON.stringify(data)
+  addComplaint: (formData) => fetch(`${API_BASE_URL}/complaints`, {
+    method: 'POST', headers: getAuthHeaders(), body: formData
   }).then(handleResponse),
   updateComplaintStatus: (id, status) => fetch(`${API_BASE_URL}/complaints/${id}/status`, {
     method: 'PUT',

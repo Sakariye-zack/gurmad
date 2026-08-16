@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { Truck, MapPin, Plus, ChevronRight, CheckCircle2, Clock, PlayCircle, XCircle, Navigation, Users, Trash2, ArrowLeft, Calendar, ClipboardList, Filter, PackageCheck } from 'lucide-react';
+import { Truck, MapPin, Plus, ChevronRight, CheckCircle2, Clock, PlayCircle, XCircle, Navigation, Users, Trash2, ArrowLeft, Calendar, ClipboardList, Filter, PackageCheck, AlertTriangle, Phone } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 const TaskView = ({ searchQuery = '', currentUser }) => {
@@ -26,7 +26,9 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
   const [markingServiceId, setMarkingServiceId] = useState(null);
 
   // Work Log (cashier follow-up report)
-  const [mainTab, setMainTab] = useState('tasks'); // 'tasks' or 'worklog'
+  const [mainTab, setMainTab] = useState('tasks'); // 'tasks', 'worklog', or 'missed'
+  const [missedCollections, setMissedCollections] = useState([]);
+  const [missedLoading, setMissedLoading] = useState(false);
   const todayStr = new Date().toISOString().split('T')[0];
   const [workLogFilters, setWorkLogFilters] = useState({ collector: '', from: todayStr, to: todayStr });
   const [workLogResults, setWorkLogResults] = useState([]);
@@ -212,7 +214,20 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
 
   useEffect(() => {
     if (mainTab === 'worklog') runWorkLogSearch();
+    if (mainTab === 'missed') fetchMissedCollections();
   }, [mainTab]);
+
+  const fetchMissedCollections = async () => {
+    setMissedLoading(true);
+    try {
+      const data = await api.getMissedCollections();
+      setMissedCollections(data);
+    } catch (err) {
+      toast.error('Failed to load missed collections');
+    } finally {
+      setMissedLoading(false);
+    }
+  };
 
   const handleRecordPayment = async (e) => {
     e.preventDefault();
@@ -342,6 +357,67 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
           >
             <ClipboardList size={18} /> Diiwaanka Shaqada (Work Log)
           </button>
+          <button
+            onClick={() => setMainTab('missed')}
+            style={{
+              padding: '0.75rem 1.25rem', border: 'none', background: 'none', cursor: 'pointer',
+              fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px',
+              color: mainTab === 'missed' ? '#f97316' : 'var(--text-muted)',
+              borderBottom: mainTab === 'missed' ? '2px solid #f97316' : '2px solid transparent',
+              marginBottom: '-2px'
+            }}
+          >
+            <AlertTriangle size={18} /> Missed Collections{missedCollections.length > 0 ? ` (${missedCollections.length})` : ''}
+          </button>
+        </div>
+      )}
+
+      {mainTab === 'missed' && viewMode === 'list' && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '1.25rem', borderBottom: '1px solid var(--border-color)' }}>
+            <h3 style={{ fontWeight: 700, margin: 0 }}>Missed Collections — Needs Reassignment</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '4px 0 0 0' }}>Customers a collector couldn't service today, with the reason logged in the field.</p>
+          </div>
+          {missedLoading ? (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>
+          ) : missedCollections.length === 0 ? (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>No missed collections pending reassignment. 🎉</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.85rem' }}>CUSTOMER</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.85rem' }}>ZONE</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.85rem' }}>COLLECTOR</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.85rem' }}>REASON</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.85rem' }}>WHEN</th>
+                  <th style={{ padding: '1rem', color: 'var(--text-muted)', fontWeight: 700, fontSize: '0.85rem' }}>PHOTO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {missedCollections.map((m, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{ fontWeight: 700 }}>{m.name}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}><Phone size={12} /> {m.phone}</div>
+                    </td>
+                    <td style={{ padding: '1rem', color: '#0ea5e9', fontWeight: 600 }}>{m.zone || '-'}</td>
+                    <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>{m.collector_name}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, backgroundColor: '#fff7ed', color: '#c2410c' }}>{m.missed_reason}</span>
+                      {m.missed_note && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '220px' }}>{m.missed_note}</div>}
+                    </td>
+                    <td style={{ padding: '1rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{new Date(m.missed_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td style={{ padding: '1rem' }}>
+                      {m.missed_photo ? (
+                        <a href={`/api/uploads/${m.missed_photo}`} target="_blank" rel="noreferrer" style={{ color: '#0ea5e9', fontWeight: 700, fontSize: '0.8rem' }}>📷 View</a>
+                      ) : <span style={{ color: '#cbd5e1' }}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 

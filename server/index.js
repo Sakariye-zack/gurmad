@@ -218,6 +218,13 @@ const runMigrations = async () => {
       ALTER TABLE complaints ADD COLUMN IF NOT EXISTS replied_at TIMESTAMP;
     `);
 
+    // Photo evidence — a missed-collection or property-damage complaint is far more actionable
+    // with a photo attached, from either staff (ComplaintsView) or the customer themselves
+    // (Customer Portal).
+    await db.query(`
+      ALTER TABLE complaints ADD COLUMN IF NOT EXISTS photo VARCHAR(255);
+    `);
+
     // Cashout signature workflow: the proposal docs specify Cashier -> submit cashout ->
     // Chairman/Gudoomiye reviews reconciliation -> approve/reject -> closed. Gurmad's own
     // process adds a physical step in between: the cashout slip is printed, signed on paper by
@@ -242,6 +249,18 @@ const runMigrations = async () => {
       ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES users(id);
       ALTER TABLE expenses ADD COLUMN IF NOT EXISTS reference_no VARCHAR(100);
       ALTER TABLE expenses ADD COLUMN IF NOT EXISTS invoice_image VARCHAR(255);
+    `);
+
+    // Budget Management — real per-category monthly limits (Fuel/Salaries/Maintenance/Other),
+    // replacing the single hardcoded $5,000 figure the Expense Tracker used to show. One row
+    // per category; "used" is always computed live from the expenses table, never stored.
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS budgets (
+        id SERIAL PRIMARY KEY,
+        category VARCHAR(50) NOT NULL UNIQUE,
+        monthly_limit NUMERIC NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     // Document & Financial Documents module: consolidates the proposal's ~20 page-types
@@ -449,6 +468,19 @@ const runMigrations = async () => {
       ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS collected_lng DECIMAL(11, 8);
     `);
 
+    // Missed Collection workflow — until now a customer not marked collected just stayed
+    // "Pending" with no record of why. This captures the reason/photo/GPS a collector logs at
+    // the moment they can't service a stop, so Operations can see and reassign it.
+    await db.query(`
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS missed BOOLEAN DEFAULT FALSE;
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS missed_reason VARCHAR(255);
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS missed_note TEXT;
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS missed_photo VARCHAR(255);
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS missed_at TIMESTAMP;
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS missed_lat DECIMAL(10, 8);
+      ALTER TABLE task_customers ADD COLUMN IF NOT EXISTS missed_lng DECIMAL(11, 8);
+    `);
+
     // Flag payroll records where attendance didn't cover the full month, instead of silently paying full base salary
     await db.query(`
       ALTER TABLE payroll ADD COLUMN IF NOT EXISTS needs_review BOOLEAN DEFAULT FALSE;
@@ -591,6 +623,28 @@ const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir);
 }
+
+// Automated backups write here, deliberately outside the public uploads/ folder (which express
+// serves statically) so a backup file is never reachable except through the authenticated route.
+const backupDir = path.join(__dirname, 'backups');
+if (!fs.existsSync(backupDir)) {
+  fs.mkdirSync(backupDir);
+}
+const BACKUP_TABLES = ['users', 'employees', 'trucks', 'zones', 'customers', 'invoices', 'expenses', 'tasks', 'inventory', 'debts', 'payroll', 'attendance', 'audit_logs', 'truck_fuel_logs', 'truck_maintenance_logs'];
+const runScheduledBackup = async () => {
+  const backupData = {};
+  for (const table of BACKUP_TABLES) {
+    const result = await db.query(`SELECT * FROM ${table}`);
+    backupData[table] = result.rows;
+  }
+  const fileName = `backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  fs.writeFileSync(path.join(backupDir, fileName), JSON.stringify(backupData));
+  // Keep the most recent 8 (~2 months of weekly backups) so the disk doesn't grow unbounded.
+  const files = fs.readdirSync(backupDir).filter(f => f.startsWith('backup_')).sort();
+  while (files.length > 8) fs.unlinkSync(path.join(backupDir, files.shift()));
+  console.log(`[Backup] Saved ${fileName}`);
+  return fileName;
+};
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -1000,7 +1054,7 @@ app.get('/api/customer-portal/collections', authenticateCustomer, async (req, re
 app.get('/api/customer-portal/complaints', authenticateCustomer, async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, title, description, status, priority, admin_reply, replied_at, created_at FROM complaints WHERE customer_id = $1 ORDER BY created_at DESC',
+      'SELECT id, title, description, status, priority, photo, admin_reply, replied_at, created_at FROM complaints WHERE customer_id = $1 ORDER BY created_at DESC',
       [req.customerId]
     );
     res.json(result.rows);
@@ -1009,13 +1063,13 @@ app.get('/api/customer-portal/complaints', authenticateCustomer, async (req, res
   }
 });
 
-app.post('/api/customer-portal/complaints', authenticateCustomer, async (req, res) => {
+app.post('/api/customer-portal/complaints', authenticateCustomer, upload.single('photo'), async (req, res) => {
   const { title, description } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: 'A title is required' });
   try {
     const result = await db.query(
-      'INSERT INTO complaints (customer_id, title, description, status) VALUES ($1, $2, $3, $4) RETURNING *',
-      [req.customerId, title.trim(), description || null, 'Pending']
+      'INSERT INTO complaints (customer_id, title, description, status, photo) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [req.customerId, title.trim(), description || null, 'Pending', req.file ? req.file.filename : null]
     );
     // So staff see it show up the same way any other new complaint does.
     await db.query('INSERT INTO notifications (user_id, title, message) VALUES (1, $1, $2)',
@@ -1696,9 +1750,13 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
     });
 
     // WhatsApp the customer automatically: a receipt when they paid in full, or a debt
-    // reminder with the exact balance owed when part/all of it was left as debt.
+    // reminder with the exact balance owed when part/all of it was left as debt. Gated on the
+    // 'whatsappNotify' toggle in Settings > Notifications — that setting existed in the UI
+    // already but was never actually checked anywhere, so it did nothing before this.
     (async () => {
       try {
+        const notifySetting = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'whatsappNotify'");
+        if (notifySetting.rows[0]?.setting_value === 'false') return;
         const custRow = await db.query('SELECT name, phone, whatsapp FROM customers WHERE id = $1', [customerId]);
         const cust = custRow.rows[0];
         if (!cust) return;
@@ -1940,7 +1998,8 @@ const getTodayRouteForCollectors = async (collectorNames) => {
   const taskCollectorMap = Object.fromEntries(tasksRes.rows.map(t => [t.id, t.collector_name]));
 
   const customersRes = await db.query(
-    `SELECT c.*, tc.collected, tc.collected_at, tc.collected_lat, tc.collected_lng, tc.task_id
+    `SELECT c.*, tc.collected, tc.collected_at, tc.collected_lat, tc.collected_lng, tc.task_id,
+       tc.missed, tc.missed_reason, tc.missed_note, tc.missed_photo, tc.missed_at
      FROM task_customers tc
      JOIN customers c ON tc.customer_id = c.id
      WHERE tc.task_id = ANY($1::int[])
@@ -2053,6 +2112,44 @@ app.delete('/api/expenses/:id', checkRole(['admin']), async (req, res) => {
     await db.query('DELETE FROM expenses WHERE id = $1', [req.params.id]);
     await logAudit(req, 'DELETE', 'expenses', req.params.id, existing.rows[0], null);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Budget status — one row per category with this month's usage computed live against the
+// expenses table (only Approved expenses count, so a Pending cashier entry doesn't falsely
+// eat into the budget before it's reviewed).
+app.get('/api/budgets/status', checkRole(['admin', 'cashier']), async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT b.id, b.category, b.monthly_limit,
+        COALESCE(e.used, 0) AS used
+      FROM budgets b
+      LEFT JOIN (
+        SELECT category, SUM(amount) AS used
+        FROM expenses
+        WHERE status = 'Approved' AND date_trunc('month', expense_date) = date_trunc('month', CURRENT_DATE)
+        GROUP BY category
+      ) e ON e.category = b.category
+      ORDER BY b.category
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/budgets', checkRole(['admin']), async (req, res) => {
+  const { category, monthly_limit } = req.body;
+  if (!category) return res.status(400).json({ error: 'Category is required' });
+  try {
+    const result = await db.query(
+      `INSERT INTO budgets (category, monthly_limit) VALUES ($1, $2)
+       ON CONFLICT (category) DO UPDATE SET monthly_limit = $2, updated_at = NOW() RETURNING *`,
+      [category, monthly_limit || 0]
+    );
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2218,6 +2315,58 @@ app.post('/api/tasks/:taskId/customers/:customerId/service', checkRole(['admin',
 
     io.emit('customer_status_updated', { customerId: parseInt(customerId), serviced: true });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Missed Collection — a collector logs why a stop couldn't be serviced (reason + optional photo
+// + GPS), instead of the stop just silently staying "Pending" with no explanation. Operations
+// sees these on the Missed Collections list and reassigns/reschedules manually.
+app.post('/api/tasks/:taskId/customers/:customerId/missed', checkRole(['admin', 'collector']), upload.single('photo'), async (req, res) => {
+  const { taskId, customerId } = req.params;
+  const { reason, note, lat, lng } = req.body || {};
+  if (!reason) return res.status(400).json({ error: 'A reason is required' });
+  try {
+    const result = await db.query(
+      `UPDATE task_customers SET missed = true, missed_reason = $3, missed_note = $4, missed_photo = $5,
+        missed_at = NOW(), missed_lat = $6, missed_lng = $7
+       WHERE task_id = $1 AND customer_id = $2 RETURNING *`,
+      [taskId, customerId, reason, note || null, req.file ? req.file.filename : null, lat || null, lng || null]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Task/customer link not found' });
+
+    const custRes = await db.query('SELECT name FROM customers WHERE id = $1', [customerId]);
+    const custName = custRes.rows[0]?.name || 'a customer';
+    const targetUsers = await db.query("SELECT id FROM users WHERE role IN ('admin')");
+    for (const u of targetUsers.rows) {
+      await db.query('INSERT INTO notifications (user_id, title, message) VALUES ($1, $2, $3)',
+        [u.id, 'Missed Collection', `${custName} was missed: ${reason}`]);
+    }
+
+    io.emit('customer_status_updated', { customerId: parseInt(customerId), missed: true });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Operations-facing list of everything currently marked missed and not yet re-collected —
+// the reassignment/reschedule queue.
+app.get('/api/missed-collections', checkRole(['admin', 'gudoomiye']), async (req, res) => {
+  try {
+    const { restricted: isGudoomiye } = getZoneScope(req);
+    const result = await db.query(`
+      SELECT tc.task_id, tc.customer_id, tc.missed_reason, tc.missed_note, tc.missed_photo, tc.missed_at,
+        tc.missed_lat, tc.missed_lng, c.name, c.phone, c.zone, c.house_no, t.route_name, t.collector_name
+      FROM task_customers tc
+      JOIN customers c ON tc.customer_id = c.id
+      JOIN tasks t ON tc.task_id = t.id
+      WHERE tc.missed = true AND tc.collected = false
+      ${isGudoomiye ? 'AND c.zone = $1' : ''}
+      ORDER BY tc.missed_at DESC
+    `, isGudoomiye ? [req.user.zone] : []);
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4239,12 +4388,12 @@ app.get('/api/complaints', checkRole(['admin', 'cashier', 'gudoomiye']), async (
   }
 });
 
-app.post('/api/complaints', checkRole(['admin', 'cashier']), async (req, res) => {
+app.post('/api/complaints', checkRole(['admin', 'cashier']), upload.single('photo'), async (req, res) => {
   const { customer_id, title, description, priority, assigned_to } = req.body;
   try {
     const result = await db.query(
-      'INSERT INTO complaints (customer_id, title, description, priority, assigned_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [customer_id, title, description, priority || 'Medium', assigned_to || null]
+      'INSERT INTO complaints (customer_id, title, description, priority, assigned_to, photo) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [customer_id, title, description, priority || 'Medium', assigned_to || null, req.file ? req.file.filename : null]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -4987,6 +5136,40 @@ app.post('/api/admin/send-digest-now', checkRole(['admin']), async (req, res) =>
 // today" check is meaningful rather than firing at 8am before anyone's been out yet.
 cron.schedule('0 18 * * *', () => {
   buildAndSendDailyDigest().catch(err => console.error('[Daily Digest] Failed:', err.message));
+});
+
+// Weekly automated backup — Sunday 02:00 server time (quiet hours), keeps the last 8 on disk.
+cron.schedule('0 2 * * 0', () => {
+  runScheduledBackup().catch(err => console.error('[Backup] Scheduled backup failed:', err.message));
+});
+
+app.get('/api/admin/backups', checkRole(['admin']), (req, res) => {
+  try {
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith('backup_')).sort().reverse();
+    const list = files.map(f => {
+      const stat = fs.statSync(path.join(backupDir, f));
+      return { filename: f, size: stat.size, created_at: stat.mtime };
+    });
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/backups/:filename', checkRole(['admin']), (req, res) => {
+  const filename = path.basename(req.params.filename); // strip any path traversal
+  const filePath = path.join(backupDir, filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Backup not found' });
+  res.download(filePath);
+});
+
+app.post('/api/admin/backups/run-now', checkRole(['admin']), async (req, res) => {
+  try {
+    const fileName = await runScheduledBackup();
+    res.json({ success: true, filename: fileName });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 server.listen(PORT, () => {

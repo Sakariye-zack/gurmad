@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { MapPin, Phone, CheckCircle2, RefreshCw, Truck } from 'lucide-react';
+import { MapPin, Phone, CheckCircle2, RefreshCw, Truck, AlertTriangle, X, Camera } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+
+const MISSED_REASONS = ['Customer Not Available', 'Gate/House Locked', 'No Waste to Collect', 'Access Blocked', 'Refused Service', 'Other'];
 
 const MyRouteTodayView = ({ searchQuery = '' }) => {
   const [customers, setCustomers] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [markingId, setMarkingId] = useState(null);
+  const [missedModal, setMissedModal] = useState(null); // customer being marked missed
+  const [missedForm, setMissedForm] = useState({ reason: MISSED_REASONS[0], note: '', photo: null });
+  const [isSubmittingMissed, setIsSubmittingMissed] = useState(false);
 
   const fetchData = () => {
     setLoading(true);
@@ -46,6 +51,33 @@ const MyRouteTodayView = ({ searchQuery = '' }) => {
       toast.error('Failed to mark as collected');
     } finally {
       setMarkingId(null);
+    }
+  };
+
+  const openMissedModal = (c) => {
+    setMissedModal(c);
+    setMissedForm({ reason: MISSED_REASONS[0], note: '', photo: null });
+  };
+
+  const handleSubmitMissed = async (e) => {
+    e.preventDefault();
+    setIsSubmittingMissed(true);
+    try {
+      const location = await getCurrentLocation();
+      const formData = new FormData();
+      formData.append('reason', missedForm.reason);
+      formData.append('note', missedForm.note);
+      if (location.lat) formData.append('lat', location.lat);
+      if (location.lng) formData.append('lng', location.lng);
+      if (missedForm.photo) formData.append('photo', missedForm.photo);
+      await api.markCustomerMissed(missedModal.task_id, missedModal.id, formData);
+      toast.success(`${missedModal.name} marked as missed`);
+      setMissedModal(null);
+      fetchData();
+    } catch (err) {
+      toast.error(err.message || 'Failed to mark as missed');
+    } finally {
+      setIsSubmittingMissed(false);
     }
   };
 
@@ -136,6 +168,11 @@ const MyRouteTodayView = ({ searchQuery = '' }) => {
                   <td style={{ padding: '1rem', textAlign: 'center' }}>
                     {c.collected ? (
                       <span style={{ color: 'var(--gurmad-green)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={16} /> Collected</span>
+                    ) : c.missed ? (
+                      <div>
+                        <span style={{ color: '#f97316', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={15} /> Missed</span>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px' }}>{c.missed_reason}</div>
+                      </div>
                     ) : (
                       <span style={{ color: '#94a3b8', fontWeight: 600 }}>Pending</span>
                     )}
@@ -155,17 +192,27 @@ const MyRouteTodayView = ({ searchQuery = '' }) => {
                     )}
                   </td>
                   <td style={{ padding: '1rem', textAlign: 'right' }}>
-                    <button
-                      onClick={() => handleMarkServiced(c)}
-                      disabled={c.collected || markingId === c.id}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 1rem', borderRadius: '8px', border: 'none',
-                        backgroundColor: c.collected ? '#f0fdf4' : 'var(--gurmad-green)', color: c.collected ? 'var(--gurmad-green)' : 'white',
-                        fontWeight: 700, cursor: c.collected ? 'default' : 'pointer'
-                      }}
-                    >
-                      <CheckCircle2 size={16} /> {c.collected ? 'Done' : (markingId === c.id ? 'Saving...' : 'Mark Collected')}
-                    </button>
+                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => handleMarkServiced(c)}
+                        disabled={c.collected || markingId === c.id}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 1rem', borderRadius: '8px', border: 'none',
+                          backgroundColor: c.collected ? '#f0fdf4' : 'var(--gurmad-green)', color: c.collected ? 'var(--gurmad-green)' : 'white',
+                          fontWeight: 700, cursor: c.collected ? 'default' : 'pointer'
+                        }}
+                      >
+                        <CheckCircle2 size={16} /> {c.collected ? 'Done' : (markingId === c.id ? 'Saving...' : 'Mark Collected')}
+                      </button>
+                      {!c.collected && (
+                        <button
+                          onClick={() => openMissedModal(c)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.5rem 0.8rem', borderRadius: '8px', border: '1px solid #fed7aa', backgroundColor: '#fff7ed', color: '#c2410c', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          <AlertTriangle size={14} /> Missed
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -173,6 +220,42 @@ const MyRouteTodayView = ({ searchQuery = '' }) => {
           </table>
         </div>
       </div>
+
+      {missedModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div className="card glass" style={{ width: '400px', borderTop: '4px solid #f97316' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+              <h3 style={{ margin: 0, fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertTriangle size={20} color="#f97316" /> Mark Missed
+              </h3>
+              <button onClick={() => setMissedModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={20} /></button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>{missedModal.name}</p>
+            <form onSubmit={handleSubmitMissed} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Reason</label>
+                <select value={missedForm.reason} onChange={e => setMissedForm({...missedForm, reason: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  {MISSED_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Note (optional)</label>
+                <textarea value={missedForm.note} onChange={e => setMissedForm({...missedForm, note: e.target.value})} style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', minHeight: '70px', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}><Camera size={15} /> Photo (optional)</label>
+                <input type="file" accept="image/*" capture="environment" onChange={e => setMissedForm({...missedForm, photo: e.target.files[0]})} style={{ width: '100%' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setMissedModal(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontWeight: 600 }}>Cancel</button>
+                <button type="submit" disabled={isSubmittingMissed} style={{ padding: '0.65rem 1.3rem', borderRadius: '8px', border: 'none', background: '#f97316', color: 'white', fontWeight: 700, cursor: 'pointer' }}>
+                  {isSubmittingMissed ? 'Saving...' : 'Confirm Missed'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

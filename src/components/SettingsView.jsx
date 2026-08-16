@@ -25,6 +25,7 @@ import { api } from '../api';
 
 const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
   const [activeTab, setActiveTab] = useState('pro');
+  useEffect(() => { if (activeTab === 'bac') fetchBackupsList(); }, [activeTab]);
   const [exchangeRate, setExchangeRate] = useState('8,500');
   const [preferences, setPreferences] = useState({
     autoInvoice: true,
@@ -91,6 +92,9 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
   );
 
   const [isUpdating, setIsUpdating] = useState(false);
+  const [backupsList, setBackupsList] = useState([]);
+  const [isRunningBackup, setIsRunningBackup] = useState(false);
+  const fetchBackupsList = () => api.getBackupsList().then(setBackupsList).catch(() => {});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -1367,18 +1371,47 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
             </div>
 
             <div className="card">
-              <h3 style={{ fontWeight: 700, marginBottom: '1.5rem' }}>Backup Settings</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>Automatic Daily Backup</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>The system will automatically create a backup every 24 hours.</div>
-                  </div>
-                  <div style={{ width: '44px', height: '24px', backgroundColor: 'var(--gurmad-green)', borderRadius: '12px', padding: '2px' }}>
-                    <div style={{ width: '20px', height: '20px', backgroundColor: 'white', borderRadius: '50%', transform: 'translateX(20px)' }}></div>
-                  </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                <div>
+                  <h3 style={{ fontWeight: 700, margin: 0 }}>Automated Backups</h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>Runs automatically every Sunday at 2:00 AM — the last {backupsList.length > 0 ? '8' : ''} are kept.</p>
                 </div>
+                <button
+                  onClick={async () => {
+                    setIsRunningBackup(true);
+                    try {
+                      await api.runBackupNow();
+                      toast.success('Backup created');
+                      fetchBackupsList();
+                    } catch (err) {
+                      toast.error(err.message || 'Failed to run backup');
+                    } finally {
+                      setIsRunningBackup(false);
+                    }
+                  }}
+                  disabled={isRunningBackup}
+                  className="btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  {isRunningBackup ? <RefreshCcw size={16} className="spin" /> : <Database size={16} />}
+                  {isRunningBackup ? 'Running...' : 'Run Backup Now'}
+                </button>
               </div>
+              {backupsList.length === 0 ? (
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No automated backups yet — the first one runs this Sunday, or click "Run Backup Now".</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {backupsList.map(b => (
+                    <div key={b.filename} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.8rem 1rem', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #f1f5f9' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{new Date(b.created_at).toLocaleString()}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{(b.size / 1024).toFixed(1)} KB</div>
+                      </div>
+                      <a href={`/api/admin/backups/${b.filename}`} target="_blank" rel="noreferrer" style={{ color: 'var(--gurmad-green)', fontWeight: 700, fontSize: '0.8rem', textDecoration: 'none' }}>Download</a>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="card" style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca' }}>
@@ -1386,7 +1419,7 @@ const SettingsView = ({ currentUser = {}, onProfileUpdate }) => {
                  <AlertCircle size={20} /> Danger Zone
                </h3>
                <p style={{ fontSize: '0.85rem', color: '#991b1b', marginBottom: '1.5rem' }}>Restoring a backup will overwrite all current system data. This action is irreversible.</p>
-               <button className="btn-secondary" style={{ backgroundColor: 'white', color: '#991b1b', borderColor: '#fecaca', fontWeight: 700 }}>Restore from File...</button>
+               <button onClick={() => toast('Restore-from-file is not built yet — download backups and keep them safe for now.', { icon: 'ℹ️' })} className="btn-secondary" style={{ backgroundColor: 'white', color: '#991b1b', borderColor: '#fecaca', fontWeight: 700 }}>Restore from File...</button>
             </div>
           </div>
         )}

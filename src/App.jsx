@@ -419,7 +419,7 @@ const App = () => {
       case 'cashier_assignments': return <CollectorAssignmentsView key="cashier_assignments" searchQuery={globalSearch} initialTab="cashier" />;
       case 'billing': return <BillingView searchQuery={globalSearch} currentUser={currentUser} collectorTodayStats={collectorTodayStats} prefillCustomerPhone={billingPrefillPhone} onPrefillHandled={() => setBillingPrefillPhone(null)} />;
       case 'payroll': return <PayrollView />;
-      case 'expenses': return <ExpenseView searchQuery={globalSearch} />;
+      case 'expenses': return <ExpenseView searchQuery={globalSearch} currentUser={currentUser} />;
       case 'inventory': return <InventoryView searchQuery={globalSearch} />;
       case 'suppliers_assets': return <SuppliersAssetsView searchQuery={globalSearch} />;
       case 'documents': return <DocumentsView searchQuery={globalSearch} />;
