@@ -44,14 +44,16 @@ const TAB_META = {
   complaints: { label: 'Complaints', icon: MessageSquare, title: 'Customer Complaints', subtitle: 'Issues reported in your zone.' },
   debts: { label: 'Debts', icon: ClipboardList, title: 'Debts', subtitle: 'Outstanding balances in your zone.' },
   expenses: { label: 'Expenses', icon: Wallet, title: 'Expense Tracker', subtitle: 'Log and review expenses.' },
+  transactions: { label: 'Transactions', icon: Receipt, title: 'Transactions', subtitle: 'Every payment you and your zone have recorded.' },
   more: { label: 'More', icon: Grid3x3, title: 'More', subtitle: 'Everything else you have access to.' },
 };
 
 // A cashier's day is dominated by Collections/Payment/Cashout, so those stay on the bottom bar;
-// the rest of what they're permitted to see (same roles as the desktop sidebar granted) lives one
-// tap away behind "More" rather than crowding a 9-icon bottom bar. A collector only has a handful
-// of destinations total, so theirs go straight on the bar.
-const CASHIER_MORE = ['customers', 'complaints', 'debts', 'expenses', 'map'];
+// the rest of what they're permitted to see (same roles as the desktop sidebar granted, plus
+// Attendance and a dedicated Transactions shortcut) lives one tap away behind "More" rather than
+// crowding a 9-icon bottom bar. A collector only has a handful of destinations total, so theirs
+// go straight on the bar.
+const CASHIER_MORE = ['transactions', 'customers', 'complaints', 'debts', 'expenses', 'attendance', 'map'];
 
 const StaffPortalApp = ({ currentUser, onLogout }) => {
   const isCollector = currentUser?.role === 'collector';
@@ -102,15 +104,39 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
   // horizontally-scrollable container rather than redesigned, so nothing overflows the phone
   // screen while every existing validation/audit-log path stays exactly as tested — money-
   // handling and permission-scoped data are exactly the kind of logic that shouldn't be
-  // reimplemented casually.
-  const scrolled = (node) => <div style={{ overflowX: 'auto' }}>{node}</div>;
+  // reimplemented casually. The right-edge fade (sp-hscroll) replaces what was previously an
+  // abrupt hard cut mid-card with no hint there was more to scroll to.
+  const scrolled = (node) => <div className="sp-hscroll" style={{ overflowX: 'auto' }}>{node}</div>;
+
+  // "Transactions" reuses the exact same BillingView already shown under Collect Payment — it
+  // already has a full, zone-scoped, exportable Live Transactions table, just buried below the
+  // payment form. Rather than duplicate that table in a new component, this entry point scrolls
+  // straight past the form to it on open, so it reads as its own dedicated screen.
+  useEffect(() => {
+    if (tab !== 'more' || moreView !== 'transactions') return;
+    // BillingView fetches its own data on mount, so the Live Transactions heading doesn't exist
+    // in the DOM immediately — poll briefly instead of a single fixed-delay guess that could fire
+    // before the table (and the page height it adds) has actually rendered.
+    let tries = 0;
+    const interval = setInterval(() => {
+      const heading = Array.from(document.querySelectorAll('h3')).find(h => h.textContent.includes('Live Transactions'));
+      if (heading) {
+        heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        clearInterval(interval);
+      } else if (++tries > 20) {
+        clearInterval(interval);
+      }
+    }, 150);
+    return () => clearInterval(interval);
+  }, [tab, moreView]);
 
   const renderView = (id) => {
     switch (id) {
       case 'home': return scrolled(<DashboardView currentUser={currentUser} myTodayRoute={myTodayRoute} />);
       case 'route': return <MyRouteTodayView />;
       case 'collections': return <TodaysCollectionsView currentUser={currentUser} onCollectPayment={(phone) => { setBillingPrefillPhone(phone); goTab('billing'); }} />;
-      case 'billing': return scrolled(<BillingView currentUser={currentUser} prefillCustomerPhone={billingPrefillPhone} onPrefillHandled={() => setBillingPrefillPhone(null)} />);
+      case 'billing': case 'transactions':
+        return scrolled(<BillingView currentUser={currentUser} prefillCustomerPhone={billingPrefillPhone} onPrefillHandled={() => setBillingPrefillPhone(null)} />);
       case 'cashout': return scrolled(<CashoutView currentUser={currentUser} />);
       // MapView sizes itself to `calc(100vh - 120px)` internally (built for the desktop app's
       // fixed top bar) — inside this phone shell that fought the header/tab-bar chrome around it
@@ -161,8 +187,19 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
         .sp-content { animation: sp-fade 0.2s ease; }
         .sp-map-wrap { height: 75vh; border-radius: 22px; overflow: hidden; }
         .sp-map-wrap > div { height: 100% !important; border-radius: 22px; }
+        /* BillingView/CashoutView's stat-card row picks 2 vs 4 columns based on their own
+           window.innerWidth check, sized for the full desktop app — but this portal is a fixed
+           ~480px card that can sit inside a much wider browser window (desktop preview) or a
+           real phone whose width doesn't line up with that component's own breakpoint, so the
+           4-column grid was rendering here and getting chopped off mid-card at the right edge.
+           This portal is always mobile by definition, so its stat-card grids are always forced
+           to 2 columns regardless of the real window width. */
+        .sp-shell div[style*="grid-template-columns"] { grid-template-columns: repeat(2, 1fr) !important; }
+        .sp-hscroll::-webkit-scrollbar { height: 5px; }
+        .sp-hscroll::-webkit-scrollbar-thumb { background: #bbf7d0; border-radius: 10px; }
+        .sp-hscroll::-webkit-scrollbar-track { background: transparent; }
       `}</style>
-      <div style={{
+      <div className="sp-shell" style={{
         width: '100%', maxWidth: isMobileViewport ? '100%' : PHONE_WIDTH,
         minHeight: '100dvh', maxHeight: isMobileViewport ? 'none' : '900px',
         background: 'white', borderRadius: isMobileViewport ? 0 : '32px',
