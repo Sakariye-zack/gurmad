@@ -215,8 +215,12 @@ a {
     width: 100% !important;
   }
 
-  /* Force inline grids to 1 column on mobile */
-  div[style*="grid-template-columns"] {
+  /* Force inline grids to 1 column on mobile — scoped to the admin app's own container only.
+     Without this scoping the selector also matched the Customer Portal (/portal) and Staff
+     Portal (/staff), which are separate top-level apps hand-designed for phone screens — e.g.
+     the Customer Portal's 4-icon Quick Actions row is supposed to stay 4 narrow columns on a
+     phone, not collapse into 4 stacked full-width rows. */
+  .app-container div[style*="grid-template-columns"] {
     grid-template-columns: 1fr !important;
   }
 

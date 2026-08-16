@@ -778,8 +778,8 @@ const CustomerPortalApp = () => {
       }}>
 
         {/* Status-bar style header */}
-        <div style={{ padding: '1.4rem 1.3rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
+        <div style={{ padding: '1.4rem 1.3rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0, flex: 1 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <div style={{ width: '42px', height: '42px', borderRadius: '13px', background: customer.photo ? '#f1f5f9' : `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.1rem', fontWeight: 900, overflow: 'hidden' }}>
                 {customer.photo ? (
@@ -791,12 +791,12 @@ const CustomerPortalApp = () => {
               </button>
               <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
             </div>
-            <button onClick={() => setShowAccount(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+            <button onClick={() => setShowAccount(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left', minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700 }}>{t('welcome_back')}</div>
-              <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a' }}>{customer.name}</div>
+              <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{customer.name}</div>
             </button>
           </div>
-          <div style={{ display: 'flex', gap: '9px' }}>
+          <div style={{ display: 'flex', gap: '9px', flexShrink: 0 }}>
             <button onClick={toggleLang} title={lang === 'so' ? 'Switch to English' : 'U beddel Soomaali'} style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'white', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 3px rgba(15,23,42,0.06)', fontSize: '0.68rem', fontWeight: 800, color: GREEN_DARK }}>
               {lang.toUpperCase()}
             </button>
