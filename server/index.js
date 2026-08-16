@@ -966,7 +966,7 @@ function computeNextPickup(collectionDaysStr, collectionTime) {
 app.get('/api/customer-portal/me', authenticateCustomer, async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT c.*, e.name as collector_name FROM customers c LEFT JOIN employees e ON c.collector_id = e.id WHERE c.id = $1`,
+      `SELECT c.*, e.name as collector_name, e.phone as collector_phone FROM customers c LEFT JOIN employees e ON c.collector_id = e.id WHERE c.id = $1`,
       [req.customerId]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });

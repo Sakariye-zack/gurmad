@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X, Camera, Eye, EyeOff, Globe, HelpCircle, Leaf, ArrowRight, Phone as PhoneIcon, MessageCircle } from 'lucide-react';
+import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox, CheckCircle2, Clock, CreditCard, MapPin, Repeat, Tag, ShieldCheck, ChevronRight, Bell, ArrowLeft, Download, KeyRound, X, Camera, Eye, EyeOff, Globe, HelpCircle, Leaf, ArrowRight, Phone as PhoneIcon, MessageCircle, Wallet, Star } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import { api } from '../api';
@@ -100,6 +100,13 @@ const STRINGS = {
   time_min_ago: { so: 'daq ka hor', en: 'm ago' },
   time_hr_ago: { so: 'saac ka hor', en: 'h ago' },
   time_day_ago: { so: 'maalin ka hor', en: 'd ago' },
+  how_to_pay: { so: 'Sida Loo Bixiyo', en: 'How to Pay' },
+  how_to_pay_desc: { so: 'Waxaad ku bixin kartaa qaadaha marka uu yimaado (Cash), ama ka wac shirkadda si aad u hesho lambarrada ZAAD/eDahab.', en: 'Pay in cash when your collector arrives, or contact us for ZAAD/eDahab payment numbers.' },
+  call_us: { so: 'Nala soo Wac', en: 'Call Us' },
+  whatsapp_us: { so: 'WhatsApp', en: 'WhatsApp' },
+  my_collector: { so: 'Qaadahayga', en: 'My Collector' },
+  call_collector: { so: 'Wac Qaadaha', en: 'Call Collector' },
+  no_phone_on_file: { so: 'Lambarka taleefanka lama diiwaan gelin', en: 'No phone number on file' },
 };
 // t(key, lang) looks up STRINGS[key][lang]; falls back to the key itself if missing so a typo
 // shows up as visible mismatched text instead of silently rendering blank.
@@ -132,7 +139,7 @@ const EmptyState = ({ icon: Icon, text }) => (
 );
 
 const Card = ({ children, style, onClick }) => (
-  <div onClick={onClick} style={{ background: 'white', borderRadius: '22px', border: '1px solid #f1f5f9', boxShadow: '0 2px 10px rgba(15,23,42,0.04)', ...style }}>
+  <div className="gp-card" onClick={onClick} style={{ background: 'white', borderRadius: '22px', border: '1px solid #f1f5f9', boxShadow: '0 2px 10px rgba(15,23,42,0.04)', cursor: onClick ? 'pointer' : 'default', ...style }}>
     {children}
   </div>
 );
@@ -605,6 +612,14 @@ const CustomerPortalApp = () => {
   return (
     <div style={{ minHeight: '100dvh', background: '#eef2f2', display: 'flex', justifyContent: 'center' }}>
       <Toaster />
+      <style>{`
+        @keyframes gp-spin { to { transform: rotate(360deg); } }
+        .gp-btn { transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease; }
+        .gp-btn:hover { transform: translateY(-1px); }
+        .gp-btn:active { transform: translateY(0); }
+        .gp-card { transition: box-shadow 0.15s ease, transform 0.15s ease; }
+        .gp-card:hover { box-shadow: 0 6px 20px rgba(15,23,42,0.08); }
+      `}</style>
       <div style={{
         width: '100%', maxWidth: isMobileViewport ? '100%' : PHONE_WIDTH,
         minHeight: '100dvh', background: '#f8fafc',
@@ -652,7 +667,10 @@ const CustomerPortalApp = () => {
         {/* Scrollable content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.3rem 1.3rem 1rem' }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '4rem', color: '#94a3b8', fontWeight: 600 }}>{t('loading')}</div>
+            <div style={{ textAlign: 'center', padding: '4rem', color: '#94a3b8', fontWeight: 600 }}>
+              <div style={{ width: '30px', height: '30px', margin: '0 auto 12px', border: `3px solid #e2e8f0`, borderTopColor: GREEN, borderRadius: '50%', animation: 'gp-spin 0.7s linear infinite' }} />
+              {t('loading')}
+            </div>
           ) : tab === 'dashboard' ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
               {/* Hero balance card */}
@@ -688,7 +706,7 @@ const CustomerPortalApp = () => {
                   { label: t('tab_support'), icon: MessageSquare, action: () => setTab('complaints') },
                   { label: t('new_issue'), icon: Plus, action: () => { setTab('complaints'); setShowComplaintForm(true); } },
                 ].map((qa, i) => (
-                  <button key={i} onClick={qa.action} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', background: 'white', border: '1px solid #f1f5f9', borderRadius: '18px', padding: '0.9rem 0.4rem', cursor: 'pointer', boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
+                  <button key={i} className="gp-btn" onClick={qa.action} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '7px', background: 'white', border: '1px solid #f1f5f9', borderRadius: '18px', padding: '0.9rem 0.4rem', cursor: 'pointer', boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
                     <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <qa.icon size={17} color={GREEN} />
                     </div>
@@ -696,6 +714,30 @@ const CustomerPortalApp = () => {
                   </button>
                 ))}
               </div>
+
+              {/* How to Pay — a real gap: customers could see "Outstanding Balance" with no way
+                  to find out how to actually pay it. One tap now calls or WhatsApps the company. */}
+              {outstandingBalance > 0 && (company.phone) && (
+                <Card style={{ padding: '1.2rem 1.3rem', background: '#fffbeb', border: '1px solid #fde68a' }}>
+                  <div style={{ display: 'flex', gap: '11px', alignItems: 'flex-start' }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Wallet size={17} color="#b45309" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 800, color: '#92400e', fontSize: '0.9rem' }}>{t('how_to_pay')}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#a16207', marginTop: '3px', lineHeight: 1.45 }}>{t('how_to_pay_desc')}</div>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <a href={`tel:${company.phone}`} className="gp-btn" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.55rem 0.9rem', borderRadius: '12px', background: '#f59e0b', color: 'white', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none' }}>
+                          <PhoneIcon size={13} /> {t('call_us')}
+                        </a>
+                        <a href={`https://wa.me/${company.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="gp-btn" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0.55rem 0.9rem', borderRadius: '12px', background: 'white', border: '1px solid #fde68a', color: '#92400e', fontWeight: 800, fontSize: '0.78rem', textDecoration: 'none' }}>
+                          <MessageCircle size={13} /> {t('whatsapp_us')}
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              )}
 
               {customer.next_pickup && (
                 <Card style={{ padding: '1.2rem 1.3rem', display: 'flex', alignItems: 'center', gap: '13px', background: customer.next_pickup.isToday ? '#f0fdf4' : 'white', border: customer.next_pickup.isToday ? '1px solid #bbf7d0' : '1px solid #f1f5f9' }}>
@@ -735,6 +777,25 @@ const CustomerPortalApp = () => {
                   ))}
                 </div>
               </Card>
+
+              {customer.collector_name && (
+                <Card style={{ padding: '1.2rem 1.3rem', display: 'flex', alignItems: 'center', gap: '13px' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '14px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: 900, color: GREEN, fontSize: '1.05rem' }}>
+                    {customer.collector_name[0]?.toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>{t('my_collector')}</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0f172a' }}>{customer.collector_name}</div>
+                  </div>
+                  {customer.collector_phone ? (
+                    <a href={`tel:${customer.collector_phone}`} className="gp-btn" title={t('call_collector')} style={{ width: '38px', height: '38px', borderRadius: '12px', background: GREEN, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'white' }}>
+                      <PhoneIcon size={15} />
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: '0.68rem', color: '#cbd5e1', fontWeight: 600 }}>{t('no_phone_on_file')}</span>
+                  )}
+                </Card>
+              )}
 
               {lastCollection && (
                 <Card style={{ padding: '1.3rem' }}>
