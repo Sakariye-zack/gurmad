@@ -482,6 +482,13 @@ const App = () => {
       <StaffPortalApp
         currentUser={currentUser}
         onLogout={() => { setCurrentUser(null); localStorage.removeItem('gurmadUser'); }}
+        onUpdateUser={(patch) => {
+          setCurrentUser(prev => {
+            const next = { ...prev, ...patch };
+            localStorage.setItem('gurmadUser', JSON.stringify(next));
+            return next;
+          });
+        }}
       />
     );
   }

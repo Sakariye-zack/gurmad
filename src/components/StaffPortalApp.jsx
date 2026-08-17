@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard, Map as MapIcon, MessageSquare, ClipboardList, Fingerprint, Grid3x3, ArrowLeft, ChevronRight } from 'lucide-react';
-import { Toaster } from 'react-hot-toast';
+import React, { useState, useEffect, useRef } from 'react';
+import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard, Map as MapIcon, MessageSquare, ClipboardList, Fingerprint, Grid3x3, ArrowLeft, ChevronRight, Bell, Camera, X, KeyRound, User as UserIcon } from 'lucide-react';
+import toast, { Toaster } from 'react-hot-toast';
 import { api } from '../api';
 import DashboardView from './DashboardView';
 import MyRouteTodayView from './MyRouteTodayView';
@@ -55,7 +55,7 @@ const TAB_META = {
 // go straight on the bar.
 const CASHIER_MORE = ['transactions', 'customers', 'complaints', 'debts', 'expenses', 'attendance', 'map'];
 
-const StaffPortalApp = ({ currentUser, onLogout }) => {
+const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
   const isCollector = currentUser?.role === 'collector';
   const primaryTabs = isCollector
     ? ['home', 'route', 'customers', 'attendance', 'map']
@@ -69,6 +69,99 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
   const isMapView = activeId === 'map';
   const name = currentUser?.full_name || currentUser?.username || '';
   const initial = name[0]?.toUpperCase() || (isCollector ? 'C' : '$');
+
+  // Notifications — the desktop app's own bell (GET /api/users/:id/notifications) already works
+  // for any authenticated staff account, it just had no UI here. Polled the same way the desktop
+  // header does.
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const fetchNotifs = () => api.getNotifications(currentUser.id).then(setNotifications).catch(() => {});
+    fetchNotifs();
+    const interval = setInterval(fetchNotifs, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const openNotifications = async () => {
+    setShowNotifications(true);
+    if (unreadCount > 0) {
+      try {
+        await api.markAllNotificationsRead(currentUser.id);
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      } catch (err) { /* non-critical */ }
+    }
+  };
+  const timeAgo = (dateStr) => {
+    const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+    if (mins < 1) return 'Now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  // Account panel — self-service name/photo/password, all through the same
+  // POST /api/auth/update_profile the desktop app's own profile editor uses (self-or-admin
+  // guarded server-side, and now audit-logged there too so an admin can see what changed).
+  const [showAccount, setShowAccount] = useState(false);
+  const [accountName, setAccountName] = useState(name);
+  const [accountPw, setAccountPw] = useState({ password: '', confirm: '' });
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
+  useEffect(() => { setAccountName(name); }, [name]);
+
+  const submitProfile = async (extra = {}) => {
+    const formData = new FormData();
+    formData.append('id', currentUser.id);
+    formData.append('username', currentUser.username);
+    formData.append('full_name', accountName);
+    if (extra.password) formData.append('password', extra.password);
+    if (extra.photo) formData.append('profile_image', extra.photo);
+    const res = await api.updateProfile(formData);
+    if (res.error) throw new Error(res.error);
+    onUpdateUser?.(res.user);
+    return res;
+  };
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingPhoto(true);
+    try {
+      await submitProfile({ photo: file });
+      toast.success('Photo updated');
+    } catch (err) {
+      toast.error(err.message || 'Failed to upload photo');
+    } finally {
+      setIsUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  };
+
+  const handleSaveAccount = async (e) => {
+    e.preventDefault();
+    if (accountPw.password && accountPw.password !== accountPw.confirm) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    if (accountPw.password && accountPw.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+    setIsSavingAccount(true);
+    try {
+      await submitProfile(accountPw.password ? { password: accountPw.password } : {});
+      toast.success('Account updated');
+      setAccountPw({ password: '', confirm: '' });
+      setShowAccount(false);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update account');
+    } finally {
+      setIsSavingAccount(false);
+    }
+  };
 
   // Only DashboardView's collector branch needs this (its 'My Performance' stats are computed
   // from myTodayRoute) — same data MyRouteTodayView fetches for itself, kept as a separate poll
@@ -212,9 +305,11 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
           <div style={{ position: 'absolute', bottom: '-40px', left: '-40px', width: '150px', height: '150px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', zIndex: 1, gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
-              <div style={{ width: '46px', height: '46px', borderRadius: '15px', background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '1.15rem', flexShrink: 0 }}>
-                {initial}
+            <button onClick={() => setShowAccount(true)} style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+              <div style={{ width: '46px', height: '46px', borderRadius: '15px', background: currentUser?.profile_image ? '#f1f5f9' : 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '1.15rem', flexShrink: 0, overflow: 'hidden' }}>
+                {currentUser?.profile_image ? (
+                  <img src={`/api/uploads/${currentUser.profile_image}`} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : initial}
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '3px 10px', color: 'white', fontSize: '0.66rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>
@@ -222,10 +317,20 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
                 </div>
                 <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: 900, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
               </div>
-            </div>
-            <button className="sp-btn" onClick={onLogout} title="Logout" style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', flexShrink: 0 }}>
-              <LogOut size={16} />
             </button>
+            <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+              <button className="sp-btn" onClick={openNotifications} title="Notifications" style={{ position: 'relative', width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+                <Bell size={16} />
+                {unreadCount > 0 && (
+                  <span style={{ position: 'absolute', top: '-4px', right: '-4px', minWidth: '16px', height: '16px', borderRadius: '9px', background: '#ef4444', color: 'white', fontSize: '0.6rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: `2px solid ${GREEN_DARK}` }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              <button className="sp-btn" onClick={onLogout} title="Logout" style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -275,6 +380,97 @@ const StaffPortalApp = ({ currentUser, onLogout }) => {
             </div>
           )}
         </div>
+
+        {/* Notifications panel */}
+        {showNotifications && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 20, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setShowNotifications(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', maxHeight: '78%', display: 'flex', flexDirection: 'column', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
+              <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Bell size={18} color={GREEN} /> Notifications
+                </div>
+                <button onClick={() => setShowNotifications(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b', fontWeight: 700 }}>✕</button>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '0.8rem 1.3rem 1.6rem' }}>
+                {notifications.length === 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '3rem 1rem', color: '#94a3b8' }}>
+                    <Bell size={26} color="#cbd5e1" />
+                    <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>No notifications yet</div>
+                  </div>
+                ) : notifications.map(n => (
+                  <div key={n.id} style={{ display: 'flex', gap: '11px', padding: '0.9rem 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '11px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Bell size={16} color={GREEN} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a' }}>{n.title}</div>
+                      {n.message && <div style={{ fontSize: '0.82rem', color: '#64748b', margin: '3px 0 0 0' }}>{n.message}</div>}
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '5px', fontWeight: 600 }}>{timeAgo(n.created_at)}</div>
+                    </div>
+                    {!n.is_read && <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: GREEN, flexShrink: 0, marginTop: '5px' }} />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Account panel — photo, name, password, all self-service via the same
+            update_profile endpoint the desktop app's own profile editor uses. */}
+        {showAccount && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 20, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setShowAccount(false)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '26px 26px 0 0', maxHeight: '88%', overflowY: 'auto', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
+              <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <UserIcon size={18} color={GREEN} /> My Account
+                </div>
+                <button onClick={() => setShowAccount(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}><X size={15} /></button>
+              </div>
+
+              <div style={{ padding: '1.3rem', display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                {/* Photo */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: currentUser?.profile_image ? '#f1f5f9' : `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.4rem', fontWeight: 900, overflow: 'hidden' }}>
+                      {currentUser?.profile_image ? (
+                        <img src={`/api/uploads/${currentUser.profile_image}`} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : initial}
+                    </div>
+                    <button onClick={() => photoInputRef.current?.click()} disabled={isUploadingPhoto} title="Change photo" style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '24px', height: '24px', borderRadius: '50%', background: GREEN, border: '2px solid white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}>
+                      <Camera size={11} color="white" />
+                    </button>
+                    <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>
+                    {isUploadingPhoto ? 'Uploading...' : 'Tap the camera to change your photo.'}
+                  </div>
+                </div>
+
+                <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>FULL NAME</label>
+                    <div style={{ position: 'relative' }}>
+                      <UserIcon size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                      <input required value={accountName} onChange={e => setAccountName(e.target.value)} style={{ width: '100%', padding: '0.8rem 0.8rem 0.8rem 2.4rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.8rem', fontWeight: 800, color: '#64748b' }}>
+                      <KeyRound size={14} /> CHANGE PASSWORD (optional)
+                    </div>
+                    <input type="password" placeholder="New password (min 6 characters)" value={accountPw.password} onChange={e => setAccountPw({ ...accountPw, password: e.target.value })} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                    <input type="password" placeholder="Confirm new password" value={accountPw.confirm} onChange={e => setAccountPw({ ...accountPw, confirm: e.target.value })} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                  </div>
+
+                  <button type="submit" disabled={isSavingAccount} style={{ padding: '0.9rem', borderRadius: '16px', border: 'none', background: isSavingAccount ? '#86c976' : GREEN, color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: isSavingAccount ? 'default' : 'pointer', marginTop: '0.3rem' }}>
+                    {isSavingAccount ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

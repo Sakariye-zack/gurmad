@@ -1175,7 +1175,7 @@ app.post('/api/customers/:id/disable-portal', checkRole(['admin']), async (req, 
 
 app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_image'), async (req, res) => {
   const { id, username, password, full_name } = req.body;
-  
+
   // Ensure user can only update their own profile
   if (parseInt(id) !== req.user.id && req.user.role !== 'admin') {
      return res.status(403).json({ error: 'Unauthorized to update this profile' });
@@ -1184,6 +1184,8 @@ app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_i
   const profile_image = req.file ? req.file.filename : null;
 
   try {
+    const oldRow = await db.query('SELECT id, username, full_name, profile_image FROM users WHERE id = $1', [id]);
+
     let query = 'UPDATE users SET username = $1, full_name = $2';
     let values = [username, full_name || ''];
     let idx = 3;
@@ -1207,6 +1209,14 @@ app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_i
 
     const result = await db.query(query, values);
     if (result.rows.length > 0) {
+      // Self-service profile edits (name/photo/password) are otherwise invisible to admins —
+      // logged the same way every other mutation in this app is, so "who changed what, when" is
+      // answerable from Security Logs without needing to ask the staff member directly. The
+      // password itself is never included (old or new), only whether it changed.
+      await logAudit(req, 'UPDATE_PROFILE', 'users', id,
+        oldRow.rows[0],
+        { username, full_name, profile_image: profile_image || oldRow.rows[0]?.profile_image, password_changed: !!password }
+      );
       res.json({ success: true, user: result.rows[0] });
     } else {
       res.status(404).json({ error: 'User not found' });

@@ -18,6 +18,17 @@ const StaffPortalGate = () => {
     localStorage.removeItem('gurmadUser');
   };
 
+  // After a self-service profile edit (name/photo/password via the Account panel), merge the
+  // server's response into both state and localStorage so the header/avatar reflect it
+  // immediately without requiring a re-login.
+  const handleUpdateUser = (patch) => {
+    setCurrentUser(prev => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem('gurmadUser', JSON.stringify(next));
+      return next;
+    });
+  };
+
   if (!currentUser) {
     return (
       <StaffLoginView onLogin={(user) => {
@@ -52,7 +63,7 @@ const StaffPortalGate = () => {
     );
   }
 
-  return <StaffPortalApp currentUser={currentUser} onLogout={handleLogout} />;
+  return <StaffPortalApp currentUser={currentUser} onLogout={handleLogout} onUpdateUser={handleUpdateUser} />;
 };
 
 export default StaffPortalGate;
