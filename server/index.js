@@ -610,6 +610,15 @@ const runMigrations = async () => {
       WHERE users.role = roles.key AND users.role_id IS NULL;
     `);
 
+    // Staff (collector/cashier) contact numbers, split by network — Telesom and Somtel are the
+    // two Somaliland carriers customers/dispatch actually reach staff on, and a lot of phones
+    // only reliably work on one network, so a single generic "phone" field wasn't enough.
+    // Self-editable via the Staff Portal's Account panel (POST /api/auth/update_profile).
+    await db.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_telesom VARCHAR(20);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_somtel VARCHAR(20);
+    `);
+
     console.log('Database migrations completed successfully');
   } catch (err) {
     console.error('Migration failed:', err);
@@ -1174,7 +1183,7 @@ app.post('/api/customers/:id/disable-portal', checkRole(['admin']), async (req, 
 });
 
 app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_image'), async (req, res) => {
-  const { id, username, password, full_name } = req.body;
+  const { id, username, password, full_name, phone_telesom, phone_somtel } = req.body;
 
   // Ensure user can only update their own profile
   if (parseInt(id) !== req.user.id && req.user.role !== 'admin') {
@@ -1184,11 +1193,11 @@ app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_i
   const profile_image = req.file ? req.file.filename : null;
 
   try {
-    const oldRow = await db.query('SELECT id, username, full_name, profile_image FROM users WHERE id = $1', [id]);
+    const oldRow = await db.query('SELECT id, username, full_name, profile_image, phone_telesom, phone_somtel FROM users WHERE id = $1', [id]);
 
-    let query = 'UPDATE users SET username = $1, full_name = $2';
-    let values = [username, full_name || ''];
-    let idx = 3;
+    let query = 'UPDATE users SET username = $1, full_name = $2, phone_telesom = $3, phone_somtel = $4';
+    let values = [username, full_name || '', phone_telesom || null, phone_somtel || null];
+    let idx = 5;
 
     if (password) {
       const salt = await bcrypt.genSalt(10);
@@ -1204,18 +1213,18 @@ app.post('/api/auth/update_profile', authenticateToken, upload.single('profile_i
       idx++;
     }
 
-    query += ` WHERE id = $${idx} RETURNING id, username, role, profile_image, full_name`;
+    query += ` WHERE id = $${idx} RETURNING id, username, role, profile_image, full_name, phone_telesom, phone_somtel`;
     values.push(id);
 
     const result = await db.query(query, values);
     if (result.rows.length > 0) {
-      // Self-service profile edits (name/photo/password) are otherwise invisible to admins —
-      // logged the same way every other mutation in this app is, so "who changed what, when" is
-      // answerable from Security Logs without needing to ask the staff member directly. The
-      // password itself is never included (old or new), only whether it changed.
+      // Self-service profile edits (name/photo/password/contact numbers) are otherwise invisible
+      // to admins — logged the same way every other mutation in this app is, so "who changed
+      // what, when" is answerable from Security Logs without needing to ask the staff member
+      // directly. The password itself is never included (old or new), only whether it changed.
       await logAudit(req, 'UPDATE_PROFILE', 'users', id,
         oldRow.rows[0],
-        { username, full_name, profile_image: profile_image || oldRow.rows[0]?.profile_image, password_changed: !!password }
+        { username, full_name, profile_image: profile_image || oldRow.rows[0]?.profile_image, phone_telesom, phone_somtel, password_changed: !!password }
       );
       res.json({ success: true, user: result.rows[0] });
     } else {

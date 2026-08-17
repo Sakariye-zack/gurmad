@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard, Map as MapIcon, MessageSquare, ClipboardList, Fingerprint, Grid3x3, ArrowLeft, ChevronRight, Bell, Camera, X, KeyRound, User as UserIcon } from 'lucide-react';
+import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard, Map as MapIcon, MessageSquare, ClipboardList, Fingerprint, Grid3x3, ArrowLeft, ChevronRight, Bell, Camera, X, KeyRound, User as UserIcon, Phone as PhoneIcon } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { api } from '../api';
 import DashboardView from './DashboardView';
@@ -106,17 +106,21 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
   // guarded server-side, and now audit-logged there too so an admin can see what changed).
   const [showAccount, setShowAccount] = useState(false);
   const [accountName, setAccountName] = useState(name);
+  const [accountPhones, setAccountPhones] = useState({ telesom: currentUser?.phone_telesom || '', somtel: currentUser?.phone_somtel || '' });
   const [accountPw, setAccountPw] = useState({ password: '', confirm: '' });
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const photoInputRef = useRef(null);
   useEffect(() => { setAccountName(name); }, [name]);
+  useEffect(() => { setAccountPhones({ telesom: currentUser?.phone_telesom || '', somtel: currentUser?.phone_somtel || '' }); }, [currentUser?.phone_telesom, currentUser?.phone_somtel]);
 
   const submitProfile = async (extra = {}) => {
     const formData = new FormData();
     formData.append('id', currentUser.id);
     formData.append('username', currentUser.username);
     formData.append('full_name', accountName);
+    formData.append('phone_telesom', accountPhones.telesom);
+    formData.append('phone_somtel', accountPhones.somtel);
     if (extra.password) formData.append('password', extra.password);
     if (extra.photo) formData.append('profile_image', extra.photo);
     const res = await api.updateProfile(formData);
@@ -300,34 +304,34 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
         overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative'
       }}>
         {/* Gradient hero header */}
-        <div style={{ background: `linear-gradient(160deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, padding: '1.5rem 1.4rem 2.6rem', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ background: `linear-gradient(160deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, padding: '1.6rem 1.4rem 2.6rem', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '160px', height: '160px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
           <div style={{ position: 'absolute', bottom: '-40px', left: '-40px', width: '150px', height: '150px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', zIndex: 1, gap: '8px' }}>
-            <button onClick={() => setShowAccount(true)} style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
-              <div style={{ width: '46px', height: '46px', borderRadius: '15px', background: currentUser?.profile_image ? '#f1f5f9' : 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '1.15rem', flexShrink: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1, gap: '10px' }}>
+            <button onClick={() => setShowAccount(true)} style={{ display: 'flex', alignItems: 'center', gap: '13px', minWidth: 0, flex: 1, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' }}>
+              <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: currentUser?.profile_image ? '#f1f5f9' : 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.55)', boxShadow: '0 4px 14px rgba(0,0,0,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 900, fontSize: '1.2rem', flexShrink: 0, overflow: 'hidden' }}>
                 {currentUser?.profile_image ? (
                   <img src={`/api/uploads/${currentUser.profile_image}`} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : initial}
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '3px 10px', color: 'white', fontSize: '0.66rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: '4px' }}>
-                  <Sparkles size={10} /> {isCollector ? 'Collector' : 'Cashier'}
+                <div style={{ color: 'white', fontSize: '1.12rem', fontWeight: 900, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'rgba(255,255,255,0.8)', fontSize: '0.74rem', fontWeight: 700, marginTop: '2px' }}>
+                  <Sparkles size={10} /> {isCollector ? 'Collector' : 'Cashier'} <span style={{ opacity: 0.6 }}>· tap to edit</span>
                 </div>
-                <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: 900, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
               </div>
             </button>
             <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-              <button className="sp-btn" onClick={openNotifications} title="Notifications" style={{ position: 'relative', width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+              <button className="sp-btn" onClick={openNotifications} title="Notifications" style={{ position: 'relative', width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
                 <Bell size={16} />
                 {unreadCount > 0 && (
-                  <span style={{ position: 'absolute', top: '-4px', right: '-4px', minWidth: '16px', height: '16px', borderRadius: '9px', background: '#ef4444', color: 'white', fontSize: '0.6rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: `2px solid ${GREEN_DARK}` }}>
+                  <span style={{ position: 'absolute', top: '-3px', right: '-3px', minWidth: '16px', height: '16px', borderRadius: '9px', background: '#ef4444', color: 'white', fontSize: '0.6rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: `2px solid ${GREEN_DARK}` }}>
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </button>
-              <button className="sp-btn" onClick={onLogout} title="Logout" style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+              <button className="sp-btn" onClick={onLogout} title="Logout" style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
                 <LogOut size={16} />
               </button>
             </div>
@@ -431,7 +435,7 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
                 {/* Photo */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                   <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: currentUser?.profile_image ? '#f1f5f9' : `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.4rem', fontWeight: 900, overflow: 'hidden' }}>
+                    <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: currentUser?.profile_image ? '#f1f5f9' : `linear-gradient(135deg, ${GREEN} 0%, ${GREEN_DARK} 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '1.4rem', fontWeight: 900, overflow: 'hidden' }}>
                       {currentUser?.profile_image ? (
                         <img src={`/api/uploads/${currentUser.profile_image}`} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : initial}
@@ -452,6 +456,23 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
                     <div style={{ position: 'relative' }}>
                       <UserIcon size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                       <input required value={accountName} onChange={e => setAccountName(e.target.value)} style={{ width: '100%', padding: '0.8rem 0.8rem 0.8rem 2.4rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.8rem', fontWeight: 800, color: '#64748b' }}>
+                      <PhoneIcon size={14} /> CONTACT NUMBERS
+                    </div>
+                    <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: '-4px' }}>So customers/dispatch can reach you on the right network.</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', marginBottom: '6px' }}>TELESOM</label>
+                        <input type="tel" placeholder="63xxxxxxx" value={accountPhones.telesom} onChange={e => setAccountPhones({ ...accountPhones, telesom: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.88rem', background: '#f8fafc' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', marginBottom: '6px' }}>SOMTEL</label>
+                        <input type="tel" placeholder="65xxxxxxx" value={accountPhones.somtel} onChange={e => setAccountPhones({ ...accountPhones, somtel: e.target.value })} style={{ width: '100%', padding: '0.75rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.88rem', background: '#f8fafc' }} />
+                      </div>
                     </div>
                   </div>
 
