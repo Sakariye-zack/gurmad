@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Shield, Lock, User, ArrowRight, Leaf } from 'lucide-react';
+import { Truck, Shield, Lock, User, ArrowRight, Leaf, Globe } from 'lucide-react';
 import { api } from '../api';
 import { toast } from 'react-hot-toast';
+import { useLanguage } from '../contexts/LanguageContext';
 
 // Dedicated login screen for the Staff Portal (/staff) — Collector and Cashier accounts, mirroring
 // the Customer Portal's (/portal) mobile-first look (gradient hero, decorative circles, white
@@ -13,6 +14,8 @@ const GREEN_DARK = '#2d8c1e';
 const PHONE_WIDTH = '430px';
 
 const StaffLoginView = ({ onLogin }) => {
+  const { currentLanguage, setLanguage, t } = useLanguage();
+  const toggleLang = () => setLanguage(currentLanguage === 'so' ? 'en' : 'so');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [require2FA, setRequire2FA] = useState(false);
@@ -92,6 +95,10 @@ const StaffLoginView = ({ onLogin }) => {
             <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '180px', height: '180px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
             <div style={{ position: 'absolute', bottom: '20px', left: '-50px', width: '200px', height: '200px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
 
+            <button type="button" onClick={toggleLang} title={currentLanguage === 'so' ? 'Switch to English' : 'U beddel Soomaali'} style={{ position: 'absolute', top: '0.9rem', left: '0.9rem', zIndex: 2, display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '100px', padding: '6px 12px', color: 'white', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer' }}>
+              <Globe size={13} /> {currentLanguage.toUpperCase()}
+            </button>
+
             <div style={{ width: '88px', height: '88px', borderRadius: '24px', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0.6rem auto 1rem', boxShadow: '0 10px 26px rgba(0,0,0,0.18)', position: 'relative', zIndex: 1, overflow: 'hidden' }}>
               {require2FA ? (
                 <Shield size={36} color={GREEN} />
@@ -102,7 +109,7 @@ const StaffLoginView = ({ onLogin }) => {
               )}
             </div>
             <h1 style={{ fontSize: '1.8rem', fontWeight: 900, margin: 0, color: 'white', letterSpacing: '-0.02em', position: 'relative', zIndex: 1 }}>GURMAD</h1>
-            <p style={{ color: '#d9f7cf', fontSize: '1.05rem', margin: '2px 0 0 0', fontWeight: 800, position: 'relative', zIndex: 1 }}>Staff Portal</p>
+            <p style={{ color: '#d9f7cf', fontSize: '1.05rem', margin: '2px 0 0 0', fontWeight: 800, position: 'relative', zIndex: 1 }}>{t('staff_login_title')}</p>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '14px 0', position: 'relative', zIndex: 1 }}>
               <span style={{ width: '30px', height: '1px', background: 'rgba(255,255,255,0.4)' }} />
@@ -110,7 +117,7 @@ const StaffLoginView = ({ onLogin }) => {
               <span style={{ width: '30px', height: '1px', background: 'rgba(255,255,255,0.4)' }} />
             </div>
             <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.88rem', margin: 0, lineHeight: 1.5, position: 'relative', zIndex: 1, maxWidth: '280px', marginLeft: 'auto', marginRight: 'auto' }}>
-              For Collector and Cashier accounts — sign in to reach your route and collections.
+              {t('staff_login_sub')}
             </p>
           </div>
 
@@ -120,10 +127,10 @@ const StaffLoginView = ({ onLogin }) => {
               <Shield size={26} color={GREEN} />
             </div>
             <h2 style={{ textAlign: 'center', fontSize: '1.25rem', fontWeight: 900, color: '#0f172a', margin: '0 0 6px' }}>
-              {require2FA ? 'Two-Factor Verification' : 'Welcome back!'}
+              {require2FA ? 'Two-Factor Verification' : t('staff_welcome_back')}
             </h2>
             <p style={{ textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8', margin: '0 0 1.6rem', lineHeight: 1.5 }}>
-              {require2FA ? 'Enter the 6-digit code from your authenticator app.' : 'Sign in with your staff username and password.'}
+              {require2FA ? 'Enter the 6-digit code from your authenticator app.' : t('staff_signin_sub')}
             </p>
 
             {!require2FA ? (

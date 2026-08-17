@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard, Map as MapIcon, MessageSquare, ClipboardList, Fingerprint, Grid3x3, ArrowLeft, ChevronRight, Bell, Camera, X, KeyRound, User as UserIcon, Phone as PhoneIcon } from 'lucide-react';
+import { LogOut, Truck, Wallet, Users, Receipt, Sparkles, LayoutDashboard, Map as MapIcon, MessageSquare, ClipboardList, Fingerprint, Grid3x3, ArrowLeft, ChevronRight, Bell, Camera, X, KeyRound, User as UserIcon, Phone as PhoneIcon, Globe } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { api } from '../api';
+import { useLanguage } from '../contexts/LanguageContext';
 import DashboardView from './DashboardView';
 import MyRouteTodayView from './MyRouteTodayView';
 import TodaysCollectionsView from './TodaysCollectionsView';
@@ -32,21 +33,26 @@ const GREEN = '#3FAE2A';
 const GREEN_DARK = '#2d8c1e';
 const PHONE_WIDTH = '480px';
 
-const TAB_META = {
-  home: { label: 'Home', icon: LayoutDashboard, title: 'Overview', subtitle: 'Your performance and stats at a glance.' },
-  route: { label: 'My Route', icon: Truck, title: "Today's Route", subtitle: 'Every stop on your route today, in order.' },
-  collections: { label: 'Collections', icon: Users, title: "Today's Collections", subtitle: "Customers your paired collector is working on today." },
-  billing: { label: 'Collect Payment', icon: Receipt, title: 'Collect Payment', subtitle: 'Record cash, ZAAD, eDahab or split payments.' },
-  cashout: { label: 'Cashout', icon: Wallet, title: 'Cashout', subtitle: 'Reconcile the day’s collections.' },
-  map: { label: 'Map', icon: MapIcon, title: 'Operations Map', subtitle: 'Trucks, zones and customers on the map.' },
-  customers: { label: 'Customers', icon: Users, title: 'Customers', subtitle: 'Everyone in your zone.' },
-  attendance: { label: 'Attendance', icon: Fingerprint, title: 'Attendance', subtitle: 'Clock in and out for today.' },
-  complaints: { label: 'Complaints', icon: MessageSquare, title: 'Customer Complaints', subtitle: 'Issues reported in your zone.' },
-  debts: { label: 'Debts', icon: ClipboardList, title: 'Debts', subtitle: 'Outstanding balances in your zone.' },
-  expenses: { label: 'Expenses', icon: Wallet, title: 'Expense Tracker', subtitle: 'Log and review expenses.' },
-  transactions: { label: 'Transactions', icon: Receipt, title: 'Transactions', subtitle: 'Every payment you and your zone have recorded.' },
-  more: { label: 'More', icon: Grid3x3, title: 'More', subtitle: 'Everything else you have access to.' },
-};
+// Built from the shared translations.js dictionary (staff_* keys) via useLanguage()'s t(), so
+// switching language updates every tab label/title/subtitle in this shell at once — and, as a
+// bonus, every reused desktop view (DashboardView, BillingView, CustomerView, ...) that already
+// calls the same t() internally picks up the switch too, since LanguageProvider wraps the whole
+// app from main.jsx down.
+const getTabMeta = (t) => ({
+  home: { label: t('staff_home'), icon: LayoutDashboard, title: t('staff_overview'), subtitle: t('staff_overview_sub') },
+  route: { label: t('staff_my_route'), icon: Truck, title: t('staff_todays_route'), subtitle: t('staff_todays_route_sub') },
+  collections: { label: t('staff_collections'), icon: Users, title: t('staff_todays_collections'), subtitle: t('staff_todays_collections_sub') },
+  billing: { label: t('staff_collect_payment'), icon: Receipt, title: t('staff_collect_payment'), subtitle: t('staff_collect_payment_sub') },
+  cashout: { label: t('staff_cashout'), icon: Wallet, title: t('staff_cashout'), subtitle: t('staff_cashout_sub') },
+  map: { label: t('staff_map'), icon: MapIcon, title: t('staff_map'), subtitle: t('staff_map_sub') },
+  customers: { label: t('staff_customers'), icon: Users, title: t('staff_customers'), subtitle: t('staff_customers_sub') },
+  attendance: { label: t('staff_attendance'), icon: Fingerprint, title: t('staff_attendance'), subtitle: t('staff_attendance_sub') },
+  complaints: { label: t('staff_complaints'), icon: MessageSquare, title: t('staff_complaints'), subtitle: t('staff_complaints_sub') },
+  debts: { label: t('staff_debts'), icon: ClipboardList, title: t('staff_debts'), subtitle: t('staff_debts_sub') },
+  expenses: { label: t('staff_expenses'), icon: Wallet, title: t('staff_expenses'), subtitle: t('staff_expenses_sub') },
+  transactions: { label: t('staff_transactions'), icon: Receipt, title: t('staff_transactions'), subtitle: t('staff_transactions_sub') },
+  more: { label: t('staff_more'), icon: Grid3x3, title: t('staff_more'), subtitle: t('staff_more_sub') },
+});
 
 // A cashier's day is dominated by Collections/Payment/Cashout, so those stay on the bottom bar;
 // the rest of what they're permitted to see (same roles as the desktop sidebar granted, plus
@@ -56,6 +62,12 @@ const TAB_META = {
 const CASHIER_MORE = ['transactions', 'customers', 'complaints', 'debts', 'expenses', 'attendance', 'map'];
 
 const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
+  // Same LanguageContext (and same 'gurmad_language' localStorage key) the desktop Admin app
+  // uses — a staff member's language choice here is remembered the same way, on the same shared
+  // browser session, as an admin's would be.
+  const { currentLanguage, setLanguage, t } = useLanguage();
+  const toggleLang = () => setLanguage(currentLanguage === 'so' ? 'en' : 'so');
+  const TAB_META = getTabMeta(t);
   const isCollector = currentUser?.role === 'collector';
   const primaryTabs = isCollector
     ? ['home', 'route', 'customers', 'attendance', 'map']
@@ -318,12 +330,15 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: 'white', fontSize: '1.12rem', fontWeight: 900, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'rgba(255,255,255,0.8)', fontSize: '0.74rem', fontWeight: 700, marginTop: '2px' }}>
-                  <Sparkles size={10} /> {isCollector ? 'Collector' : 'Cashier'} <span style={{ opacity: 0.6 }}>· tap to edit</span>
+                  <Sparkles size={10} /> {isCollector ? t('staff_collector_role') : t('staff_cashier_role')} <span style={{ opacity: 0.6 }}>· {t('staff_tap_to_edit')}</span>
                 </div>
               </div>
             </button>
             <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
-              <button className="sp-btn" onClick={openNotifications} title="Notifications" style={{ position: 'relative', width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
+              <button className="sp-btn" onClick={toggleLang} title={currentLanguage === 'so' ? 'Switch to English' : 'U beddel Soomaali'} style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', fontSize: '0.62rem', fontWeight: 800, flexDirection: 'column', gap: '1px' }}>
+                <Globe size={13} />{currentLanguage.toUpperCase()}
+              </button>
+              <button className="sp-btn" onClick={openNotifications} title={t('staff_notifications')} style={{ position: 'relative', width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white' }}>
                 <Bell size={16} />
                 {unreadCount > 0 && (
                   <span style={{ position: 'absolute', top: '-3px', right: '-3px', minWidth: '16px', height: '16px', borderRadius: '9px', background: '#ef4444', color: 'white', fontSize: '0.6rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: `2px solid ${GREEN_DARK}` }}>
@@ -367,7 +382,7 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
           {primaryTabs.length > 1 && (
             <div style={{ display: 'flex', background: 'white', borderTop: '1px solid #f1f5f9', padding: '0.6rem 0.5rem calc(0.6rem + env(safe-area-inset-bottom, 0px))', boxShadow: '0 -4px 16px rgba(15,23,42,0.04)', flexShrink: 0 }}>
               {primaryTabs.map(id => {
-                const t = TAB_META[id];
+                const tabMeta = TAB_META[id];
                 const active = tab === id;
                 return (
                   <button key={id} className="sp-btn" onClick={() => goTab(id)} style={{
@@ -375,9 +390,9 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
                     background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem 0.2rem', borderRadius: '14px'
                   }}>
                     <div style={{ width: '38px', height: '30px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? '#f0fdf4' : 'transparent' }}>
-                      <t.icon size={19} color={active ? GREEN : '#94a3b8'} strokeWidth={active ? 2.4 : 2} />
+                      <tabMeta.icon size={19} color={active ? GREEN : '#94a3b8'} strokeWidth={active ? 2.4 : 2} />
                     </div>
-                    <span style={{ fontSize: '0.65rem', fontWeight: active ? 800 : 600, color: active ? GREEN : '#94a3b8' }}>{t.label}</span>
+                    <span style={{ fontSize: '0.65rem', fontWeight: active ? 800 : 600, color: active ? GREEN : '#94a3b8' }}>{tabMeta.label}</span>
                   </button>
                 );
               })}
@@ -391,7 +406,7 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
             <div onClick={e => e.stopPropagation()} style={{ background: '#f8fafc', borderRadius: '26px 26px 0 0', maxHeight: '78%', display: 'flex', flexDirection: 'column', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
               <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Bell size={18} color={GREEN} /> Notifications
+                  <Bell size={18} color={GREEN} /> {t('staff_notifications')}
                 </div>
                 <button onClick={() => setShowNotifications(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b', fontWeight: 700 }}>✕</button>
               </div>
@@ -399,7 +414,7 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
                 {notifications.length === 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '3rem 1rem', color: '#94a3b8' }}>
                     <Bell size={26} color="#cbd5e1" />
-                    <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>No notifications yet</div>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{t('staff_no_notifications')}</div>
                   </div>
                 ) : notifications.map(n => (
                   <div key={n.id} style={{ display: 'flex', gap: '11px', padding: '0.9rem 0', borderBottom: '1px solid #f1f5f9' }}>
@@ -426,7 +441,7 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
             <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '26px 26px 0 0', maxHeight: '88%', overflowY: 'auto', boxShadow: '0 -10px 40px rgba(15,23,42,0.2)' }}>
               <div style={{ padding: '1.2rem 1.3rem 0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <UserIcon size={18} color={GREEN} /> My Account
+                  <UserIcon size={18} color={GREEN} /> {t('staff_my_account')}
                 </div>
                 <button onClick={() => setShowAccount(false)} style={{ width: '30px', height: '30px', borderRadius: '10px', border: 'none', background: '#f1f5f9', cursor: 'pointer', color: '#64748b' }}><X size={15} /></button>
               </div>
@@ -446,13 +461,13 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
                     <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
                   </div>
                   <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 }}>
-                    {isUploadingPhoto ? 'Uploading...' : 'Tap the camera to change your photo.'}
+                    {isUploadingPhoto ? t('staff_uploading') : t('staff_tap_camera_photo')}
                   </div>
                 </div>
 
                 <form onSubmit={handleSaveAccount} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>FULL NAME</label>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 800, color: '#64748b', marginBottom: '7px' }}>{t('staff_full_name')}</label>
                     <div style={{ position: 'relative' }}>
                       <UserIcon size={16} style={{ position: 'absolute', left: '13px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
                       <input required value={accountName} onChange={e => setAccountName(e.target.value)} style={{ width: '100%', padding: '0.8rem 0.8rem 0.8rem 2.4rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
@@ -461,9 +476,9 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
 
                   <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.8rem', fontWeight: 800, color: '#64748b' }}>
-                      <PhoneIcon size={14} /> CONTACT NUMBERS
+                      <PhoneIcon size={14} /> {t('staff_contact_numbers')}
                     </div>
-                    <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: '-4px' }}>So customers/dispatch can reach you on the right network.</div>
+                    <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: '-4px' }}>{t('staff_contact_numbers_sub')}</div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', marginBottom: '6px' }}>TELESOM</label>
@@ -478,14 +493,14 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
 
                   <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.8rem', fontWeight: 800, color: '#64748b' }}>
-                      <KeyRound size={14} /> CHANGE PASSWORD (optional)
+                      <KeyRound size={14} /> {t('staff_change_password_optional')}
                     </div>
-                    <input type="password" placeholder="New password (min 6 characters)" value={accountPw.password} onChange={e => setAccountPw({ ...accountPw, password: e.target.value })} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
-                    <input type="password" placeholder="Confirm new password" value={accountPw.confirm} onChange={e => setAccountPw({ ...accountPw, confirm: e.target.value })} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                    <input type="password" placeholder={t('staff_new_password_ph')} value={accountPw.password} onChange={e => setAccountPw({ ...accountPw, password: e.target.value })} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
+                    <input type="password" placeholder={t('staff_confirm_password_ph')} value={accountPw.confirm} onChange={e => setAccountPw({ ...accountPw, confirm: e.target.value })} style={{ width: '100%', padding: '0.8rem', borderRadius: '13px', border: '1.5px solid #e2e8f0', boxSizing: 'border-box', fontSize: '0.9rem', background: '#f8fafc' }} />
                   </div>
 
                   <button type="submit" disabled={isSavingAccount} style={{ padding: '0.9rem', borderRadius: '16px', border: 'none', background: isSavingAccount ? '#86c976' : GREEN, color: 'white', fontWeight: 800, fontSize: '0.95rem', cursor: isSavingAccount ? 'default' : 'pointer', marginTop: '0.3rem' }}>
-                    {isSavingAccount ? 'Saving...' : 'Save Changes'}
+                    {isSavingAccount ? t('staff_saving') : t('staff_save_changes')}
                   </button>
                 </form>
               </div>
