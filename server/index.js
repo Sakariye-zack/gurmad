@@ -4287,26 +4287,42 @@ app.get('/api/settings', async (req, res) => {
 // would go stale the moment an admin uploaded a new logo. Served under /api/ deliberately: the
 // static frontend build is served directly by nginx, which never reaches Express for a plain
 // /manifest-portal.json request, but does proxy anything under /api/ here.
+// Chrome/Samsung Internet validate that an icon's declared `type` actually matches the file — an
+// uploaded logo is very often a .jpg, and declaring it "image/png" regardless (as this used to)
+// makes Chrome silently reject every icon entry, fail the "has a valid ≥192px icon" installability
+// check, and never offer the install prompt at all — with no visible error, it just doesn't show up.
+const mimeTypeForFile = (filename) => {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'svg') return 'image/svg+xml';
+  return 'image/png';
+};
+
 const buildPortalManifest = async ({ name, shortName, description, startUrl }) => {
   const logoRow = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'system_logo'");
   const logo = logoRow.rows[0]?.setting_value;
   const iconSrc = logo ? `/api/uploads/${logo}` : '/favicon.png';
+  const iconType = mimeTypeForFile(logo || 'favicon.png');
   return {
     name, short_name: shortName, description,
     start_url: startUrl, scope: startUrl, id: startUrl,
     display: 'standalone', orientation: 'portrait',
     background_color: '#eef2f2', theme_color: '#3FAE2A',
     icons: [
-      { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-      { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: iconSrc, sizes: '192x192', type: iconType, purpose: 'any' },
+      { src: iconSrc, sizes: '512x512', type: iconType, purpose: 'any' },
+      { src: iconSrc, sizes: '192x192', type: iconType, purpose: 'maskable' },
+      { src: iconSrc, sizes: '512x512', type: iconType, purpose: 'maskable' },
     ],
   };
 };
 
 app.get('/api/manifest-portal.json', async (req, res) => {
   try {
+    // The spec-recommended MIME type — some installability checks are stricter than a plain
+    // application/json about what they'll accept as a valid Web App Manifest response.
+    res.type('application/manifest+json');
     res.json(await buildPortalManifest({
       name: 'Gurmad Customer Portal', shortName: 'Gurmad Customer',
       description: 'Manage your Gurmad Waste Management account, payments, and pickup schedule.',
@@ -4319,6 +4335,7 @@ app.get('/api/manifest-portal.json', async (req, res) => {
 
 app.get('/api/manifest-staff.json', async (req, res) => {
   try {
+    res.type('application/manifest+json');
     res.json(await buildPortalManifest({
       name: 'Gurmad Staff Portal', shortName: 'Gurmad Staff',
       description: 'Collector and Cashier mobile app — routes, collections, payments and cashout.',
