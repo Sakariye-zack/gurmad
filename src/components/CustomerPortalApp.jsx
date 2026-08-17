@@ -3,6 +3,7 @@ import { User, Lock, LogOut, Home, DollarSign, Truck, MessageSquare, Plus, Inbox
 import toast, { Toaster } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import { api } from '../api';
+import { installPortalPWA } from '../pwaSetup';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -189,6 +190,13 @@ const Card = ({ children, style, onClick }) => (
 );
 
 const CustomerPortalApp = () => {
+  // Installable as a standalone app on the phone it's opened on (Android "Install app" prompt,
+  // iPhone Safari "Add to Home Screen") — see pwaSetup.js for why this can't just live in
+  // index.html.
+  useEffect(() => {
+    return installPortalPWA({ manifestHref: '/manifest-portal.json', appleTitle: 'Gurmad Customer', scope: '/portal' });
+  }, []);
+
   const [customer, setCustomer] = useState(() => {
     const saved = localStorage.getItem('gurmadCustomer');
     return saved ? JSON.parse(saved) : null;

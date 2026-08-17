@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LogOut, ShieldAlert } from 'lucide-react';
 import StaffLoginView from './StaffLoginView';
 import StaffPortalApp from './StaffPortalApp';
+import { installPortalPWA } from '../pwaSetup';
 
 // Login/logged-in split for the /staff URL, isolated from the main App component the same way
 // CustomerPortalApp is isolated for /portal — its own useState reading the same 'gurmadUser'
 // localStorage key the desktop Admin Portal login writes, so a session started at either URL is
 // recognized at the other.
 const StaffPortalGate = () => {
+  // Installable as a standalone app (Android "Install app" prompt, iPhone "Add to Home Screen")
+  // — set up once here rather than in both StaffLoginView and StaffPortalApp, since this gate
+  // renders regardless of login state.
+  useEffect(() => {
+    return installPortalPWA({ manifestHref: '/manifest-staff.json', appleTitle: 'Gurmad Staff', scope: '/staff' });
+  }, []);
+
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('gurmadUser');
     return saved ? JSON.parse(saved) : null;
