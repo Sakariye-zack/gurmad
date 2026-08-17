@@ -4281,6 +4281,54 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
+// PWA install-icon manifests, generated on request instead of served as static files, so
+// whatever logo is currently set in Settings > System Logo is what shows up when someone installs
+// the Customer Portal / Staff Portal to their phone's home screen — a static public/*.json file
+// would go stale the moment an admin uploaded a new logo. Served under /api/ deliberately: the
+// static frontend build is served directly by nginx, which never reaches Express for a plain
+// /manifest-portal.json request, but does proxy anything under /api/ here.
+const buildPortalManifest = async ({ name, shortName, description, startUrl }) => {
+  const logoRow = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'system_logo'");
+  const logo = logoRow.rows[0]?.setting_value;
+  const iconSrc = logo ? `/api/uploads/${logo}` : '/favicon.png';
+  return {
+    name, short_name: shortName, description,
+    start_url: startUrl, scope: startUrl, id: startUrl,
+    display: 'standalone', orientation: 'portrait',
+    background_color: '#eef2f2', theme_color: '#3FAE2A',
+    icons: [
+      { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: iconSrc, sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+      { src: iconSrc, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  };
+};
+
+app.get('/api/manifest-portal.json', async (req, res) => {
+  try {
+    res.json(await buildPortalManifest({
+      name: 'Gurmad Customer Portal', shortName: 'Gurmad Customer',
+      description: 'Manage your Gurmad Waste Management account, payments, and pickup schedule.',
+      startUrl: '/portal',
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/manifest-staff.json', async (req, res) => {
+  try {
+    res.json(await buildPortalManifest({
+      name: 'Gurmad Staff Portal', shortName: 'Gurmad Staff',
+      description: 'Collector and Cashier mobile app — routes, collections, payments and cashout.',
+      startUrl: '/staff',
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const updateSettingsHandler = async (req, res) => {
   try {
     const entries = Object.entries(req.body);

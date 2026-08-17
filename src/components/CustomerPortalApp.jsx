@@ -194,7 +194,7 @@ const CustomerPortalApp = () => {
   // iPhone Safari "Add to Home Screen") — see pwaSetup.js for why this can't just live in
   // index.html.
   useEffect(() => {
-    return installPortalPWA({ manifestHref: '/manifest-portal.json', appleTitle: 'Gurmad Customer', scope: '/portal' });
+    return installPortalPWA({ manifestHref: '/api/manifest-portal.json', appleTitle: 'Gurmad Customer', scope: '/portal' });
   }, []);
 
   const [customer, setCustomer] = useState(() => {

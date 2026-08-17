@@ -13,6 +13,7 @@ export function installPortalPWA({ manifestHref, appleTitle, themeColor = '#3FAE
     Object.entries(extra).forEach(([k, v]) => el.setAttribute(k, v));
     document.head.appendChild(el);
     created.push(el);
+    return el;
   };
   const addMeta = (name, content) => {
     const el = document.createElement('meta');
@@ -23,7 +24,15 @@ export function installPortalPWA({ manifestHref, appleTitle, themeColor = '#3FAE
   };
 
   addLink('manifest', manifestHref);
-  addLink('apple-touch-icon', '/favicon.png');
+  // Falls back to the static favicon immediately, then swapped for the real company logo (same
+  // one an admin sets under Settings > System Logo) once /api/settings resolves — the manifest
+  // route above does the same lookup server-side for the Android/Chrome install icon, so both
+  // paths end up showing the actual brand instead of a generic placeholder.
+  const appleIcon = addLink('apple-touch-icon', '/favicon.png');
+  fetch('/api/settings').then(r => r.json()).then(data => {
+    if (data.system_logo) appleIcon.href = `/api/uploads/${data.system_logo}`;
+  }).catch(() => {});
+
   addMeta('theme-color', themeColor);
   addMeta('apple-mobile-web-app-capable', 'yes');
   addMeta('apple-mobile-web-app-status-bar-style', 'black-translucent');

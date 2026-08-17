@@ -13,7 +13,7 @@ const StaffPortalGate = () => {
   // — set up once here rather than in both StaffLoginView and StaffPortalApp, since this gate
   // renders regardless of login state.
   useEffect(() => {
-    return installPortalPWA({ manifestHref: '/manifest-staff.json', appleTitle: 'Gurmad Staff', scope: '/staff' });
+    return installPortalPWA({ manifestHref: '/api/manifest-staff.json', appleTitle: 'Gurmad Staff', scope: '/staff' });
   }, []);
 
   const [currentUser, setCurrentUser] = useState(() => {
