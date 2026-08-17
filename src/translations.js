@@ -32,6 +32,10 @@ export const translations = {
     mark_all_read: "Mark all read",
     no_notifications: "You're all caught up!",
 
+    // Errors (fall back to a literal key string when missing, same bug class as welcome_back)
+    loading_error: "Something went wrong while loading.",
+    upload_error: "Something went wrong during upload.",
+
     // Dashboard
     welcome_back: "Welcome back",
     system_overview: "System Overview",
@@ -124,6 +128,10 @@ export const translations = {
     notifications: "Ogeysiisyada",
     mark_all_read: "Akhriso dhammaan",
     no_notifications: "Ma jiraan ogeysiisyada cusub!",
+
+    // Errors
+    loading_error: "Cillad ayaa dhacday markii la soo shubayay.",
+    upload_error: "Cillad ayaa dhacday markii la soo geliyay.",
 
     // Dashboard
     welcome_back: "Ku soo dhawoow",

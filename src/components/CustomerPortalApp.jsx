@@ -227,7 +227,8 @@ const CustomerPortalApp = () => {
   const [company, setCompany] = useState({ name: 'Gurmad Waste Management', phone: '', email: '' });
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const photoInputRef = React.useRef(null);
-  const [lang, setLang] = useState(() => localStorage.getItem('gurmadPortalLang') || 'so');
+  // English first; a returning customer's saved choice always wins over the default.
+  const [lang, setLang] = useState(() => localStorage.getItem('gurmadPortalLang') || 'en');
   const t = (key) => translate(key, lang);
   const toggleLang = () => {
     const next = lang === 'so' ? 'en' : 'so';

@@ -5,7 +5,7 @@ const LanguageContext = createContext();
 
 export const LanguageProvider = ({ children }) => {
   const [currentLanguage, setCurrentLanguage] = useState(() => {
-    return localStorage.getItem('gurmad_language') || 'so'; // Default to Somali
+    return localStorage.getItem('gurmad_language') || 'en'; // English first; a returning user's saved choice always wins
   });
 
   useEffect(() => {
