@@ -224,6 +224,13 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
     const interval = setInterval(fetchRoute, 60000);
     return () => clearInterval(interval);
   }, [isCollector]);
+  // Marking a stop collected/missed happens inside MyRouteTodayView's own separate poll (the
+  // 'route' tab) — without this, switching back to Home shows stale "My Collections"/"Collection
+  // Progress" numbers for up to a minute until the interval above happens to fire again.
+  useEffect(() => {
+    if (!isCollector || tab !== 'home') return;
+    api.getMyTodayRoute().then(data => setMyTodayRoute(data.customers || [])).catch(() => {});
+  }, [isCollector, tab]);
 
   const goTab = (id) => { setTab(id); setMoreView(null); };
 
