@@ -2395,10 +2395,16 @@ app.put('/api/tasks/:taskId/customers/:customerId', checkRole(['admin', 'collect
   const { taskId, customerId } = req.params;
   const { collected } = req.body;
   try {
-    await db.query(
+    const updateRes = await db.query(
       `UPDATE task_customers SET collected = $1, collected_at = $2 WHERE task_id = $3 AND customer_id = $4`,
       [collected, collected ? new Date() : null, taskId, customerId]
     );
+    // No matching task_customers row (this customer was never actually dispatched on this task)
+    // used to still report {success:true} — a collector marking a stop that isn't really theirs
+    // saw a normal success response with nothing having happened.
+    if (updateRes.rowCount === 0) {
+      return res.status(404).json({ error: 'This customer is not on that task' });
+    }
 
     if (collected) {
       await db.query(`UPDATE customers SET status = 'Paid' WHERE id = $1`, [customerId]);
