@@ -235,13 +235,16 @@ const CustomerPortalApp = () => {
   const [company, setCompany] = useState({ name: 'Gurmad Waste Management', phone: '', email: '' });
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const photoInputRef = React.useRef(null);
-  // English first; a returning customer's saved choice always wins over the default.
-  const [lang, setLang] = useState(() => localStorage.getItem('gurmadPortalLang') || 'en');
+  // English first; a returning customer's saved choice always wins over the default. Reads/writes
+  // the same 'gurmad_language' key the Admin Portal and Staff Portal's LanguageContext use — this
+  // used to be its own separate 'gurmadPortalLang' key, so a language switch here never carried
+  // over to the other two apps (or vice versa) despite all three sharing one browser session.
+  const [lang, setLang] = useState(() => localStorage.getItem('gurmad_language') || 'en');
   const t = (key) => translate(key, lang);
   const toggleLang = () => {
     const next = lang === 'so' ? 'en' : 'so';
     setLang(next);
-    localStorage.setItem('gurmadPortalLang', next);
+    localStorage.setItem('gurmad_language', next);
   };
 
   // On an actual phone the "phone mockup floating on a gray backdrop" look (fixed max-width,

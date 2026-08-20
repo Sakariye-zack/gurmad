@@ -5215,7 +5215,11 @@ app.get('/api/messages', checkRole(['admin', 'cashier', 'collector']), async (re
 });
 
 app.post('/api/messages', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
-  const { sender_id, receiver_id, content } = req.body; // receiver_id can be null for 'all'
+  const { receiver_id, content } = req.body; // receiver_id can be null for 'all'
+  // sender_id always comes from the authenticated JWT, never the request body — the client used
+  // to send its own sender_id, which meant any authenticated user could send a Team Chat message
+  // that appeared to come from someone else (e.g. spoofing the admin) with nothing to stop it.
+  const sender_id = req.user.id;
   try {
     const result = await db.query(
       'INSERT INTO messages (sender_id, receiver_id, content) VALUES ($1, $2, $3) RETURNING *',
