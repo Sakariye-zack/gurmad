@@ -700,7 +700,9 @@ app.use('/uploads', express.static(uploadDir));
 // --- Middleware & Utilities ---
 const logAudit = async (req, action, entityType, entityId, oldValues = null, newValues = null) => {
   try {
-    const userId = req.headers['x-user-id'] || null;
+    // req.user is set by authenticateToken/checkRole from the JWT — no caller has ever sent an
+    // x-user-id header, so every audit_logs row previously recorded user_id = NULL.
+    const userId = req.user?.id || null;
     const ipAddress = req.ip || req.connection.remoteAddress;
 
     await db.query(
@@ -1626,15 +1628,40 @@ app.delete('/api/customers/:id', checkRole(['admin']), async (req, res) => {
 // --- Invoices ---
 app.get('/api/invoices/stats', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
-    const stats = await db.query(`
-      SELECT
-        SUM(amount) as total_usd,
-        SUM(slsh_amount) as total_slsh,
-        SUM(debt_amount) as total_debt,
-        SUM(discount_amount) as total_discount
-      FROM invoices
-      WHERE created_at::date = CURRENT_DATE
-    `);
+    const { restricted: isGudoomiye } = getZoneScope(req);
+    const isCashier = req.user.role.toLowerCase() === 'cashier';
+
+    let stats;
+    if (isCashier) {
+      const { zoneGroups, collectorIds } = await getCashierScope(req.user.id);
+      if (zoneGroups.length === 0 && collectorIds.length === 0) {
+        stats = { rows: [{}] };
+      } else {
+        stats = await db.query(`
+          SELECT
+            SUM(i.amount) as total_usd,
+            SUM(i.slsh_amount) as total_slsh,
+            SUM(i.debt_amount) as total_debt,
+            SUM(i.discount_amount) as total_discount
+          FROM invoices i
+          INNER JOIN customers c ON i.customer_id = c.id
+          WHERE i.created_at::date = CURRENT_DATE
+            AND (c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[]))
+        `, [zoneGroups, collectorIds]);
+      }
+    } else {
+      stats = await db.query(`
+        SELECT
+          SUM(i.amount) as total_usd,
+          SUM(i.slsh_amount) as total_slsh,
+          SUM(i.debt_amount) as total_debt,
+          SUM(i.discount_amount) as total_discount
+        FROM invoices i
+        INNER JOIN customers c ON i.customer_id = c.id
+        WHERE i.created_at::date = CURRENT_DATE
+          ${isGudoomiye ? 'AND c.zone = $1' : ''}
+      `, isGudoomiye ? [req.user.zone] : []);
+    }
     const trucksRes = await db.query(`SELECT COUNT(*) as active_trucks FROM trucks WHERE status = 'Active'`);
     res.json({
       total_usd: 0,
@@ -3232,27 +3259,58 @@ app.get('/api/stats/history', checkRole(['admin', 'cashier', 'collector', 'gudoo
     res.status(500).json({ error: err.message });
   }
 });
-app.get('/api/dashboard/extended', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', 'zone_accountant']), async (req, res) => {
+// Restricted to admin/gudoomiye/zone_accountant only: this is company-/zone-wide financial and
+// debtor detail (top debtors with names/phones/amounts) the Staff Portal never renders for
+// cashier/collector (see DashboardView.jsx's role gates) — cashier/collector are deliberately not
+// granted this route at all rather than trusting the frontend to hide what the network already sent.
+app.get('/api/dashboard/extended', checkRole(['admin', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const { restricted, zone: scopedZone } = getZoneScope(req);
 
     // Daily Cashflow
-    const revTodayRes = await db.query("SELECT SUM(amount) FROM invoices WHERE status = 'Paid' AND DATE(created_at) = CURRENT_DATE");
-    const expTodayRes = await db.query("SELECT SUM(amount) FROM expenses WHERE DATE(expense_date) = CURRENT_DATE");
+    const revTodayRes = await db.query(
+      `SELECT SUM(i.amount) FROM invoices i INNER JOIN customers c ON i.customer_id = c.id
+       WHERE i.status = 'Paid' AND DATE(i.created_at) = CURRENT_DATE ${restricted ? 'AND c.zone = $1' : ''}`,
+      restricted ? [scopedZone] : []
+    );
+    // expenses has no zone column — there's no per-zone attribution to scope this by, so a
+    // restricted (Gudoomiye/Zone Accountant) caller gets 0 rather than the company-wide total.
+    const expTodayRes = restricted
+      ? { rows: [{ sum: 0 }] }
+      : await db.query(`SELECT SUM(amount) FROM expenses WHERE DATE(expense_date) = CURRENT_DATE`);
 
     // Outstanding Debts
-    const totalDebtRes = await db.query("SELECT SUM(amount) FROM debts WHERE status = 'Unpaid'");
-    const topDebtorsRes = await db.query("SELECT debtor_name, amount, phone FROM debts WHERE status = 'Unpaid' ORDER BY amount DESC LIMIT 5");
+    const totalDebtRes = await db.query(
+      `SELECT SUM(amount) FROM debts WHERE status = 'Unpaid' ${restricted ? 'AND zone = $1' : ''}`,
+      restricted ? [scopedZone] : []
+    );
+    const topDebtorsRes = await db.query(
+      `SELECT debtor_name, amount, phone FROM debts WHERE status = 'Unpaid' ${restricted ? 'AND zone = $1' : ''} ORDER BY amount DESC LIMIT 5`,
+      restricted ? [scopedZone] : []
+    );
 
     // Pending Complaints
-    const pendingComplaintsRes = await db.query("SELECT COUNT(*) FROM complaints WHERE status != 'Resolved'");
+    const pendingComplaintsRes = await db.query(
+      `SELECT COUNT(*) FROM complaints c LEFT JOIN customers cu ON c.customer_id = cu.id WHERE c.status != 'Resolved' ${restricted ? 'AND cu.zone = $1' : ''}`,
+      restricted ? [scopedZone] : []
+    );
 
-    // Employee Attendance (Mocked clocked in for now since table doesn't exist)
-    const totalEmployeesRes = await db.query("SELECT COUNT(*) FROM employees WHERE status = 'Active'");
+    // Employee Attendance (Mocked clocked in for now since table doesn't exist) — employees has
+    // no zone column, so a restricted caller gets 0 rather than the company-wide count.
+    const totalEmployeesRes = restricted
+      ? { rows: [{ count: 0 }] }
+      : await db.query(`SELECT COUNT(*) FROM employees WHERE status = 'Active'`);
     const clockedInTodayRes = { rows: [{ count: totalEmployeesRes.rows[0].count }] }; // Assuming all active are present for now
 
     // Recent Activities (Union of recent invoices, customers, tasks, complaints)
-    const recentActivitiesQuery = `
+    const recentActivitiesQuery = restricted ? `
+      (SELECT 'invoice' as type, 'Payment of $' || i.amount as description, i.created_at FROM invoices i INNER JOIN customers c ON i.customer_id = c.id WHERE c.zone = $1 ORDER BY i.created_at DESC LIMIT 5)
+      UNION ALL
+      (SELECT 'customer' as type, 'New customer: ' || name as description, created_at FROM customers WHERE zone = $1 ORDER BY created_at DESC LIMIT 5)
+      UNION ALL
+      (SELECT 'complaint' as type, 'Complaint: ' || co.title as description, co.created_at FROM complaints co LEFT JOIN customers c ON co.customer_id = c.id WHERE c.zone = $1 ORDER BY co.created_at DESC LIMIT 5)
+      ORDER BY created_at DESC LIMIT 5
+    ` : `
       (SELECT 'invoice' as type, 'Payment of $' || amount as description, created_at FROM invoices ORDER BY created_at DESC LIMIT 5)
       UNION ALL
       (SELECT 'customer' as type, 'New customer: ' || name as description, created_at FROM customers ORDER BY created_at DESC LIMIT 5)
@@ -3260,7 +3318,7 @@ app.get('/api/dashboard/extended', checkRole(['admin', 'cashier', 'collector', '
       (SELECT 'complaint' as type, 'Complaint: ' || title as description, created_at FROM complaints ORDER BY created_at DESC LIMIT 5)
       ORDER BY created_at DESC LIMIT 5
     `;
-    const recentActivitiesRes = await db.query(recentActivitiesQuery);
+    const recentActivitiesRes = await db.query(recentActivitiesQuery, restricted ? [scopedZone] : []);
 
     res.json({
       dailyCashflow: {
@@ -4016,23 +4074,25 @@ app.delete('/api/documents/:id', checkRole(['admin']), async (req, res) => {
 app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT d.id::text as id, d.customer_id, 
+      SELECT d.id::text as id, d.customer_id,
              COALESCE(d.debtor_name, c.name) as debtor_name,
              COALESCE(d.phone, c.phone) as phone,
              COALESCE(d.zone, c.zone) as zone,
+             c.collector_id,
              COALESCE(d.house_no, c.house_no) as house_no,
              c.street,
              c.neighborhood,
              c.name as customer_name,
              d.amount, d.currency, d.description, d.status, d.created_at,
              'manual' as type
-      FROM debts d 
-      LEFT JOIN customers c ON d.customer_id = c.id 
+      FROM debts d
+      LEFT JOIN customers c ON d.customer_id = c.id
       UNION ALL
       SELECT ('INV-' || i.id) as id, i.customer_id,
              c.name as debtor_name,
              c.phone as phone,
-             c.area as zone,
+             c.zone as zone,
+             c.collector_id,
              c.house_no as house_no,
              c.street,
              '' as neighborhood,
@@ -4044,9 +4104,14 @@ app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accounta
       WHERE i.status = 'Unpaid'
       ORDER BY created_at DESC
     `);
-    const rows = ['gudoomiye', 'zone_accountant'].includes(req.user.role.toLowerCase())
-      ? result.rows.filter(r => r.zone === req.user.zone)
-      : result.rows;
+    const role = req.user.role.toLowerCase();
+    let rows = result.rows;
+    if (['gudoomiye', 'zone_accountant'].includes(role)) {
+      rows = rows.filter(r => r.zone === req.user.zone);
+    } else if (role === 'cashier') {
+      const { zoneGroups, collectorIds } = await getCashierScope(req.user.id);
+      rows = rows.filter(r => zoneGroups.includes(r.zone) || collectorIds.includes(r.collector_id));
+    }
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -4113,6 +4178,20 @@ app.put('/api/debts/:id/status', checkRole(['admin', 'cashier']), async (req, re
 app.get('/api/cashouts', requirePermission('cashout', 'view'), async (req, res) => {
   try {
     const { restricted: isGudoomiye } = getZoneScope(req);
+    const isCashier = req.user.role.toLowerCase() === 'cashier';
+
+    if (isCashier) {
+      const { zoneGroups } = await getCashierScope(req.user.id);
+      if (zoneGroups.length === 0) {
+        return res.json([]);
+      }
+      const result = await db.query(
+        'SELECT * FROM cashouts WHERE zone = ANY($1::text[]) ORDER BY created_at DESC',
+        [zoneGroups]
+      );
+      return res.json(result.rows);
+    }
+
     const result = await db.query(
       isGudoomiye ? 'SELECT * FROM cashouts WHERE zone = $1 ORDER BY created_at DESC' : 'SELECT * FROM cashouts ORDER BY created_at DESC',
       isGudoomiye ? [req.user.zone] : []

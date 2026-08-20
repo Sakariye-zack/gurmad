@@ -72,11 +72,17 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
 
   useEffect(() => {
     const needsInvoices = currentUser?.role === 'admin' || currentUser?.role === 'cashier' || currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant';
+    // The backend now restricts /api/dashboard/extended to admin/gudoomiye/zone_accountant (it
+    // carries company-/zone-wide financial and debtor detail never rendered for cashier/
+    // collector below) — only requesting it for those roles keeps the leaked data from ever
+    // reaching a cashier/collector's network tab or React state in the first place, rather than
+    // relying solely on the JSX gates further down to hide it.
+    const canSeeExtended = currentUser?.role === 'admin' || currentUser?.role === 'gudoomiye' || currentUser?.role === 'zone_accountant';
     Promise.all([
       api.getStats(),
       api.getStatsHistory(),
       api.getSettings(),
-      api.getExtendedDashboardStats(),
+      canSeeExtended ? api.getExtendedDashboardStats() : Promise.resolve(null),
       needsInvoices ? api.getInvoices() : Promise.resolve([]),
       canSeeZones ? api.getZonePerformance().catch(() => []) : Promise.resolve([])
     ])
