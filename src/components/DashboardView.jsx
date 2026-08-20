@@ -559,7 +559,15 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
              </div>
           </div>
         </div>
-      ) : (
+      ) : (() => {
+        // Was hardcoded (75%, "15 out of 20 houses") regardless of the actual route — now driven
+        // by the same myTodayRoute data the stat cards above already use.
+        const totalStops = myTodayRoute.length;
+        const doneStops = myTodayRoute.filter(c => c.collected).length;
+        const pct = totalStops > 0 ? Math.round((doneStops / totalStops) * 100) : 0;
+        const circumference = 408; // 2 * PI * r(65), matches the circle below
+        const dashOffset = circumference - (circumference * pct) / 100;
+        return (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
            <div className="card">
               <h3 style={{ fontWeight: 700, marginBottom: '1rem' }}>Collection Progress</h3>
@@ -567,32 +575,34 @@ const DashboardView = ({ currentUser, collectorTodayStats, myTodayRoute = [] }) 
                  <div style={{ position: 'relative', width: '150px', height: '150px' }}>
                     <svg width="150" height="150" viewBox="0 0 150 150">
                        <circle cx="75" cy="75" r="65" fill="none" stroke="#f1f5f9" strokeWidth="15" />
-                       <circle cx="75" cy="75" r="65" fill="none" stroke="var(--gurmad-green)" strokeWidth="15" strokeDasharray="408" strokeDashoffset="100" strokeLinecap="round" transform="rotate(-90 75 75)" />
+                       <circle cx="75" cy="75" r="65" fill="none" stroke="var(--gurmad-green)" strokeWidth="15" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" transform="rotate(-90 75 75)" />
                     </svg>
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
-                       <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>75%</div>
+                       <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{pct}%</div>
                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>DONE</div>
                     </div>
                  </div>
               </div>
               <div style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                 You have collected 15 out of 20 houses today.
+                 {totalStops > 0 ? `You have collected ${doneStops} out of ${totalStops} houses today.` : 'No route assigned for today yet.'}
               </div>
            </div>
            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <h3 style={{ fontWeight: 700 }}>Quick Actions</h3>
-              <button style={{ padding: '1rem', borderRadius: '12px', border: 'none', backgroundColor: '#f0fdf4', color: '#166534', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('switchTab', { detail: 'route' }))}
+                style={{ padding: '1rem', borderRadius: '12px', border: 'none', backgroundColor: '#f0fdf4', color: '#166534', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
                  <Truck size={20} /> View Today's Route
               </button>
-              <button style={{ padding: '1rem', borderRadius: '12px', border: 'none', backgroundColor: '#eff6ff', color: '#1e40af', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                 <Activity size={20} /> Log Fuel Consumption
-              </button>
-              <button style={{ padding: '1rem', borderRadius: '12px', border: 'none', backgroundColor: '#fff7ed', color: '#9a3412', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                 <Users size={20} /> View Team Chat
-              </button>
+              {/* "Log Fuel Consumption" and "View Team Chat" were removed here — neither has a
+                  destination reachable by a collector: fuel logs are an admin-only desktop
+                  feature (POST /api/fleet/fuel is checkRole(['admin'])), and ChatWidget is only
+                  mounted in the desktop App.jsx, never in the Staff Portal — both buttons had no
+                  onClick handler at all and would have gone nowhere even if permitted. */}
            </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Extended Dashboard Widgets — company-wide (recent activities across every zone, top
           debtors company-wide, total pending complaints company-wide), so kept out of the
