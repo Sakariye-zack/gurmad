@@ -2313,7 +2313,12 @@ app.post('/api/tasks', requirePermission('tasks', 'create'), async (req, res) =>
     );
     const task = result.rows[0];
 
-    if (customer_ids && Array.isArray(customer_ids) && customer_ids.length > 0) {
+    if (Array.isArray(customer_ids)) {
+      // An empty array is a deliberate choice (the admin unchecked everyone in the "Assign
+      // Collection Task" modal, e.g. via "Deselect All") and must mean zero customers — not fall
+      // through to auto-assigning the whole zone anyway. That silently overrode the admin's
+      // explicit selection and fired a real WhatsApp "we're coming today" message to every
+      // customer in the zone regardless of what was actually picked.
       for (const cid of customer_ids) {
         await db.query(
           `INSERT INTO task_customers (task_id, customer_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -2321,7 +2326,8 @@ app.post('/api/tasks', requirePermission('tasks', 'create'), async (req, res) =>
         );
       }
     } else {
-      // Fallback: automatically assign all customers in the zone
+      // customer_ids wasn't sent at all (only reachable from a caller other than TaskView.jsx's
+      // "Assign Collection Task" modal, which always sends an array) — fall back to the whole zone.
       await db.query(
         `INSERT INTO task_customers (task_id, customer_id)
          SELECT $1, id FROM customers

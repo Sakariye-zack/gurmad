@@ -584,7 +584,6 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
           <div className="card glass" style={{ width: '450px', animation: 'slideIn 0.3s ease-out', borderTop: '4px solid var(--gurmad-green)' }}>
             <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Truck color="var(--gurmad-green)" /> Assign Collection Task
-              <span style={{ fontSize: '0.7rem', color: 'red' }}>(Debug: {employees.length} emps loaded)</span>
             </h3>
             <form onSubmit={handleAssign} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
