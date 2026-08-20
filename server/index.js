@@ -4652,15 +4652,36 @@ app.post('/api/fleet/maintenance', checkRole(['admin']), async (req, res) => {
 
 // --- Inventory Management ---
 // --- Complaints Management ---
+// Was unscoped for every role that can reach it — a Cashier or Gudoomiye saw every complaint
+// company-wide (customer names, phones, full descriptions) instead of only their own zone's, the
+// same leak shape already fixed for customers/debts/cashouts/dashboard this session.
 app.get('/api/complaints', checkRole(['admin', 'cashier', 'gudoomiye']), async (req, res) => {
   try {
+    const { restricted: isGudoomiye } = getZoneScope(req);
+    const isCashier = req.user.role.toLowerCase() === 'cashier';
+
+    if (isCashier) {
+      const { zoneGroups, collectorIds } = await getCashierScope(req.user.id);
+      if (zoneGroups.length === 0 && collectorIds.length === 0) return res.json([]);
+      const result = await db.query(`
+        SELECT c.*, cust.name as customer_name, cust.phone as customer_phone, u.full_name as assigned_to_name
+        FROM complaints c
+        LEFT JOIN customers cust ON c.customer_id = cust.id
+        LEFT JOIN users u ON c.assigned_to = u.id
+        WHERE ${cashierScopeSQL('cust')}
+        ORDER BY c.created_at DESC
+      `, [zoneGroups, collectorIds]);
+      return res.json(result.rows);
+    }
+
     const result = await db.query(`
       SELECT c.*, cust.name as customer_name, cust.phone as customer_phone, u.full_name as assigned_to_name
       FROM complaints c
       LEFT JOIN customers cust ON c.customer_id = cust.id
       LEFT JOIN users u ON c.assigned_to = u.id
+      ${isGudoomiye ? 'WHERE cust.zone = $1' : ''}
       ORDER BY c.created_at DESC
-    `);
+    `, isGudoomiye ? [req.user.zone] : []);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
