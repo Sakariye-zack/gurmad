@@ -258,6 +258,15 @@ const ReportsView = ({ searchQuery = '' }) => {
 
   }, [reportType, invoices, expenses, startDate, endDate]);
 
+  // The Total Income/Expenses/Net Profit summary cards used to always show reportData (the
+  // unfiltered, all-time company total from /api/stats) no matter which period tab was
+  // selected — switching to "Daily" only changed the chart underneath while the headline
+  // numbers stayed exactly the same as "Yearly", silently misleading anyone reading just the
+  // top cards. Now derived from the same period-scoped chartData the chart itself already
+  // computes correctly for every tab (Daily/Weekly/Monthly/.../Custom Range).
+  const periodRevenue = chartData.reduce((sum, d) => sum + (d.revenue || 0), 0);
+  const periodExpenses = chartData.reduce((sum, d) => sum + (d.expenses || 0), 0);
+
   const handleExportCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Period,Income ($),Expenditure ($),Net Profit ($)\n";
@@ -324,10 +333,10 @@ const ReportsView = ({ searchQuery = '' }) => {
       y += 28;
 
       // Financial snapshot
-      const netProfit = parseFloat(reportData.revenue || 0) - parseFloat(reportData.totalExpenses || 0);
+      const netProfit = periodRevenue - periodExpenses;
       const snapshot = [
-        ['Total Revenue', formatValue(reportData.revenue)],
-        ['Total Expenses', formatValue(reportData.totalExpenses)],
+        ['Total Revenue', formatValue(periodRevenue)],
+        ['Total Expenses', formatValue(periodExpenses)],
         ['Net Profit', formatValue(netProfit)],
         ['Active Customers', String(reportData.customerCount)],
       ];
@@ -590,7 +599,7 @@ const ReportsView = ({ searchQuery = '' }) => {
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>Total Income</span>
             <TrendingUp size={18} color="var(--gurmad-green)" />
           </div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatValue(reportData.revenue)}</h2>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatValue(periodRevenue)}</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--gurmad-green)', fontWeight: 600, marginTop: '4px' }}>
             <ArrowUpRight size={14} style={{ verticalAlign: 'middle' }} /> Real-time active
           </p>
@@ -600,7 +609,7 @@ const ReportsView = ({ searchQuery = '' }) => {
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>Total Expenses</span>
             <ArrowDownRight size={18} color="#ef4444" />
           </div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatValue(reportData.totalExpenses)}</h2>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatValue(periodExpenses)}</h2>
           <p style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 600, marginTop: '4px' }}>
              Tracking operational costs
           </p>
@@ -610,7 +619,7 @@ const ReportsView = ({ searchQuery = '' }) => {
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>Net Profit</span>
             <DollarSign size={18} color="var(--gurmad-orange)" />
           </div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatValue(parseFloat(reportData.revenue) - parseFloat(reportData.totalExpenses))}</h2>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 700 }}>{formatValue(periodRevenue - periodExpenses)}</h2>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
             Overall health: Positive
           </p>
@@ -713,8 +722,8 @@ const ReportsView = ({ searchQuery = '' }) => {
             {[
               { m: 'Active Customers', current: reportData.customerCount, src: 'Database' },
               { m: 'Tasks Completed', current: reportData.tasksCompleted, src: 'Fleet Logs' },
-              { m: 'Total Collections', current: formatValue(reportData.revenue), src: 'Finance DB' },
-              { m: 'Operational Costs', current: formatValue(reportData.totalExpenses), src: 'Expense DB' },
+              { m: 'Total Collections', current: formatValue(periodRevenue), src: 'Finance DB' },
+              { m: 'Operational Costs', current: formatValue(periodExpenses), src: 'Expense DB' },
             ].map((row, i) => (
               <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.9rem' }}>
                 <td style={{ padding: '1rem', fontWeight: 500 }}>{row.m}</td>
