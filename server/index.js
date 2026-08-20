@@ -1480,7 +1480,9 @@ const cashierScopeSQL = (columnAlias = '') => {
 app.get('/api/customers', requirePermission('customers', 'view'), async (req, res) => {
   try {
     const { restricted: isGudoomiye } = getZoneScope(req);
-    const isCashier = req.user.role.toLowerCase() === 'cashier';
+    const role = req.user.role.toLowerCase();
+    const isCashier = role === 'cashier';
+    const isCollector = role === 'collector';
 
     if (isCashier) {
       const { zoneGroups, collectorIds } = await getCashierScope(req.user.id);
@@ -1496,6 +1498,27 @@ app.get('/api/customers', requirePermission('customers', 'view'), async (req, re
         WHERE ${cashierScopeSQL('c')}
         ORDER BY c.route_order ASC NULLS LAST, c.created_at DESC
       `, [zoneGroups, collectorIds]);
+      return res.json(result.rows);
+    }
+
+    // A collector should only ever see the customers actually assigned to them (customers.
+    // collector_id), not the whole company's customer list — matched the same way tasks/cashouts
+    // already tie a login to their employees row: by full_name (users and employees have no
+    // direct foreign key). No match (not linked to an employees row yet) means nothing to show,
+    // same "don't leak everything" default used above for an unassigned cashier.
+    if (isCollector) {
+      const userRow = await db.query('SELECT full_name, username FROM users WHERE id = $1', [req.user.id]);
+      const myName = userRow.rows[0]?.full_name || userRow.rows[0]?.username || '';
+      const empRow = await db.query('SELECT id FROM employees WHERE LOWER(name) = LOWER($1)', [myName]);
+      const employeeId = empRow.rows[0]?.id;
+      if (!employeeId) return res.json([]);
+      const result = await db.query(`
+        SELECT c.*, e.name as collector_name
+        FROM customers c
+        LEFT JOIN employees e ON c.collector_id = e.id
+        WHERE c.collector_id = $1
+        ORDER BY c.route_order ASC NULLS LAST, c.created_at DESC
+      `, [employeeId]);
       return res.json(result.rows);
     }
 
