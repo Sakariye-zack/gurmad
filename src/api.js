@@ -89,8 +89,10 @@ export const api = {
   updateProfile: (formData) => fetch(`${API_BASE_URL}/auth/update_profile`, {
     method: 'POST',
     headers: getAuthHeaders(),
-    body: formData 
+    body: formData
   }).then(handleResponse),
+
+  getMyPermissions: () => fetch(`${API_BASE_URL}/auth/my-permissions`, { headers: getAuthHeaders() }).then(handleResponse),
 
   generalUpload: (formData) => fetch(`${API_BASE_URL}/upload`, {
     method: 'POST',

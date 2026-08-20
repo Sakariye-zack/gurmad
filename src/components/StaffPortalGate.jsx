@@ -3,6 +3,7 @@ import { LogOut, ShieldAlert } from 'lucide-react';
 import StaffLoginView from './StaffLoginView';
 import StaffPortalApp from './StaffPortalApp';
 import { installPortalPWA } from '../pwaSetup';
+import { mergeAndPersistUser } from '../authSession';
 
 // Login/logged-in split for the /staff URL, isolated from the main App component the same way
 // CustomerPortalApp is isolated for /portal — its own useState reading the same 'gurmadUser'
@@ -29,13 +30,7 @@ const StaffPortalGate = () => {
   // After a self-service profile edit (name/photo/password via the Account panel), merge the
   // server's response into both state and localStorage so the header/avatar reflect it
   // immediately without requiring a re-login.
-  const handleUpdateUser = (patch) => {
-    setCurrentUser(prev => {
-      const next = { ...prev, ...patch };
-      localStorage.setItem('gurmadUser', JSON.stringify(next));
-      return next;
-    });
-  };
+  const handleUpdateUser = (patch) => setCurrentUser(prev => mergeAndPersistUser(prev, patch));
 
   if (!currentUser) {
     return (

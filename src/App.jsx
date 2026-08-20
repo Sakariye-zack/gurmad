@@ -62,6 +62,7 @@ import StaffPortalApp from './components/StaffPortalApp';
 import StaffPortalGate from './components/StaffPortalGate';
 import { Globe } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
+import { mergeAndPersistUser } from './authSession';
 
 const App = () => {
   // Phase 8: Customer Portal is a completely separate, lightweight app — different auth
@@ -482,13 +483,7 @@ const App = () => {
       <StaffPortalApp
         currentUser={currentUser}
         onLogout={() => { setCurrentUser(null); localStorage.removeItem('gurmadUser'); }}
-        onUpdateUser={(patch) => {
-          setCurrentUser(prev => {
-            const next = { ...prev, ...patch };
-            localStorage.setItem('gurmadUser', JSON.stringify(next));
-            return next;
-          });
-        }}
+        onUpdateUser={(patch) => setCurrentUser(prev => mergeAndPersistUser(prev, patch))}
       />
     );
   }

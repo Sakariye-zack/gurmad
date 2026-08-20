@@ -61,6 +61,20 @@ const getTabMeta = (t) => ({
 // go straight on the bar.
 const CASHIER_MORE = ['transactions', 'customers', 'complaints', 'debts', 'expenses', 'attendance', 'map'];
 
+// Which dynamic role_permissions module.action each "More" item actually needs to be reachable —
+// used to hide an item the moment an admin revokes that permission via Roles & Permissions,
+// instead of this list always showing everything a cashier has ever been granted by default.
+// complaints/attendance aren't migrated onto the permission engine yet (their routes still use a
+// hardcoded checkRole), so there's nothing to gate them on — they stay unconditionally visible,
+// same as before.
+const MORE_ITEM_PERMISSION = {
+  transactions: 'billing.view',
+  customers: 'customers.view',
+  debts: 'debts.view',
+  expenses: 'expenses.view',
+  map: 'map.view',
+};
+
 const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
   // Same LanguageContext (and same 'gurmad_language' localStorage key) the desktop Admin app
   // uses — a staff member's language choice here is remembered the same way, on the same shared
@@ -95,6 +109,19 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
     return () => clearInterval(interval);
   }, [currentUser?.id]);
   const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  // My own effective permissions, so the "More" menu reflects live Roles & Permissions changes
+  // rather than the static CASHIER_MORE list alone (see MORE_ITEM_PERMISSION above).
+  const [myPermissions, setMyPermissions] = useState(null);
+  useEffect(() => {
+    api.getMyPermissions().then(setMyPermissions).catch(() => setMyPermissions([]));
+  }, [currentUser?.id]);
+  const visibleMore = CASHIER_MORE.filter(id => {
+    const required = MORE_ITEM_PERMISSION[id];
+    if (!required) return true; // not yet migrated onto the permission engine — always shown
+    if (myPermissions === null) return true; // still loading — don't flash-hide before it resolves
+    return myPermissions.includes(required);
+  });
   const openNotifications = async () => {
     setShowNotifications(true);
     if (unreadCount > 0) {
@@ -130,7 +157,10 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
     const formData = new FormData();
     formData.append('id', currentUser.id);
     formData.append('username', currentUser.username);
-    formData.append('full_name', accountName);
+    // The server always overwrites full_name with whatever is sent here — falling back to the
+    // account's current name when the field is blank keeps a photo-only upload (or any submit
+    // that fires before the name is finished being retyped) from silently wiping it out.
+    formData.append('full_name', accountName.trim() || currentUser.full_name || currentUser.username || '');
     formData.append('phone_telesom', accountPhones.telesom);
     formData.append('phone_somtel', accountPhones.somtel);
     if (extra.password) formData.append('password', extra.password);
@@ -158,7 +188,10 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
 
   const handleSaveAccount = async (e) => {
     e.preventDefault();
-    if (accountPw.password && accountPw.password !== accountPw.confirm) {
+    // Checked on confirm being non-empty too, not just password — otherwise typing the new
+    // password only into "Confirm" (leaving "New password" blank) silently sends no password
+    // field at all, and the form reports success without having changed anything.
+    if ((accountPw.password || accountPw.confirm) && accountPw.password !== accountPw.confirm) {
       toast.error('Passwords do not match');
       return;
     }
@@ -267,7 +300,7 @@ const StaffPortalApp = ({ currentUser, onLogout, onUpdateUser }) => {
       if (moreView) return renderView(moreView);
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
-          {CASHIER_MORE.map(id => {
+          {visibleMore.map(id => {
             const m = TAB_META[id];
             return (
               <button key={id} className="sp-btn" onClick={() => setMoreView(id)} style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '1rem 1.1rem', borderRadius: '16px', border: '1px solid #f1f5f9', background: 'white', cursor: 'pointer', textAlign: 'left', boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>

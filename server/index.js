@@ -807,6 +807,26 @@ const requirePermission = (module, action) => [
   }
 ];
 
+// Lets the logged-in user's own client know which modules they're granted, without needing
+// admin-only GET /api/roles or /api/permissions — the Staff Portal's "More" menu uses this to
+// show/hide items that map to a real permission (customers/debts/expenses/billing/map) instead
+// of a hardcoded per-role tab list that drifts from whatever the Roles & Permissions UI grants.
+app.get('/api/auth/my-permissions', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role.toLowerCase() === 'admin') {
+      const all = await db.query('SELECT module, action FROM permissions');
+      return res.json(all.rows.map(r => `${r.module}.${r.action}`));
+    }
+    const userRow = await db.query('SELECT role_id FROM users WHERE id = $1', [req.user.id]);
+    const roleId = userRow.rows[0]?.role_id;
+    if (!roleId) return res.json([]);
+    const perms = await getRolePermissions(roleId);
+    res.json([...perms]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Centralizes the "is this user restricted to one zone" check that used to be copy-pasted as
 // `isGudoomiye ? 'WHERE zone = $1' : ''` in every route — a Gudoomiye/Zone Accountant is scoped
 // to req.user.zone, a Cashier is scoped to their paired collector(s)/zone_group (see
@@ -1443,6 +1463,15 @@ const getCashierScope = async (cashierId) => {
   return { zoneGroups, collectorIds };
 };
 
+// The `(<alias>zone = ANY($1::text[]) OR <alias>collector_id = ANY($2::int[]))` predicate paired
+// with getCashierScope() above, used everywhere a cashier-scoped query needs to filter customers
+// (or a table joined to customers) by their assigned zone(s)/collector — built once here instead
+// of retyped per route, so a schema change (e.g. renaming collector_id) is a one-line fix.
+const cashierScopeSQL = (columnAlias = '') => {
+  const prefix = columnAlias ? `${columnAlias}.` : '';
+  return `(${prefix}zone = ANY($1::text[]) OR ${prefix}collector_id = ANY($2::int[]))`;
+};
+
 // --- Customers ---
 // Phase 2: migrated onto the dynamic permission engine — any role (including a custom one
 // created via Roles & Permissions) with "customers.view" granted can call this, instead of a
@@ -1464,7 +1493,7 @@ app.get('/api/customers', requirePermission('customers', 'view'), async (req, re
         SELECT c.*, e.name as collector_name
         FROM customers c
         LEFT JOIN employees e ON c.collector_id = e.id
-        WHERE c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[])
+        WHERE ${cashierScopeSQL('c')}
         ORDER BY c.route_order ASC NULLS LAST, c.created_at DESC
       `, [zoneGroups, collectorIds]);
       return res.json(result.rows);
@@ -1646,7 +1675,7 @@ app.get('/api/invoices/stats', checkRole(['admin', 'cashier', 'gudoomiye']), asy
           FROM invoices i
           INNER JOIN customers c ON i.customer_id = c.id
           WHERE i.created_at::date = CURRENT_DATE
-            AND (c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[]))
+            AND ${cashierScopeSQL('c')}
         `, [zoneGroups, collectorIds]);
       }
     } else {
@@ -1697,7 +1726,7 @@ app.get('/api/invoices', requirePermission('billing', 'view'), async (req, res) 
           COALESCE(i.invoice_zone, c.zone) as zone
         FROM invoices i
         INNER JOIN customers c ON i.customer_id = c.id
-        WHERE c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[])
+        WHERE ${cashierScopeSQL('c')}
         ORDER BY i.created_at DESC
       `, [zoneGroups, collectorIds]);
       return res.json(result.rows);
@@ -3157,12 +3186,12 @@ app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', '
     const revenueRes = isGudoomiye
       ? await db.query("SELECT SUM(i.amount) FROM invoices i JOIN customers c ON i.customer_id = c.id WHERE i.status = 'Paid' AND c.zone = $1", [zone])
       : isCashier
-        ? await db.query("SELECT SUM(i.amount) FROM invoices i JOIN customers c ON i.customer_id = c.id WHERE i.status = 'Paid' AND (c.zone = ANY($1::text[]) OR c.collector_id = ANY($2::int[]))", [cashierZones, cashierCollectorIds])
+        ? await db.query(`SELECT SUM(i.amount) FROM invoices i JOIN customers c ON i.customer_id = c.id WHERE i.status = 'Paid' AND ${cashierScopeSQL('c')}`, [cashierZones, cashierCollectorIds])
         : await db.query("SELECT SUM(amount) FROM invoices WHERE status = 'Paid'");
     const customersRes = isGudoomiye
       ? await db.query("SELECT COUNT(*) FROM customers WHERE zone = $1", [zone])
       : isCashier
-        ? await db.query("SELECT COUNT(*) FROM customers WHERE zone = ANY($1::text[]) OR collector_id = ANY($2::int[])", [cashierZones, cashierCollectorIds])
+        ? await db.query(`SELECT COUNT(*) FROM customers WHERE ${cashierScopeSQL()}`, [cashierZones, cashierCollectorIds])
         : await db.query("SELECT COUNT(*) FROM customers");
     // A collector's "Tasks Completed" must mean their own completed tasks, and a gudoomiye's/
     // cashier's must mean their own zone's — not the whole system's, otherwise every dashboard
@@ -3204,7 +3233,7 @@ app.get('/api/stats', checkRole(['admin', 'cashier', 'collector', 'gudoomiye', '
       zonePendingCustomers = parseInt(pendingRes.rows[0].count || 0);
     } else if (isCashier) {
       const pendingRes = await db.query(
-        "SELECT COUNT(*) FROM customers WHERE (zone = ANY($1::text[]) OR collector_id = ANY($2::int[])) AND payment_status = 'Unpaid'",
+        `SELECT COUNT(*) FROM customers WHERE ${cashierScopeSQL()} AND payment_status = 'Unpaid'`,
         [cashierZones, cashierCollectorIds]
       );
       zonePendingCustomers = parseInt(pendingRes.rows[0].count || 0);
@@ -4378,9 +4407,22 @@ const mimeTypeForFile = (filename) => {
   return 'image/png';
 };
 
+// The system logo backing the PWA install icon changes rarely (an admin uploading a new one via
+// Settings), yet both manifest routes below are hit on every install-check/periodic re-fetch a
+// browser does for an installed PWA — caching it here avoids a DB round-trip on every one of
+// those requests. Invalidated by updateSettingsHandler below whenever 'system_logo' is written.
+let cachedLogo = { value: undefined, loaded: false };
+const invalidateLogoCache = () => { cachedLogo = { value: undefined, loaded: false }; };
+const getCachedLogo = async () => {
+  if (!cachedLogo.loaded) {
+    const logoRow = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'system_logo'");
+    cachedLogo = { value: logoRow.rows[0]?.setting_value, loaded: true };
+  }
+  return cachedLogo.value;
+};
+
 const buildPortalManifest = async ({ name, shortName, description, startUrl }) => {
-  const logoRow = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'system_logo'");
-  const logo = logoRow.rows[0]?.setting_value;
+  const logo = await getCachedLogo();
   const iconSrc = logo ? `/api/uploads/${logo}` : '/favicon.png';
   const iconType = mimeTypeForFile(logo || 'favicon.png');
   return {
@@ -4434,6 +4476,7 @@ const updateSettingsHandler = async (req, res) => {
         'INSERT INTO settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2',
         [key, stringValue]
       );
+      if (key === 'system_logo') invalidateLogoCache();
     }
     res.json({ success: true });
   } catch (err) {

@@ -39,16 +39,6 @@ import {
   Cell
 } from 'recharts';
 
-const data = [
-  { name: 'Mon', revenue: 4200, expenses: 2400 },
-  { name: 'Tue', revenue: 3800, expenses: 1800 },
-  { name: 'Wed', revenue: 5100, expenses: 3100 },
-  { name: 'Thu', revenue: 4800, expenses: 2200 },
-  { name: 'Fri', revenue: 6200, expenses: 2800 },
-  { name: 'Sat', revenue: 5400, expenses: 2000 },
-  { name: 'Sun', revenue: 4900, expenses: 1900 },
-];
-
 const formatHouseNo = (raw) => {
   if (!raw) return 'C-----';
   const stripped = String(raw).replace(/^[hc]-?/i, '');
