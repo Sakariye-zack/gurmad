@@ -8,6 +8,7 @@ const CashoutView = ({ currentUser }) => {
   
   const [cashiers, setCashiers] = useState([]);
   const [cashierToCollectors, setCashierToCollectors] = useState({}); // cashier full_name -> [collector names]
+  const [cashierToZone, setCashierToZone] = useState({}); // cashier full_name -> zone_group, from Cashier Assignments
   const [invoices, setInvoices] = useState([]);
   const [cashouts, setCashouts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -135,13 +136,20 @@ const CashoutView = ({ currentUser }) => {
 
       // Build a cashier -> [paired collector names] map from Cashier Assignments, so selecting
       // a cashier here can pull "expected" straight from the collector(s) they're paired with.
+      // Also track the zone_group each cashier is assigned — without this, the cashout record
+      // was created with zone: null, which a Gudoomiye's own-zone approval check (zone !==
+      // req.user.zone) can never match, silently blocking the entire "Cashier submits, Gudoomiye
+      // approves" workflow for anyone but an admin (who has no zone restriction to trip over).
       const cashierMap = {};
+      const zoneMap = {};
       (pairingsData || []).forEach(p => {
         if (!p.cashier_name || !p.collector_name) return;
         if (!cashierMap[p.cashier_name]) cashierMap[p.cashier_name] = [];
         cashierMap[p.cashier_name].push(p.collector_name);
+        if (p.zone_group && !zoneMap[p.cashier_name]) zoneMap[p.cashier_name] = p.zone_group;
       });
       setCashierToCollectors(cashierMap);
+      setCashierToZone(zoneMap);
 
       let cashierUsers = uData.filter(u => u.role === 'cashier');
 
@@ -251,7 +259,8 @@ const CashoutView = ({ currentUser }) => {
         slsh_amount: parseFloat(actualSlsh) || 0,
         shortage: missing > 0.01 ? missing : 0,
         reason: justification,
-        processed_by: currentUser?.full_name || 'Cashier'
+        processed_by: currentUser?.full_name || 'Cashier',
+        zone: cashierToZone[selectedCashier] || null
       });
 
       // 2. Register Debt if there is a shortage — owed by the cashier who came up short
