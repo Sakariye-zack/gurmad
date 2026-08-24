@@ -19,7 +19,7 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
   const [newTask, setNewTask] = useState({ driver_name: '', collector_name: '', vehicle_plate: '', route_name: '', zone_id: '', truck_id: '' });
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [isNotifying, setIsNotifying] = useState(false);
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'details'
+  const [viewMode, setViewMode] = useState('list'); // 'list', 'details', or 'assign'
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [servicedIds, setServicedIds] = useState(new Set()); // customers already serviced this cycle (for zone split logic)
@@ -573,18 +573,36 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
         )}
       </div>
 
-      {/* Assign Task Modal */}
+      {/* Assign Task page — a full, non-modal page rather than a small popup, so the customer
+          checklist below gets real page height instead of a cramped 180px scroll box hiding
+          most of the list from view. Same trigger/state (showAssignModal) as before, just
+          rendered as an opaque full-page takeover (matching the Task Detail page's own
+          back-button + header pattern) instead of a centered card over a dark backdrop. */}
       {showAssignModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000, backdropFilter: 'blur(4px)'
+          backgroundColor: 'var(--bg-color, #f8fafc)',
+          zIndex: 1000, overflowY: 'auto', padding: '2rem'
         }}>
-          <div className="card glass" style={{ width: '450px', animation: 'slideIn 0.3s ease-out', borderTop: '4px solid var(--gurmad-green)' }}>
-            <h3 style={{ fontWeight: 700, marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Truck color="var(--gurmad-green)" /> Assign Collection Task
-            </h3>
+          <div style={{ maxWidth: '700px', margin: '0 auto', animation: 'fadeIn 0.3s ease-out' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '2rem' }}>
+              <button
+                type="button"
+                onClick={() => setShowAssignModal(false)}
+                style={{
+                  width: '48px', height: '48px', borderRadius: '16px', border: '1px solid #e2e8f0',
+                  backgroundColor: 'white', color: '#475569', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', flexShrink: 0
+                }}
+              >
+                <ArrowLeft size={24} />
+              </button>
+              <h3 style={{ fontWeight: 900, fontSize: '1.5rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
+                <Truck color="var(--gurmad-green)" /> Assign Collection Task
+              </h3>
+            </div>
+            <div className="card glass" style={{ borderTop: '4px solid var(--gurmad-green)' }}>
             <form onSubmit={handleAssign} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <div>
                 <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 600 }}>Zone / Route</label>
@@ -761,7 +779,7 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                      </div>
                    )}
 
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto', paddingRight: '5px' }}>
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '420px', overflowY: 'auto', paddingRight: '5px' }}>
                      {modalCustomers.map(c => (
                        <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.8rem', cursor: 'pointer', padding: '4px' }}>
                          <input 
@@ -820,6 +838,7 @@ const TaskView = ({ searchQuery = '', currentUser }) => {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}
