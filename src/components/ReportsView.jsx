@@ -49,6 +49,9 @@ const ReportsView = ({ searchQuery = '' }) => {
   const [settings, setSettings] = useState({ exchange_rate: '8500' });
   const [currency, setCurrency] = useState('USD');
   const [loading, setLoading] = useState(true);
+  // P0-2: invoices with no recoverable historical exchange rate are excluded from the SLSH
+  // totals rather than guessed — this count drives a visible "Needs Reconciliation" notice.
+  const [needsReconciliationCount, setNeedsReconciliationCount] = useState(0);
   
   // Custom Date Range State
   const [startDate, setStartDate] = useState(new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]);
@@ -127,12 +130,16 @@ const ReportsView = ({ searchQuery = '' }) => {
 
       // Process Zone Data
       const zoneMap = {};
+      let reconciliationCount = 0;
       invs.filter(i => i.status === 'Paid').forEach(inv => {
+        const converted = convertInvoice(inv);
+        if (converted === null) { reconciliationCount++; return; } // excluded, not guessed — see convertInvoice
         const zone = inv.zone || 'Unassigned';
         if (!zoneMap[zone]) zoneMap[zone] = 0;
-        zoneMap[zone] += convertInvoice(inv);
+        zoneMap[zone] += converted;
       });
       setZoneData(Object.entries(zoneMap).map(([name, amount]) => ({ name, amount })));
+      setNeedsReconciliationCount(reconciliationCount);
 
     } catch (e) {
       console.error(e);
@@ -154,16 +161,18 @@ const ReportsView = ({ searchQuery = '' }) => {
     return currency === 'SLSH' ? parseFloat(val) * rate : parseFloat(val);
   };
 
-  // P0-2: an invoice's own recorded rate (transaction_time when it was actually written,
-  // or reconstructed for older rows) is the historically correct one — using today's
-  // settings.exchange_rate instead would silently re-price every past invoice every time the
-  // rate changes. Only invoices with no recoverable rate at all (exchange_rate_source
-  // 'reconciliation_required', or genuinely missing) fall back to the current rate as a
-  // last resort, same as before this fix.
+  // P0-2 (corrected): an invoice's own recorded rate (transaction_time when it was actually
+  // written, or reconstructed for older rows) is the ONLY rate ever used for its historical
+  // SLSH value. There is NO fallback to today's settings.exchange_rate — that fallback was
+  // exactly the bug P0-2 exists to remove, because it silently re-prices old transactions
+  // every time the current rate changes. An invoice with no recoverable rate at all
+  // (exchange_rate_source = 'reconciliation_required', or genuinely missing) returns null —
+  // callers must exclude it from converted totals and surface it as "Needs Reconciliation",
+  // never guess a value for it.
   const convertInvoice = (inv) => {
     if (currency !== 'SLSH') return parseFloat(inv.amount || 0);
-    const invRate = inv.exchange_rate != null ? parseFloat(inv.exchange_rate) : null;
-    return parseFloat(inv.amount || 0) * (invRate || rate);
+    if (inv.exchange_rate == null) return null; // Needs Reconciliation — excluded, not guessed
+    return parseFloat(inv.amount || 0) * parseFloat(inv.exchange_rate);
   };
   useEffect(() => {
     fetchData();
@@ -181,6 +190,7 @@ const ReportsView = ({ searchQuery = '' }) => {
         // Revenue rows are invoices — use each invoice's own historical rate, not today's.
         // Expense rows have no per-record exchange rate, so they still use the current rate.
         let amt = type === 'revenue' ? convertInvoice(item) : convert(item.amount || 0);
+        if (amt === null) return; // Needs Reconciliation — excluded from the report, never guessed
         let d = new Date(item[dateKey] || item.created_at);
         if (filterCondition(d, item)) {
           amountKey(d, amt, type);
@@ -605,6 +615,22 @@ const ReportsView = ({ searchQuery = '' }) => {
           </button>
         </div>
       </div>
+
+      {/* P0-2: invoices with no recoverable historical exchange rate are excluded from SLSH
+          totals rather than guessed — surface that explicitly so the number isn't mistaken
+          for "complete". */}
+      {currency === 'SLSH' && needsReconciliationCount > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '0.85rem 1.1rem', borderRadius: 'var(--radius-md)',
+          backgroundColor: '#fffbeb', border: '1px solid #fde68a', color: '#92400e'
+        }}>
+          <AlertCircle size={18} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+            {needsReconciliationCount} invoice{needsReconciliationCount > 1 ? 's have' : ' has'} no recorded historical exchange rate and {needsReconciliationCount > 1 ? 'are' : 'is'} excluded from the SLSH totals below (Needs Reconciliation). An admin can resolve {needsReconciliationCount > 1 ? 'these' : 'this'} from the invoice's reconciliation option.
+          </span>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>

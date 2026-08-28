@@ -1,5 +1,9 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+// See server/index.js's matching guard: a staging launcher already populated process.env from
+// .env.staging, and this default-path load must not backfill it from production's .env.
+if (process.env.STAGING !== 'true') {
+  require('dotenv').config();
+}
 
 const pool = new Pool({
   user: process.env.DB_USER,

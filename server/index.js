@@ -1,6 +1,52 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+// When a staging launcher (-r dotenv/config dotenv_config_path=.env.staging) already populated
+// process.env, this internal call must NOT also load server/.env — dotenv fills in any key the
+// staging file didn't set from whatever default '.env' it finds, which is exactly how a
+// production secret absent from .env.staging (Twilio, ZAAD, WAAFI, etc.) used to leak into a
+// "staging" process silently. Only load the default .env when nothing has designated this
+// process as staging yet.
+if (process.env.STAGING !== 'true') {
+  require('dotenv').config();
+}
+
+// P0-2 correction #3 — staging credential-safety preflight.
+// dotenv does not override an already-set variable, so relying on ".env.staging happens to
+// load first" is fragile and already failed once (a real Twilio send from staging). This is
+// an explicit, active check instead: when STAGING=true, read server/.env (the real production
+// secrets file) purely for comparison — never applied to process.env — and refuse to start if
+// any sensitive credential currently in process.env is identical to its production value.
+// Fail fast, before the DB pool or Twilio client are even constructed.
+if (process.env.STAGING === 'true') {
+  const fsPreflight = require('fs');
+  const pathPreflight = require('path');
+  const prodEnvPath = pathPreflight.join(__dirname, '.env');
+  if (fsPreflight.existsSync(prodEnvPath)) {
+    const prodEnv = {};
+    fsPreflight.readFileSync(prodEnvPath, 'utf8').split('\n').forEach((line) => {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (m) prodEnv[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+    });
+    const sensitiveKeys = [
+      'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WHATSAPP_NUMBER',
+      'DATABASE_URL', 'DB_HOST', 'DB_NAME', 'DB_PASSWORD', 'DB_USER',
+      'WAAFI_API_KEY', 'WAAFI_MERCHANT_UID', 'WAAFI_API_USER_ID', 'ZAAD_API_KEY',
+      'JWT_SECRET', 'STRIPE_SECRET_KEY', 'AWS_SECRET_ACCESS_KEY', 'CLOUDINARY_API_SECRET',
+    ];
+    const leaked = sensitiveKeys.filter((k) => {
+      const prodVal = prodEnv[k];
+      const curVal = process.env[k];
+      return prodVal && curVal && prodVal === curVal;
+    });
+    if (leaked.length > 0) {
+      console.error('FATAL — staging preflight failed: the following credentials match PRODUCTION values:');
+      console.error('  ' + leaked.join(', '));
+      console.error('Staging must never be able to reach production services. Refusing to start.');
+      process.exit(1);
+    }
+  }
+}
+
 const db = require('./db');
 const path = require('path');
 const multer = require('multer');
@@ -1999,6 +2045,46 @@ app.put('/api/invoices/:id/void', checkRole(['admin']), async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// P0-2 corrections #2 — manual reconciliation for invoices with no recoverable historical
+// exchange rate (exchange_rate IS NULL, e.g. exchange_rate_source = 'reconciliation_required').
+// Admin-only: this sets the rate future reports will treat as authoritative for this invoice,
+// so it must never be reachable by collector/cashier/other zone roles. The invoice's amount
+// and slsh_amount are NEVER recalculated here — only the rate + source change, and the whole
+// action is audit-logged (old value, new value, who, when, why) via the existing logAudit path.
+app.put('/api/invoices/:id/reconcile-exchange-rate', checkRole(['admin']), async (req, res) => {
+  const { exchange_rate, reason } = req.body;
+  const rateNum = parseFloat(exchange_rate);
+  if (!exchange_rate || isNaN(rateNum) || rateNum <= 0) {
+    return res.status(400).json({ error: 'A valid, positive exchange_rate is required' });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ error: 'A reason is required for a manual exchange-rate reconciliation' });
+  }
+  try {
+    const result = await db.withTransaction(async (client) => {
+      const existing = await client.query('SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [req.params.id]);
+      if (existing.rows.length === 0) {
+        const err = new Error('Invoice not found'); err.statusCode = 404; throw err;
+      }
+      const inv = existing.rows[0];
+      const updated = await client.query(
+        `UPDATE invoices SET exchange_rate = $1, exchange_rate_source = 'manual_reconciliation' WHERE id = $2 RETURNING *`,
+        [rateNum, req.params.id]
+      );
+      return { before: inv, after: updated.rows[0] };
+    });
+
+    await logAudit(
+      req, 'RECONCILE_EXCHANGE_RATE', 'invoices', result.after.id,
+      { exchange_rate: result.before.exchange_rate, exchange_rate_source: result.before.exchange_rate_source },
+      { exchange_rate: result.after.exchange_rate, exchange_rate_source: result.after.exchange_rate_source, reason }
+    );
+    res.json(result.after);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
