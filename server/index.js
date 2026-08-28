@@ -241,6 +241,50 @@ const runMigrations = async () => {
     // suddenly blocking on a signed document they were never asked for.
     await db.query(`UPDATE cashouts SET status = 'Approved' WHERE status = 'Pending Approval' AND created_at < NOW() - INTERVAL '1 minute'`);
 
+    // P0-2 — Historical Exchange Rate Protection. invoices.slsh_amount (and any historical
+    // amount already recorded) stays the permanent, authoritative record — it is NEVER
+    // recalculated. exchange_rate/exchange_rate_source are purely additive audit metadata:
+    // what rate was actually in effect (or reconstructed) at the time, so reports can show the
+    // real historical rate instead of silently re-pricing old transactions at today's rate.
+    await db.query(`
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC;
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate_source VARCHAR(30);
+      ALTER TABLE debts ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC;
+      ALTER TABLE debts ADD COLUMN IF NOT EXISTS exchange_rate_source VARCHAR(30);
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC;
+      ALTER TABLE cashouts ADD COLUMN IF NOT EXISTS exchange_rate_source VARCHAR(30);
+    `);
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS exchange_rate_history (
+        id SERIAL PRIMARY KEY,
+        old_rate NUMERIC,
+        new_rate NUMERIC NOT NULL,
+        changed_by INTEGER REFERENCES users(id),
+        changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT
+      );
+    `);
+    // One-time, idempotent backfill (only rows where exchange_rate IS NULL are ever touched —
+    // safe to run on every boot). Reconstructs the rate that must have been in effect for
+    // invoices that already recorded a real slsh_amount, WITHOUT ever touching slsh_amount
+    // itself. Where the math is undefined (amount rounded to $0, so the denominator is <= 0),
+    // the invoice is explicitly flagged reconciliation_required instead of guessing.
+    await db.query(`
+      UPDATE invoices
+      SET exchange_rate = ROUND(slsh_amount / (amount - COALESCE(cash_amount,0) - COALESCE(zaad_amount,0) - COALESCE(edahab_amount,0) - COALESCE(debt_amount,0)), 4),
+          exchange_rate_source = 'reconstructed'
+      WHERE exchange_rate IS NULL
+        AND COALESCE(slsh_amount,0) > 0
+        AND (amount - COALESCE(cash_amount,0) - COALESCE(zaad_amount,0) - COALESCE(edahab_amount,0) - COALESCE(debt_amount,0)) > 0;
+    `);
+    await db.query(`
+      UPDATE invoices
+      SET exchange_rate_source = 'reconciliation_required'
+      WHERE exchange_rate IS NULL
+        AND COALESCE(slsh_amount,0) > 0
+        AND exchange_rate_source IS NULL;
+    `);
+
     // Expenses: an approval workflow (a cashier's logged expense starts Pending until an admin
     // approves it, an admin's own entry is auto-approved) plus who logged it, so a wrong entry
     // can be corrected/removed instead of being a permanent, unreviewed line in the ledger.
@@ -1836,10 +1880,13 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
         }
       }
 
+      // P0-2: capture the exchange rate actually in effect at the moment this invoice was
+      // written, as 'transaction_time' — this is what makes the value trustworthy going
+      // forward, vs. the historical rows that had to be reconstructed after the fact.
       const result = await client.query(
         `INSERT INTO invoices
-          (customer_id, amount, currency, status, payment_method, collector_name, cash_amount, zaad_amount, edahab_amount, debt_amount, is_split, truck_name, invoice_zone, invoice_house_no, slsh_amount, discount_amount, cashier_id, cashier_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          (customer_id, amount, currency, status, payment_method, collector_name, cash_amount, zaad_amount, edahab_amount, debt_amount, is_split, truck_name, invoice_zone, invoice_house_no, slsh_amount, discount_amount, cashier_id, cashier_name, exchange_rate, exchange_rate_source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
          RETURNING *`,
         [
           customerId,
@@ -1856,14 +1903,16 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
           slsh,
           discount_amount,
           req.user.id,
-          cashierDisplayName
+          cashierDisplayName,
+          exchangeRate,
+          'transaction_time'
         ]
       );
 
       if (parseFloat(debt) > 0) {
         await client.query(
-          'INSERT INTO debts (customer_id, debtor_name, phone, amount, currency, description, status, collector_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-          [customerId, customerNameFromReq, phone, debt, currency || 'USD', `Split Payment Debt`, 'Unpaid', collector_name || null]
+          'INSERT INTO debts (customer_id, debtor_name, phone, amount, currency, description, status, collector_name, exchange_rate, exchange_rate_source) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+          [customerId, customerNameFromReq, phone, debt, currency || 'USD', `Split Payment Debt`, 'Unpaid', collector_name || null, exchangeRate, 'transaction_time']
         );
       }
 
@@ -4566,8 +4615,26 @@ app.get('/api/manifest-staff.json', async (req, res) => {
 const updateSettingsHandler = async (req, res) => {
   try {
     const entries = Object.entries(req.body);
+    // P0-2: the exchange rate feeds directly into every future invoice's recorded historical
+    // value (transaction_time), so it's restricted to admin only — a cashier changing it
+    // (previously allowed) could silently mis-price every SLSH split going forward. Every
+    // change is logged to exchange_rate_history with the old/new value and who changed it.
+    if (Object.prototype.hasOwnProperty.call(req.body, 'exchange_rate') && req.user.role.toLowerCase() !== 'admin') {
+      return res.status(403).json({ error: 'Only an admin can change the exchange rate' });
+    }
     for (const [key, value] of entries) {
       const stringValue = value !== null && value !== undefined ? value.toString() : '';
+      if (key === 'exchange_rate') {
+        const oldRow = await db.query("SELECT setting_value FROM settings WHERE setting_key = 'exchange_rate'");
+        const oldRate = oldRow.rows[0] ? parseFloat(oldRow.rows[0].setting_value) : null;
+        const newRate = parseFloat(stringValue);
+        if (oldRate !== newRate) {
+          await db.query(
+            'INSERT INTO exchange_rate_history (old_rate, new_rate, changed_by, reason) VALUES ($1, $2, $3, $4)',
+            [oldRate, newRate, req.user.id, req.body.exchange_rate_reason || null]
+          );
+        }
+      }
       await db.query(
         'INSERT INTO settings (setting_key, setting_value) VALUES ($1, $2) ON CONFLICT (setting_key) DO UPDATE SET setting_value = $2',
         [key, stringValue]

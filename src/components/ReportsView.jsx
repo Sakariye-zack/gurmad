@@ -130,7 +130,7 @@ const ReportsView = ({ searchQuery = '' }) => {
       invs.filter(i => i.status === 'Paid').forEach(inv => {
         const zone = inv.zone || 'Unassigned';
         if (!zoneMap[zone]) zoneMap[zone] = 0;
-        zoneMap[zone] += convert(inv.amount);
+        zoneMap[zone] += convertInvoice(inv);
       });
       setZoneData(Object.entries(zoneMap).map(([name, amount]) => ({ name, amount })));
 
@@ -153,6 +153,18 @@ const ReportsView = ({ searchQuery = '' }) => {
   const convert = (val) => {
     return currency === 'SLSH' ? parseFloat(val) * rate : parseFloat(val);
   };
+
+  // P0-2: an invoice's own recorded rate (transaction_time when it was actually written,
+  // or reconstructed for older rows) is the historically correct one — using today's
+  // settings.exchange_rate instead would silently re-price every past invoice every time the
+  // rate changes. Only invoices with no recoverable rate at all (exchange_rate_source
+  // 'reconciliation_required', or genuinely missing) fall back to the current rate as a
+  // last resort, same as before this fix.
+  const convertInvoice = (inv) => {
+    if (currency !== 'SLSH') return parseFloat(inv.amount || 0);
+    const invRate = inv.exchange_rate != null ? parseFloat(inv.exchange_rate) : null;
+    return parseFloat(inv.amount || 0) * (invRate || rate);
+  };
   useEffect(() => {
     fetchData();
   }, []);
@@ -166,7 +178,9 @@ const ReportsView = ({ searchQuery = '' }) => {
 
     const processRecords = (dataArr, filterCondition, amountKey, dateKey, type) => {
       dataArr.forEach(item => {
-        let amt = convert(item.amount || 0);
+        // Revenue rows are invoices — use each invoice's own historical rate, not today's.
+        // Expense rows have no per-record exchange rate, so they still use the current rate.
+        let amt = type === 'revenue' ? convertInvoice(item) : convert(item.amount || 0);
         let d = new Date(item[dateKey] || item.created_at);
         if (filterCondition(d, item)) {
           amountKey(d, amt, type);
