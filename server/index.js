@@ -1809,68 +1809,71 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
     }
 
     const totalAmount = grossAmount - parseFloat(discount_amount);
-
-    let customerId = customer_id;
-    let customerNameFromReq = req.body.customer_name || 'New Walk-in Customer';
-
-    if (!customerId) {
-      // Find customer by phone if no ID provided
-      let customer = await db.query('SELECT id, name FROM customers WHERE phone = $1', [phone]);
-      
-      if (customer.rows.length === 0) {
-        const newCust = await db.query(
-          'INSERT INTO customers (name, phone, area, whatsapp, neighborhood, zone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name',
-          [customerNameFromReq, phone, '-', null, null, zone || null]
-        );
-        customerId = newCust.rows[0].id;
-      } else {
-        customerId = customer.rows[0].id;
-      }
-    }
-
     const invoiceStatus = (parseFloat(debt) > 0) ? 'Unpaid' : 'Paid';
     const mainMethod = parseFloat(zaad) > 0 ? 'ZAAD' : (parseFloat(edahab) > 0 ? 'eDahab' : (parseFloat(cash) > 0 ? 'Cash' : (parseFloat(slsh) > 0 ? 'SLSH' : 'Debt')));
+    const customerNameFromReq = req.body.customer_name || 'New Walk-in Customer';
 
     const cashierRes = await db.query('SELECT full_name, username FROM users WHERE id = $1', [req.user.id]);
     const cashierDisplayName = cashierRes.rows[0]?.full_name || cashierRes.rows[0]?.username || req.user.username;
 
-    const result = await db.query(
-      `INSERT INTO invoices
-        (customer_id, amount, currency, status, payment_method, collector_name, cash_amount, zaad_amount, edahab_amount, debt_amount, is_split, truck_name, invoice_zone, invoice_house_no, slsh_amount, discount_amount, cashier_id, cashier_name)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-       RETURNING *`,
-      [
-        customerId,
-        totalAmount,
-        currency || 'USD',
-        invoiceStatus,
-        mainMethod,
-        collector_name || null,
-        cash, zaad, edahab, debt,
-        true,
-        truck_name || null,
-        zone || null,
-        house_no || null,
-        slsh,
-        discount_amount,
-        req.user.id,
-        cashierDisplayName
-      ]
-    );
+    // P0-1: customer lookup/insert + invoice insert + debt insert + customer status sync are one
+    // atomic unit — if any step fails, none of them should be left half-applied (e.g. an invoice
+    // recorded but the matching debt row missing, or the customer's payment_status never synced).
+    // Everything here uses `client`, not `db`, so it all runs on the same open transaction.
+    const { result, customerId } = await db.withTransaction(async (client) => {
+      let customerId = customer_id;
 
-    // If there is any debt amount, log it to the `debts` table
-    if (parseFloat(debt) > 0) {
-      await db.query(
-        'INSERT INTO debts (customer_id, debtor_name, phone, amount, currency, description, status, collector_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [customerId, customerNameFromReq, phone, debt, currency || 'USD', `Split Payment Debt`, 'Unpaid', collector_name || null]
+      if (!customerId) {
+        let customer = await client.query('SELECT id, name FROM customers WHERE phone = $1', [phone]);
+        if (customer.rows.length === 0) {
+          const newCust = await client.query(
+            'INSERT INTO customers (name, phone, area, whatsapp, neighborhood, zone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name',
+            [customerNameFromReq, phone, '-', null, null, zone || null]
+          );
+          customerId = newCust.rows[0].id;
+        } else {
+          customerId = customer.rows[0].id;
+        }
+      }
+
+      const result = await client.query(
+        `INSERT INTO invoices
+          (customer_id, amount, currency, status, payment_method, collector_name, cash_amount, zaad_amount, edahab_amount, debt_amount, is_split, truck_name, invoice_zone, invoice_house_no, slsh_amount, discount_amount, cashier_id, cashier_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         RETURNING *`,
+        [
+          customerId,
+          totalAmount,
+          currency || 'USD',
+          invoiceStatus,
+          mainMethod,
+          collector_name || null,
+          cash, zaad, edahab, debt,
+          true,
+          truck_name || null,
+          zone || null,
+          house_no || null,
+          slsh,
+          discount_amount,
+          req.user.id,
+          cashierDisplayName
+        ]
       );
-    }
 
-    // Sync customer status with the invoice
-    await db.query(
-      'UPDATE customers SET payment_status = $1, status = $1 WHERE id = $2',
-      [invoiceStatus, customerId]
-    );
+      if (parseFloat(debt) > 0) {
+        await client.query(
+          'INSERT INTO debts (customer_id, debtor_name, phone, amount, currency, description, status, collector_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+          [customerId, customerNameFromReq, phone, debt, currency || 'USD', `Split Payment Debt`, 'Unpaid', collector_name || null]
+        );
+      }
+
+      await client.query(
+        'UPDATE customers SET payment_status = $1, status = $1 WHERE id = $2',
+        [invoiceStatus, customerId]
+      );
+
+      return { result, customerId };
+    });
 
     // Broadcast events
     io.emit('invoice_created', result.rows[0]);
@@ -4391,23 +4394,45 @@ app.put('/api/cashouts/:id/upload-signed', requirePermission('cashout', 'create'
 // physical signature behind it, not just a database click.
 app.put('/api/cashouts/:id/approve', checkRole(['admin', 'gudoomiye']), async (req, res) => {
   try {
-    const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
-    if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
-    const cashout = existing.rows[0];
-    if (req.user.role.toLowerCase() === 'gudoomiye' && cashout.zone !== req.user.zone) {
-      return res.status(403).json({ error: 'This cashout is outside your zone' });
-    }
-    if (!cashout.signed_document) {
-      return res.status(400).json({ error: 'Upload the signed cashout slip before approving' });
-    }
-    const result = await db.query(
-      "UPDATE cashouts SET status = 'Approved', approved_by = $1, approved_at = NOW(), rejection_reason = NULL WHERE id = $2 RETURNING *",
-      [req.user.id, req.params.id]
-    );
+    // P0-1: SELECT-then-UPDATE was two separate pool calls with no row lock — two admins
+    // approving the same cashout at once could both read it as "not yet approved" and both
+    // write an approval. FOR UPDATE inside a transaction locks the row for the duration of
+    // this request, so a concurrent approve/reject on the same cashout blocks until this one
+    // commits (and then sees the now-Approved status and correctly no-ops/errors instead of
+    // double-approving).
+    const { cashout, result } = await db.withTransaction(async (client) => {
+      const existing = await client.query('SELECT * FROM cashouts WHERE id = $1 FOR UPDATE', [req.params.id]);
+      if (existing.rows.length === 0) {
+        const notFound = new Error('Cashout not found');
+        notFound.statusCode = 404;
+        throw notFound;
+      }
+      const cashout = existing.rows[0];
+      if (req.user.role.toLowerCase() === 'gudoomiye' && cashout.zone !== req.user.zone) {
+        const forbidden = new Error('This cashout is outside your zone');
+        forbidden.statusCode = 403;
+        throw forbidden;
+      }
+      if (!cashout.signed_document) {
+        const badRequest = new Error('Upload the signed cashout slip before approving');
+        badRequest.statusCode = 400;
+        throw badRequest;
+      }
+      if (cashout.status === 'Approved') {
+        const conflict = new Error('This cashout was already approved');
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+      const result = await client.query(
+        "UPDATE cashouts SET status = 'Approved', approved_by = $1, approved_at = NOW(), rejection_reason = NULL WHERE id = $2 RETURNING *",
+        [req.user.id, req.params.id]
+      );
+      return { cashout, result };
+    });
     await logAudit(req, 'APPROVE', 'cashouts', result.rows[0].id, cashout, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -4415,20 +4440,36 @@ app.put('/api/cashouts/:id/reject', checkRole(['admin', 'gudoomiye']), async (re
   const { reason } = req.body;
   if (!reason || !reason.trim()) return res.status(400).json({ error: 'A reason is required to reject a cashout' });
   try {
-    const existing = await db.query('SELECT * FROM cashouts WHERE id = $1', [req.params.id]);
-    if (existing.rows.length === 0) return res.status(404).json({ error: 'Cashout not found' });
-    const cashout = existing.rows[0];
-    if (req.user.role.toLowerCase() === 'gudoomiye' && cashout.zone !== req.user.zone) {
-      return res.status(403).json({ error: 'This cashout is outside your zone' });
-    }
-    const result = await db.query(
-      "UPDATE cashouts SET status = 'Rejected', approved_by = $1, approved_at = NOW(), rejection_reason = $2 WHERE id = $3 RETURNING *",
-      [req.user.id, reason.trim(), req.params.id]
-    );
+    // P0-1: same read-then-write race as /approve — FOR UPDATE locks the row for the duration
+    // of this request so a concurrent approve/reject can't interleave with this one.
+    const { cashout, result } = await db.withTransaction(async (client) => {
+      const existing = await client.query('SELECT * FROM cashouts WHERE id = $1 FOR UPDATE', [req.params.id]);
+      if (existing.rows.length === 0) {
+        const notFound = new Error('Cashout not found');
+        notFound.statusCode = 404;
+        throw notFound;
+      }
+      const cashout = existing.rows[0];
+      if (req.user.role.toLowerCase() === 'gudoomiye' && cashout.zone !== req.user.zone) {
+        const forbidden = new Error('This cashout is outside your zone');
+        forbidden.statusCode = 403;
+        throw forbidden;
+      }
+      if (cashout.status === 'Approved') {
+        const conflict = new Error('An already-approved cashout cannot be rejected');
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+      const result = await client.query(
+        "UPDATE cashouts SET status = 'Rejected', approved_by = $1, approved_at = NOW(), rejection_reason = $2 WHERE id = $3 RETURNING *",
+        [req.user.id, reason.trim(), req.params.id]
+      );
+      return { cashout, result };
+    });
     await logAudit(req, 'REJECT', 'cashouts', result.rows[0].id, cashout, result.rows[0]);
     res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 

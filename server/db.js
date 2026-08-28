@@ -19,6 +19,33 @@ pool.on('error', (err) => {
   console.error('Unexpected error on idle DB client:', err.message);
 });
 
+// withTransaction(fn) — checks out a dedicated client, runs fn(client) inside
+// BEGIN/COMMIT, and ROLLBACKs + releases the client on any error. fn must use the
+// `client` it's given (client.query, not db.query) for every write that needs to be
+// part of the same atomic unit — db.query() borrows a random pool connection per
+// call and cannot participate in another connection's open transaction.
+const withTransaction = async (fn) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      console.error('Rollback failed:', rollbackErr.message);
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   query: (text, params) => pool.query(text, params),
+  getClient: () => pool.connect(),
+  withTransaction,
+  pool,
 };
