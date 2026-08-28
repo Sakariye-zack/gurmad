@@ -1512,8 +1512,14 @@ app.get('/api/customers', requirePermission('customers', 'view'), async (req, re
       const empRow = await db.query('SELECT id FROM employees WHERE LOWER(name) = LOWER($1)', [myName]);
       const employeeId = empRow.rows[0]?.id;
       if (!employeeId) return res.json([]);
+      // Explicit column list, not c.* — a collector never handles money and must not receive
+      // fee/payment_status in the response body even though the frontend doesn't render them;
+      // hiding it client-side isn't enough, since the raw JSON is inspectable in devtools/network.
       const result = await db.query(`
-        SELECT c.*, e.name as collector_name
+        SELECT c.id, c.name, c.phone, c.house_no, c.street, c.area, c.lat, c.lng, c.whatsapp,
+               c.neighborhood, c.zone, c.category, c.collector_id, c.route_order,
+               c.collection_frequency, c.collection_mode, c.created_at,
+               e.name as collector_name
         FROM customers c
         LEFT JOIN employees e ON c.collector_id = e.id
         WHERE c.collector_id = $1
@@ -2121,8 +2127,14 @@ const getTodayRouteForCollectors = async (collectorNames) => {
   const taskIds = tasksRes.rows.map(t => t.id);
   const taskCollectorMap = Object.fromEntries(tasksRes.rows.map(t => [t.id, t.collector_name]));
 
+  // Explicit column list, not c.* — this backs the collector's own today's-route view, and a
+  // collector must never receive fee/payment_status in the response body (not just have it
+  // hidden client-side).
   const customersRes = await db.query(
-    `SELECT c.*, tc.collected, tc.collected_at, tc.collected_lat, tc.collected_lng, tc.task_id,
+    `SELECT c.id, c.name, c.phone, c.house_no, c.street, c.area, c.lat, c.lng, c.whatsapp,
+       c.neighborhood, c.zone, c.category, c.collector_id, c.route_order,
+       c.collection_frequency, c.collection_mode, c.created_at,
+       tc.collected, tc.collected_at, tc.collected_lat, tc.collected_lng, tc.task_id,
        tc.missed, tc.missed_reason, tc.missed_note, tc.missed_photo, tc.missed_at
      FROM task_customers tc
      JOIN customers c ON tc.customer_id = c.id
@@ -2376,9 +2388,17 @@ app.post('/api/tasks', requirePermission('tasks', 'create'), async (req, res) =>
 
 app.get('/api/tasks/:id/customers', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
   const { id } = req.params;
+  // A collector calling this must not get fee/payment_status back — not just have it hidden
+  // client-side. Admin/cashier keep the full row since they're authorized to see money fields.
+  const isCollector = req.user.role.toLowerCase() === 'collector';
+  const columns = isCollector
+    ? `c.id, c.name, c.phone, c.house_no, c.street, c.area, c.lat, c.lng, c.whatsapp,
+       c.neighborhood, c.zone, c.category, c.collector_id, c.route_order,
+       c.collection_frequency, c.collection_mode, c.created_at`
+    : 'c.*';
   try {
     const result = await db.query(
-      `SELECT c.*, tc.collected 
+      `SELECT ${columns}, tc.collected
        FROM customers c
        INNER JOIN task_customers tc ON c.id = tc.customer_id
        WHERE tc.task_id = $1
