@@ -152,6 +152,40 @@ async function testCashoutApproveRace() {
   assert.strictEqual(finalRow.rows[0].status, 'Approved', 'the cashout should end up Approved exactly once');
 }
 
+async function testRejectAlreadyApprovedCashout() {
+  // testCashoutId is left Approved by testCashoutApproveRace (runs first) — reuse it to check
+  // the reject route also respects the FOR UPDATE guard against an already-approved cashout.
+  const res = await fetch(`${BASE_URL}/api/cashouts/${testCashoutId}/reject`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({ reason: 'should not be allowed' })
+  });
+  assert.strictEqual(res.status, 409, 'rejecting an already-approved cashout must be refused, not silently overwrite it');
+}
+
+async function testInvoiceForcedFailureLeavesNoOrphan() {
+  // A customer_id that doesn't exist trips the debts.customer_id FK constraint (debts is only
+  // written when there's a debt amount) — this forces a failure partway through the same
+  // transaction that already inserted the invoice row, and must roll that insert back too.
+  const before = await db.query('SELECT COUNT(*) FROM invoices WHERE customer_id = $1', [999999999]);
+  assert.strictEqual(before.rows[0].count, '0');
+
+  const res = await fetch(`${BASE_URL}/api/invoices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({
+      customer_id: 999999999, phone: '0000000000',
+      splitPayments: { cash: 0, zaad: 0, edahab: 0, debt: 5, slsh: 0 },
+      currency: 'USD', customer_name: 'Nonexistent', collector_name: 'Test',
+      zone: 'Group1', house_no: 'X', discount_amount: 0
+    })
+  });
+  assert.strictEqual(res.status, 500, 'an invoice against a nonexistent customer_id should fail (FK violation on the debt insert)');
+
+  const after = await db.query('SELECT COUNT(*) FROM invoices WHERE customer_id = $1', [999999999]);
+  assert.strictEqual(after.rows[0].count, '0', 'the invoice insert that happened before the failing debt insert must have been rolled back — no orphan invoice');
+}
+
 async function testCashoutApproveRequiresSignedDoc() {
   const cashoutRes = await db.query(
     `INSERT INTO cashouts (collector_name, cashier_name, expected_amount, actual_amount, cash_amount, zone, status)
@@ -182,7 +216,9 @@ async function testCashoutApproveRequiresSignedDoc() {
   } else {
     await setup();
     await test('POST /api/invoices — happy path still creates matching debt + syncs customer status', testInvoiceHappyPath);
+    await test('POST /api/invoices — forced failure mid-transaction leaves no orphan invoice row', testInvoiceForcedFailureLeavesNoOrphan);
     await test('PUT /api/cashouts/:id/approve — concurrent double-approve: exactly one wins (409 on the other)', testCashoutApproveRace);
+    await test('PUT /api/cashouts/:id/reject — rejecting an already-approved cashout is refused (409)', testRejectAlreadyApprovedCashout);
     await test('PUT /api/cashouts/:id/approve — still blocked without a signed document', testCashoutApproveRequiresSignedDoc);
     await teardown();
   }
