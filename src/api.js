@@ -183,6 +183,13 @@ export const api = {
   voidInvoice: (id) => fetch(`${API_BASE_URL}/invoices/${id}/void`, {
     method: 'PUT', headers: getAuthHeaders()
   }).then(handleResponse),
+  // P0-2 Phase A1 — admin-only manual reconciliation for an invoice with no recoverable
+  // historical exchange rate (exchange_rate_source = 'reconciliation_required').
+  reconcileExchangeRate: (id, data) => fetch(`${API_BASE_URL}/invoices/${id}/reconcile-exchange-rate`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+    body: JSON.stringify(data)
+  }).then(handleResponse),
 
   // Expenses — POST/PUT take FormData (server multer-parses invoice_image), not JSON.
   getExpenses: () => fetch(`${API_BASE_URL}/expenses`, { headers: getAuthHeaders() }).then(handleResponse),

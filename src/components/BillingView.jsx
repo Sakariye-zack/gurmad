@@ -63,6 +63,13 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
   const [searchCustomer, setSearchCustomer] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024);
+  // Phase A1 — Exchange Rate Reconciliation (admin-only). An invoice lands here when P0-2's
+  // migration couldn't reconstruct a historical rate (exchange_rate_source =
+  // 'reconciliation_required') — it never gets a guessed rate, only a manual, audited one.
+  const [showNeedsReconciliationOnly, setShowNeedsReconciliationOnly] = useState(false);
+  const [reconcileRate, setReconcileRate] = useState('');
+  const [reconcileReason, setReconcileReason] = useState('');
+  const [isReconciling, setIsReconciling] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
   const refreshInterval = useRef(null);
@@ -169,6 +176,10 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
       }
     }
 
+    if (showNeedsReconciliationOnly && inv.exchange_rate_source !== 'reconciliation_required') {
+      return false;
+    }
+
     const query = searchQuery.toLowerCase();
     return (
       inv.id.toString().includes(query) ||
@@ -179,6 +190,27 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
       (inv.truck_name && inv.truck_name.toLowerCase().includes(query))
     );
   });
+
+  const needsReconciliationCount = invoices.filter(inv => inv.exchange_rate_source === 'reconciliation_required').length;
+
+  const handleReconcileSubmit = async () => {
+    const rate = parseFloat(reconcileRate);
+    if (!rate || rate <= 0) { toast.error('Geli rate sax ah (wax ka weyn 0)'); return; }
+    if (!reconcileReason.trim()) { toast.error('Sababta reconciliation-ka waa lagama maarmaan'); return; }
+    setIsReconciling(true);
+    try {
+      const updated = await api.reconcileExchangeRate(selectedInvoice.id, { exchange_rate: rate, reason: reconcileReason.trim() });
+      toast.success(`Invoice #${updated.id} exchange rate waa la xaqiijiyay`);
+      setInvoices(prev => prev.map(inv => inv.id === updated.id ? { ...inv, ...updated } : inv));
+      setSelectedInvoice(prev => prev ? { ...prev, ...updated } : prev);
+      setReconcileRate('');
+      setReconcileReason('');
+    } catch (err) {
+      toast.error(err.message || 'Reconciliation waa fashilantay');
+    } finally {
+      setIsReconciling(false);
+    }
+  };
 
   const todaysTransactions = React.useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -344,6 +376,31 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Reporting today</div>
         </div>
       </div>
+
+      {/* Phase A1 — Needs Reconciliation banner (admin-only). Invoices whose historical
+          exchange rate could never be reconstructed (P0-2) sit here until an admin manually
+          enters a verified rate — never guessed, always audited. */}
+      {currentUser?.role === 'admin' && needsReconciliationCount > 0 && (
+        <div
+          onClick={() => setShowNeedsReconciliationOnly(v => !v)}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', cursor: 'pointer',
+            padding: '1rem 1.25rem', borderRadius: 'var(--radius-md)',
+            backgroundColor: showNeedsReconciliationOnly ? '#fef3c7' : '#fffbeb',
+            border: `1px solid ${showNeedsReconciliationOnly ? '#f59e0b' : '#fde68a'}`, color: '#92400e'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertCircle size={18} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
+              {needsReconciliationCount} invoice{needsReconciliationCount > 1 ? 's need' : ' needs'} exchange-rate reconciliation — no historical rate could be recovered for {needsReconciliationCount > 1 ? 'them' : 'it'}.
+            </span>
+          </div>
+          <span style={{ fontSize: '0.75rem', fontWeight: 800, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+            {showNeedsReconciliationOnly ? 'Show all invoices' : 'Show only these'}
+          </span>
+        </div>
+      )}
 
       {/* Today's Cashier Collections (Admins Only) - one row per transaction */}
       {currentUser?.role === 'admin' && (
@@ -786,6 +843,13 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
                       <span className={`badge badge-${inv.status.toLowerCase()}`} style={{ fontSize: '0.75rem', padding: '6px 14px', borderRadius: '100px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         {inv.status}
                       </span>
+                      {inv.exchange_rate_source === 'reconciliation_required' && (
+                        <div style={{ marginTop: '6px' }}>
+                          <span style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: '100px', fontWeight: 800, textTransform: 'uppercase', backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #f59e0b' }}>
+                            Needs Reconciliation
+                          </span>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )) : (
@@ -866,6 +930,56 @@ const BillingView = ({ searchQuery = '', currentUser, prefillCustomerPhone, onPr
                       <span style={{ fontWeight: 900, fontSize: '1.75rem', color: 'var(--gurmad-green)' }}>${parseFloat(selectedInvoice.amount).toFixed(2)}</span>
                    </div>
                 </div>
+
+                {/* Phase A1 — Exchange Rate Reconciliation (admin-only). Only for invoices P0-2
+                    flagged with no recoverable historical rate. Never touches amount/slsh_amount —
+                    only sets exchange_rate + exchange_rate_source='manual_reconciliation', fully
+                    audited via the existing reconcile-exchange-rate endpoint. */}
+                {currentUser?.role === 'admin' && selectedInvoice.exchange_rate_source === 'reconciliation_required' && (
+                  <div style={{ marginTop: '1.5rem', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '16px', padding: '1.5rem', position: 'relative', zIndex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <AlertCircle size={16} color="#92400e" />
+                      <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#92400e', margin: 0, textTransform: 'uppercase' }}>Needs Reconciliation</h4>
+                    </div>
+                    <p style={{ fontSize: '0.8rem', color: '#92400e', margin: '0 0 1rem 0' }}>
+                      No historical exchange rate could be reconstructed for this invoice (SLSH {parseFloat(selectedInvoice.slsh_amount || 0).toLocaleString()} against a ${parseFloat(selectedInvoice.amount).toFixed(2)} total). Enter the verified historical rate to resolve it — <strong>amount and SLSH amount will not be changed</strong>.
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div>
+                        <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#92400e', textTransform: 'uppercase' }}>Verified Exchange Rate (1 USD = ? SLSH)</label>
+                        <input
+                          type="number" min="0" step="0.0001"
+                          value={reconcileRate}
+                          onChange={(e) => setReconcileRate(e.target.value)}
+                          placeholder="e.g. 10000"
+                          style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #f59e0b', marginTop: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.7rem', fontWeight: 700, color: '#92400e', textTransform: 'uppercase' }}>Reason (required, audit trail)</label>
+                        <textarea
+                          value={reconcileReason}
+                          onChange={(e) => setReconcileReason(e.target.value)}
+                          placeholder="e.g. Verified against the cashier's paper cashout slip dated ..."
+                          rows={2}
+                          style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid #f59e0b', marginTop: '4px', fontFamily: 'inherit', resize: 'vertical' }}
+                        />
+                      </div>
+                      <button
+                        onClick={handleReconcileSubmit}
+                        disabled={isReconciling}
+                        style={{ padding: '0.75rem', borderRadius: '10px', border: 'none', backgroundColor: '#f59e0b', color: 'white', fontWeight: 800, cursor: isReconciling ? 'not-allowed' : 'pointer', opacity: isReconciling ? 0.7 : 1 }}
+                      >
+                        {isReconciling ? 'Confirming…' : 'Confirm Reconciliation'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {selectedInvoice.exchange_rate_source === 'manual_reconciliation' && (
+                  <div style={{ marginTop: '1.5rem', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '16px', padding: '1rem 1.25rem', position: 'relative', zIndex: 1, fontSize: '0.8rem', color: '#15803d', fontWeight: 600 }}>
+                    ✓ Reconciled — historical rate {parseFloat(selectedInvoice.exchange_rate).toLocaleString()} SLSH/USD, manually verified.
+                  </div>
+                )}
 
                 <div style={{ marginTop: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', position: 'relative', zIndex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
