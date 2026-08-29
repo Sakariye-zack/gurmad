@@ -850,6 +850,32 @@ const checkRole = (roles) => [
   }
 ];
 
+// P0-T1: a `collector`-role caller may only read or act on a task actually assigned to them.
+// checkRole(['admin', 'collector']) on the task-detail/action routes only verified role, not
+// ownership — any authenticated collector could act on any other collector's task by
+// guessing/enumerating a task id. Every other role already permitted on these routes (admin,
+// cashier where applicable) is untouched by this — it only adds a check for 'collector'.
+// Never trusts a client-supplied collector_name; always resolves the caller's own identity from
+// req.user.id, mirroring the same pattern GET /api/collector/my-today-route already uses.
+const requireOwnTask = async (req, res, next) => {
+  if (req.user.role.toLowerCase() !== 'collector') return next();
+  try {
+    const taskId = req.params.taskId || req.params.id;
+    const taskRes = await db.query('SELECT driver_name, collector_name FROM tasks WHERE id = $1', [taskId]);
+    if (taskRes.rows.length === 0) return res.status(404).json({ error: 'Task not found' });
+    const userRes = await db.query('SELECT full_name, username FROM users WHERE id = $1', [req.user.id]);
+    const myName = (userRes.rows[0]?.full_name || userRes.rows[0]?.username || '').toLowerCase().trim();
+    const task = taskRes.rows[0];
+    const owns = [task.driver_name, task.collector_name].some(
+      n => (n || '').toLowerCase().trim() === myName && myName.length > 0
+    );
+    if (!owns) return res.status(403).json({ error: 'This task is not assigned to you' });
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // --- Phase 8: Customer Portal auth ---
 // Deliberately a separate token/middleware from staff auth (authenticateToken/checkRole above):
 // a customer token carries `type: 'customer'` and only a customerId, never a role, so it can
@@ -2577,7 +2603,7 @@ app.post('/api/tasks', requirePermission('tasks', 'create'), async (req, res) =>
   }
 });
 
-app.get('/api/tasks/:id/customers', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
+app.get('/api/tasks/:id/customers', checkRole(['admin', 'cashier', 'collector']), requireOwnTask, async (req, res) => {
   const { id } = req.params;
   // A collector calling this must not get fee/payment_status back — not just have it hidden
   // client-side. Admin/cashier keep the full row since they're authorized to see money fields.
@@ -2602,7 +2628,7 @@ app.get('/api/tasks/:id/customers', checkRole(['admin', 'cashier', 'collector'])
   }
 });
 
-app.put('/api/tasks/:taskId/customers/:customerId', checkRole(['admin', 'collector']), async (req, res) => {
+app.put('/api/tasks/:taskId/customers/:customerId', checkRole(['admin', 'collector']), requireOwnTask, async (req, res) => {
   const { taskId, customerId } = req.params;
   const { collected } = req.body;
   try {
@@ -2648,7 +2674,7 @@ app.put('/api/tasks/:taskId/customers/:customerId', checkRole(['admin', 'collect
 
 // Mark a customer as serviced (waste picked up) WITHOUT touching payment/status.
 // Used by collectors who don't handle money - the cashier bills these later.
-app.post('/api/tasks/:taskId/customers/:customerId/service', checkRole(['admin', 'collector']), async (req, res) => {
+app.post('/api/tasks/:taskId/customers/:customerId/service', checkRole(['admin', 'collector']), requireOwnTask, async (req, res) => {
   const { taskId, customerId } = req.params;
   const { lat, lng } = req.body || {};
   try {
@@ -2670,7 +2696,7 @@ app.post('/api/tasks/:taskId/customers/:customerId/service', checkRole(['admin',
 // Missed Collection — a collector logs why a stop couldn't be serviced (reason + optional photo
 // + GPS), instead of the stop just silently staying "Pending" with no explanation. Operations
 // sees these on the Missed Collections list and reassigns/reschedules manually.
-app.post('/api/tasks/:taskId/customers/:customerId/missed', checkRole(['admin', 'collector']), upload.single('photo'), async (req, res) => {
+app.post('/api/tasks/:taskId/customers/:customerId/missed', checkRole(['admin', 'collector']), requireOwnTask, upload.single('photo'), async (req, res) => {
   const { taskId, customerId } = req.params;
   const { reason, note, lat, lng } = req.body || {};
   if (!reason) return res.status(400).json({ error: 'A reason is required' });
@@ -2762,7 +2788,7 @@ app.get('/api/reports/service-log', checkRole(['admin']), async (req, res) => {
   }
 });
 
-app.put('/api/tasks/:id/status', checkRole(['admin', 'collector']), async (req, res) => {
+app.put('/api/tasks/:id/status', checkRole(['admin', 'collector']), requireOwnTask, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   try {
@@ -2786,7 +2812,7 @@ app.put('/api/tasks/:id/status', checkRole(['admin', 'collector']), async (req, 
   }
 });
 
-app.get('/api/tasks/:id/history', checkRole(['admin', 'cashier', 'collector']), async (req, res) => {
+app.get('/api/tasks/:id/history', checkRole(['admin', 'cashier', 'collector']), requireOwnTask, async (req, res) => {
   try {
     const result = await db.query(
       'SELECT lat, lng, created_at FROM truck_location_history WHERE task_id = $1 ORDER BY created_at ASC',
