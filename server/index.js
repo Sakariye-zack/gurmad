@@ -331,6 +331,21 @@ const runMigrations = async () => {
         AND exchange_rate_source IS NULL;
     `);
 
+    // P0 financial-accuracy fix — true Partial invoice status. Idempotent and additive: only
+    // ever moves a row from 'Unpaid' to 'Partial' when it genuinely has both a remaining debt
+    // AND some amount already collected; every other status ('Paid', 'Voided', already
+    // 'Partial', or a genuinely fully-unpaid 'Unpaid' row) is left alone. Never touches amount,
+    // cash_amount, zaad_amount, edahab_amount, slsh_amount, discount_amount or exchange_rate —
+    // same "never recalculate historical financial values" rule P0-2 established. Safe to run
+    // on every boot: running it twice is a no-op the second time.
+    await db.query(`
+      UPDATE invoices
+      SET status = 'Partial'
+      WHERE status = 'Unpaid'
+        AND COALESCE(debt_amount, 0) > 0
+        AND (amount - COALESCE(debt_amount, 0)) > 0.005;
+    `);
+
     // Expenses: an approval workflow (a cashier's logged expense starts Pending until an admin
     // approves it, an admin's own entry is auto-approved) plus who logged it, so a wrong entry
     // can be corrected/removed instead of being a permanent, unreviewed line in the ledger.
@@ -1780,35 +1795,62 @@ app.get('/api/invoices/stats', checkRole(['admin', 'cashier', 'gudoomiye']), asy
     const isCashier = req.user.role.toLowerCase() === 'cashier';
 
     let stats;
+    // P0 financial-accuracy follow-up: total_debt previously summed invoices.debt_amount — a
+    // snapshot taken at invoice creation that never moves when the debt is later settled via
+    // debts.status. Every other outstanding-debt figure in the app (Dashboard, DebtView,
+    // Reports) already sources from the `debts` table, the one place a settlement is actually
+    // recorded — this brings this stat card in line with that same single source of truth
+    // instead of leaving it as a second, staler one. Still scoped to "today" to preserve this
+    // card's existing meaning ("debt logged today"), just now correct about which of today's
+    // debts are still actually outstanding.
     if (isCashier) {
       const { zoneGroups, collectorIds } = await getCashierScope(req.user.id);
       if (zoneGroups.length === 0 && collectorIds.length === 0) {
         stats = { rows: [{}] };
       } else {
-        stats = await db.query(`
+        const invStats = await db.query(`
           SELECT
             SUM(i.amount) as total_usd,
             SUM(i.slsh_amount) as total_slsh,
-            SUM(i.debt_amount) as total_debt,
             SUM(i.discount_amount) as total_discount
           FROM invoices i
           INNER JOIN customers c ON i.customer_id = c.id
           WHERE i.created_at::date = CURRENT_DATE
             AND ${cashierScopeSQL('c')}
         `, [zoneGroups, collectorIds]);
+        // debts has no collector_id column of its own (only zone/collector_name strings) — same
+        // reason GET /api/debts joins customers and filters in JS rather than in SQL, so this
+        // matches that exact already-correct pattern instead of inventing a second one.
+        const debtRows = await db.query(`
+          SELECT d.amount, d.zone, c.collector_id
+          FROM debts d
+          LEFT JOIN customers c ON d.customer_id = c.id
+          WHERE d.status = 'Unpaid' AND d.created_at::date = CURRENT_DATE
+        `);
+        const scopedDebtTotal = debtRows.rows
+          .filter(r => zoneGroups.includes(r.zone) || collectorIds.includes(r.collector_id))
+          .reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
+        stats = { rows: [{ ...invStats.rows[0], total_debt: scopedDebtTotal }] };
       }
     } else {
-      stats = await db.query(`
+      const invStats = await db.query(`
         SELECT
           SUM(i.amount) as total_usd,
           SUM(i.slsh_amount) as total_slsh,
-          SUM(i.debt_amount) as total_debt,
           SUM(i.discount_amount) as total_discount
         FROM invoices i
         INNER JOIN customers c ON i.customer_id = c.id
         WHERE i.created_at::date = CURRENT_DATE
           ${isGudoomiye ? 'AND c.zone = $1' : ''}
       `, isGudoomiye ? [req.user.zone] : []);
+      const debtStats = await db.query(`
+        SELECT COALESCE(SUM(amount), 0) as total_debt
+        FROM debts
+        WHERE status = 'Unpaid'
+          AND created_at::date = CURRENT_DATE
+          ${isGudoomiye ? 'AND zone = $1' : ''}
+      `, isGudoomiye ? [req.user.zone] : []);
+      stats = { rows: [{ ...invStats.rows[0], total_debt: debtStats.rows[0]?.total_debt }] };
     }
     const trucksRes = await db.query(`SELECT COUNT(*) as active_trucks FROM trucks WHERE status = 'Active'`);
     res.json({
@@ -1899,7 +1941,18 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
     }
 
     const totalAmount = grossAmount - parseFloat(discount_amount);
-    const invoiceStatus = (parseFloat(debt) > 0) ? 'Unpaid' : 'Paid';
+    // True Partial status. paidAmount = totalAmount - debt = (cash+zaad+edahab+slsh/rate) minus
+    // discount — the actual amount collected today, net of any discount. Paid/Partial/Unpaid on
+    // the invoice itself; deliberately NOT propagated to customers.status/payment_status below,
+    // which several other reads (zone-pending-customer counts, the unpaid-reminder cron, the
+    // total_paid customer counts) treat as strictly binary — introducing 'Partial' there would
+    // silently drop partially-paying customers out of every "still owes money" list.
+    // customers.status stays binary (owes something vs. fully settled); only the invoice's own
+    // status gets the finer Paid/Partial/Unpaid/Voided distinction.
+    const debtAmt = parseFloat(debt);
+    const paidAmount = totalAmount - debtAmt;
+    const invoiceStatus = debtAmt <= 0.005 ? 'Paid' : (paidAmount > 0.005 ? 'Partial' : 'Unpaid');
+    const customerPaymentStatus = debtAmt <= 0.005 ? 'Paid' : 'Unpaid';
     const mainMethod = parseFloat(zaad) > 0 ? 'ZAAD' : (parseFloat(edahab) > 0 ? 'eDahab' : (parseFloat(cash) > 0 ? 'Cash' : (parseFloat(slsh) > 0 ? 'SLSH' : 'Debt')));
     const customerNameFromReq = req.body.customer_name || 'New Walk-in Customer';
 
@@ -1964,7 +2017,7 @@ app.post('/api/invoices', requirePermission('billing', 'create'), async (req, re
 
       await client.query(
         'UPDATE customers SET payment_status = $1, status = $1 WHERE id = $2',
-        [invoiceStatus, customerId]
+        [customerPaymentStatus, customerId]
       );
 
       return { result, customerId };
@@ -4293,6 +4346,15 @@ app.delete('/api/documents/:id', checkRole(['admin']), async (req, res) => {
 });
 
 // --- Debts (Daymaha) ---
+// P0 financial-accuracy fix: this used to UNION real `debts` rows with a *synthetic* second
+// branch derived from `invoices WHERE status='Unpaid'` (using the invoice's full `amount`, not
+// its `debt_amount`). Every debt-bearing invoice already writes its own real row to `debts`
+// (see POST /api/invoices' `if (debt > 0) INSERT INTO debts ...`) — confirmed by an explicit
+// staging query with zero orphans before removing this. The synthetic branch was therefore a
+// second, inflated source of truth for the exact same money: a $20 invoice with $10 paid/$10
+// owed appeared as both a correct $10 debts row AND a duplicate $20 "Unpaid Service Invoice"
+// row, overstating every outstanding-debt total that reads this endpoint. `debts` is now the
+// sole source of outstanding-debt truth.
 app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accountant']), async (req, res) => {
   try {
     const result = await db.query(`
@@ -4309,22 +4371,7 @@ app.get('/api/debts', checkRole(['admin', 'cashier', 'gudoomiye', 'zone_accounta
              'manual' as type
       FROM debts d
       LEFT JOIN customers c ON d.customer_id = c.id
-      UNION ALL
-      SELECT ('INV-' || i.id) as id, i.customer_id,
-             c.name as debtor_name,
-             c.phone as phone,
-             c.zone as zone,
-             c.collector_id,
-             c.house_no as house_no,
-             c.street,
-             '' as neighborhood,
-             c.name as customer_name,
-             i.amount, i.currency, 'Unpaid Service Invoice' as description, i.status, i.created_at,
-             'invoice' as type
-      FROM invoices i
-      JOIN customers c ON i.customer_id = c.id
-      WHERE i.status = 'Unpaid'
-      ORDER BY created_at DESC
+      ORDER BY d.created_at DESC
     `);
     const role = req.user.role.toLowerCase();
     let rows = result.rows;

@@ -119,15 +119,22 @@ async function testInvoiceHappyPath() {
   });
   assert.strictEqual(res.status, 200, `expected 200, got ${res.status}`);
   const invoice = await res.json();
-  assert.strictEqual(invoice.status, 'Unpaid', 'partial debt should leave the invoice Unpaid');
+  // P0 financial-accuracy fix: $5 cash + $5 debt against a $10 invoice is genuinely Partial
+  // (some paid, some still owed) — this was the exact ambiguity that fix removed. Before that
+  // fix this asserted 'Unpaid', which was the bug, not the correct behavior.
+  assert.strictEqual(invoice.status, 'Partial', 'partial debt on an invoice with some cash already paid should be Partial');
 
   const debtRows = await db.query('SELECT * FROM debts WHERE customer_id = $1', [testCustomerId]);
   assert.strictEqual(debtRows.rows.length, 1, 'a matching debt row should exist after a partial-debt invoice');
   assert.strictEqual(parseFloat(debtRows.rows[0].amount), 5, 'the debt amount should match the split debt amount');
 
+  // customers.status/payment_status stay intentionally binary (owes something vs. fully
+  // settled) even though invoices.status is now three-way — several other reads (zone-pending
+  // counts, the unpaid-reminder cron) treat this as strictly binary, so it must not become
+  // 'Partial' too.
   const custRows = await db.query('SELECT status, payment_status FROM customers WHERE id = $1', [testCustomerId]);
-  assert.strictEqual(custRows.rows[0].status, 'Unpaid', "customer.status should be synced to the invoice's status");
-  assert.strictEqual(custRows.rows[0].payment_status, 'Unpaid', 'customer.payment_status should be synced too');
+  assert.strictEqual(custRows.rows[0].status, 'Unpaid', 'customer.status stays binary — this customer still owes money');
+  assert.strictEqual(custRows.rows[0].payment_status, 'Unpaid', 'customer.payment_status stays binary too');
 }
 
 async function testCashoutApproveRace() {
